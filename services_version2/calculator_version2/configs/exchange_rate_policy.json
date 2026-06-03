@@ -1,0 +1,325 @@
+{
+  "version": "1.0",
+  "effective_date": "2026-01-01",
+  "jurisdiction": "Cambodia",
+  "issuing_authority": "Ministry of Economy and Finance (MEF)",
+
+  "metadata": {
+    "description": "Exchange rate policy for Cambodia customs duty and tax calculations",
+    "data_source_primary": "data/processed/structured/exchange_rates_selenium_20260219_094940.csv",
+    "data_source_raw": "data/processed/structured/exchange_rates_selenium_YYYYMMDD_HHMMSS.csv",
+    "official_source_url": "https://www.mef.gov.kh or customs.gov.kh exchange rate page",
+    "current_effective_date": "2026-02-19",
+    "api_status": "Not yet implemented - currently using CSV file. API integration planned for future release."
+  },
+
+  "policy": {
+    "method": "fixed_table_from_csv",
+    "rationale": "Use official MEF exchange rate tables from CSV file (not dynamic API) to ensure reproducible calculations for audit compliance",
+    "current_implementation": "CSV file parsing from MEF-scraped data",
+    "update_frequency": "Manual update when new CSV file is provided (future: daily automated scrape from MEF website)",
+    "regulatory_basis": "Customs valuation rules require official published rates, not market rates"
+  },
+
+  "rate_selection_rules": [
+    {
+      "rule_id": "RATE_BY_DECLARATION_DATE",
+      "priority": 1,
+      "description": "Always use the exchange rate published for the customs declaration date",
+      "action": "Look up rate with exact declaration date in exchange_rates.json",
+      "applies_when": "Rate available for declaration date"
+    },
+    {
+      "rule_id": "FALLBACK_LATEST_RATE",
+      "priority": 2,
+      "description": "If user does NOT provide declaration date, use the latest available exchange rate",
+      "action": "Use the most recent (latest) exchange rate file available to give user an estimate of tax cost",
+      "constraints": {
+        "use_latest_available": true,
+        "must_log_used_fallback": true,
+        "note": "This is for estimation purposes when user is unsure of import date"
+      },
+      "applies_when": "User does not provide declaration_date (optional field)"
+    },
+    {
+      "rule_id": "REJECT_MISSING_CURRENCY",
+      "priority": 3,
+      "description": "If currency not found in recent rates, reject calculation",
+      "action": "Return error requesting manual rate or rate correction",
+      "constraint": "NEVER invent exchange rates"
+    }
+  ],
+
+  "rate_lookup_logic": {
+    "step_1": "Check if user provided declaration_date in input",
+    "step_2": "If declaration_date NOT provided, use latest available exchange rate CSV file for estimation",
+    "step_3": "Normalize currency code to ISO 4217 3-letter uppercase",
+    "step_4": "Query CSV file: exchange_rates_selenium_YYYYMMDD_HHMMSS.csv for matching currency code in 'Unit' column",
+    "step_5": "Extract rate from 'Rate' column (KHR value, e.g., '4022KHR')",
+    "step_6": "Parse rate value (remove 'KHR' suffix, handle comma-formatted numbers)",
+    "step_7": "If currency still not found, return error with available currencies list"
+  },
+
+  "currency_handling": {
+    "base_currency": {
+      "code": "KHR",
+      "name": "Cambodian Riel",
+      "description": "All calculations performed and results expressed in KHR"
+    },
+    "primary_foreign_currency": {
+      "code": "USD",
+      "name": "US Dollar",
+      "description": "Most common import currency"
+    },
+    "supported_currencies": [
+      {
+        "code": "USD",
+        "name": "US Dollar",
+        "priority": 1
+      },
+      {
+        "code": "AUD",
+        "name": "Australian Dollar",
+        "priority": 5
+      },
+      {
+        "code": "CAD",
+        "name": "Canadian Dollar",
+        "priority": 5
+      },
+      {
+        "code": "CNY",
+        "name": "China Yuan",
+        "priority": 2
+      },
+      {
+        "code": "EUR",
+        "name": "Euro",
+        "priority": 3
+      },
+      {
+        "code": "GBP",
+        "name": "British Pound",
+        "priority": 4
+      },
+      {
+        "code": "JPY",
+        "name": "Japanese Yen",
+        "priority": 4
+      },
+      {
+        "code": "VND",
+        "name": "Vietnamese Dong",
+        "priority": 1
+      },
+      {
+        "code": "THB",
+        "name": "Thai Baht",
+        "priority": 2
+      },
+      {
+        "code": "SGD",
+        "name": "Singapore Dollar",
+        "priority": 3
+      }
+    ],
+    "conversion_path": {
+      "foreign_to_khr": "Direct lookup: 1 [CURRENCY] = X KHR (from exchange_rate table)",
+      "foreign_to_foreign": "Not directly supported - must convert through USD or KHR",
+      "formula": "customs_value_khr = cif_value * exchange_rate[currency_code].rate_to_khr"
+    }
+  },
+
+  "rounding_policy": {
+    "exchange_rate_itself": {
+      "rule": "use_exactly_as_published",
+      "description": "CRITICAL: Exchange rates are used EXACTLY as published by MEF",
+      "constraint": "DO NOT round exchange rates before applying them",
+      "example": "1 USD = 4022 KHR (not 4000)",
+      "penalty_if_violated": "Calculation becomes non-reproducible"
+    },
+    "conversion_result": {
+      "rule": "round_up_to_nearest_100",
+      "description": "After conversion, round UP to nearest 100",
+      "formula": "CEILING(customs_value_khr / 100) * 100",
+      "examples": [
+        {
+          "input": 12345.04,
+          "output": 12400
+        },
+        {
+          "input": 12345.49,
+          "output": 12400
+        },
+        {
+          "input": 12345.5,
+          "output": 12400
+        }
+      ]
+    }
+  },
+
+  "validation_rules": [
+    {
+      "rule": "rate_positive",
+      "description": "Exchange rate must be > 0",
+      "constraint": "Reject any rate <= 0"
+    },
+    {
+      "rule": "usd_sanity_check",
+      "description": "Sanity check USD/KHR rate",
+      "acceptable_range": [3000, 5000],
+      "as_of": "2026-02-19",
+      "constraint": "Alert if outside range, but allow override"
+    },
+    {
+      "rule": "date_consistency",
+      "description": "All rates published on same date should come from same MEF source",
+      "constraint": "Log if rates from different source files"
+    },
+    {
+      "rule": "currency_code_format",
+      "description": "Currency codes must be valid ISO 4217",
+      "format": "3-letter uppercase",
+      "constraint": "Reject invalid codes"
+    }
+  ],
+
+  "implementation_for_calculator": [
+    "Load CSV file: exchange_rates_selenium_YYYYMMDD_HHMMSS.csv at service startup or cache for 24 hours",
+    "Parse CSV columns: No, Currency, Unit (e.g., '1USD'), Rate (e.g., '1.0000USD'), Unit (e.g., '1USD'), Rate (e.g., '4022KHR')",
+    "Index rates by currency code (extracted from Unit column) for fast lookup",
+    "Extract rate_to_khr value from 'Rate' column (rightmost column), removing 'KHR' suffix and parsing comma-formatted numbers",
+    "Check if declaration_date is provided by user - it is OPTIONAL",
+    "If declaration_date NOT provided, use latest available CSV file to give user an estimate",
+    "Log which exchange rate was used (currency, rate, effective_date from filename)",
+    "For estimation cases (no declaration date), clearly label result as 'estimate based on current rates'",
+    "Future: Replace with API call to MEF website when API becomes available"
+  ],
+
+  "data_update_process": [
+    {
+      "frequency": "Manual (Future: Daily automated)",
+      "trigger": "New CSV file provided by operations team (Future: Scheduled scrape from MEF website at 08:00 UTC)",
+      "action": "Place new CSV file in: data/processed/structured/exchange_rates_selenium_YYYYMMDD_HHMMSS.csv with timestamp in filename"
+    },
+    {
+      "current_status": "Manual process",
+      "description": "When new exchange rates are available, export to CSV and place in data/processed/structured/",
+      "filename_format": "exchange_rates_selenium_YYYYMMDD_HHMMSS.csv (e.g., exchange_rates_selenium_20260219_094940.csv)",
+      "file_location": "data/processed/structured/"
+    },
+    {
+      "preserve_historical_rates": true,
+      "description": "Keep old CSV files - NEVER delete or overwrite existing date files",
+      "reason": "Maintain audit trail of what rates existed at declaration time; enable recalculation of past declarations"
+    },
+    {
+      "maintain_source_file": true,
+      "description": "Keep raw CSV files with timestamps in filename",
+      "location": "data/processed/structured/exchange_rates_selenium_YYYYMMDD_HHMMSS.csv"
+    },
+    {
+      "future_automation": "When API becomes available, configure automatic daily scrape from MEF at 08:00 UTC",
+      "alert_condition": "No new update for 2+ consecutive days (when automated)",
+      "action": "Notify operations team"
+    }
+  ],
+
+  "table_schema": {
+    "format": "CSV",
+    "required_columns": [
+      "Currency (full name)",
+      "Unit_Foreign (e.g., '1USD', '1THB')",
+      "Rate_USD (Conversion to USD)",
+      "Unit_Local (e.g., '1USD', '1THB')",
+      "Rate_KHR (Conversion to KHR)"
+    ],
+    "example_row": {
+      "No": 1,
+      "Currency": "US Dollar",
+      "Unit": "1USD",
+      "Rate": "1.0000USD",
+      "Unit_2": "1USD",
+      "Rate_2": "4022KHR"
+    },
+    "parsing_notes": [
+      "Extract currency code from 'Unit' column (matches Unit_Foreign)",
+      "Extract rate to KHR from 'Rate_2' column (matches Rate_KHR)",
+      "Handle comma-formatted numbers (e.g., '16,793.3194IDR' → remove commas)",
+      "Filename contains effective date: exchange_rates_selenium_YYYYMMDD_HHMMSS.csv"
+    ]
+  },
+
+  "examples": {
+    "scenario_1": {
+      "description": "Calculate CIF value for item priced in USD on Feb 19, 2026",
+      "inputs": {
+        "item_price": 1000,
+        "currency": "USD",
+        "declaration_date": "2026-02-19"
+      },
+      "calculation": "1000 USD × 4022 KHR/USD = 4022000 KHR",
+      "exchange_rate_used": "4022 (from 2026-02-19 MEF table)",
+      "result_after_rounding": 4022000
+    },
+    "scenario_2": {
+      "description": "Calculate customs value for Thai Baht on Feb 19, 2026",
+      "inputs": {
+        "item_price": 50000,
+        "currency": "THB",
+        "declaration_date": "2026-02-19"
+      },
+      "calculation": "50000 THB × 129.5 KHR/THB = 6475000 KHR",
+      "exchange_rate_used": "129.5 (from 2026-02-19 MEF table)",
+      "result_after_rounding": 6475000
+    },
+    "scenario_3": {
+      "description": "User does NOT provide declaration date - wants estimate of how much tax they need to pay",
+      "inputs": {
+        "item_price": 500,
+        "currency": "EUR",
+        "declaration_date": null
+      },
+      "calculation": "No declaration date provided, use latest available CSV (2026-02-19): 500 EUR × 4784 KHR/EUR = 2392000 KHR",
+      "exchange_rate_used": "4784 (from latest CSV: 2026-02-19)",
+      "result_label": "ESTIMATE based on current rates (2026-02-19)",
+      "result_after_rounding": 2392000
+    }
+  },
+
+  "compliance_notes": [
+    "Exchange rates must be from official MEF source (Ministry of Economy and Finance)",
+    "For customs audit purposes, document which rate table (date) was used",
+    "If importer disputes rate, official MEF published rate on declaration date is authoritative",
+    "Historical rates must be preserved - do not delete old exchange rate files",
+    "System must be able to reproduce calculations using historical rates for past declarations"
+  ],
+
+  "references": [
+    "Ministry of Economy and Finance (MEF) official exchange rate publications",
+    "GDCE customs valuation guidelines",
+    "See rounding_rules.json for how converted amounts should be rounded",
+    "See formula_registry.json for formulas that use exchange_rate parameter"
+  ],
+
+  "current_implementation_notes": [
+    "CURRENT STATUS (as of 2026-02-19): Using CSV file-based lookup",
+    "CSV File Format: exchange_rates_selenium_YYYYMMDD_HHMMSS.csv",
+    "CSV Location: data/processed/structured/",
+    "CSV Columns: No, Currency, Unit, Rate, Unit, Rate (rightmost is KHR conversion)",
+    "To update rates: Place new CSV file in data/processed/structured/ with timestamp filename",
+    "Example: exchange_rates_selenium_20260219_094940.csv (Feb 19, 2026 at 09:49:40)"
+  ],
+
+  "future_api_integration": [
+    "FUTURE: Direct MEF API integration (not yet available)",
+    "When API is ready:",
+    "  1. Remove CSV-based lookup",
+    "  2. Configure API endpoint: https://www.mef.gov.kh/api/exchange-rates (example)",
+    "  3. Set daily fetching at 08:00 UTC",
+    "  4. Cache rates in database instead of files",
+    "  5. Maintain 'effective_date' field for audit trail",
+    "Timeline: TBD - awaiting MEF API release"
+  ]
+}

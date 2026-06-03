@@ -1,0 +1,1093 @@
+"""
+Core Workflow Module - Orchestrator service
+Handles workflow coordination, sequencing, and fallback policies
+Uses LLM-based intent detection (with keyword fallback)
+"""
+
+import logging
+import re
+from typing import Optional, Dict, Any, List, Tuple
+from enum import Enum
+from dataclasses import dataclass
+import time
+import re
+
+logger = logging.getLogger(__name__)
+
+# Import LLM intent detector (optional - will fallback to keyword if unavailable)
+try:
+    from ..llm_first_layer.shims.intent_service import OrchestratorIntentService, IntentServiceConfig
+    from ..llm_first_layer import get_llm_first_layer_service as get_intent_service
+    LLM_INTENT_DETECTION_AVAILABLE = True
+except ImportError:
+    logger.warning("LLM intent detector not available, will use keyword-based detection")
+    LLM_INTENT_DETECTION_AVAILABLE = False
+
+# Import currency detector
+try:
+    from ..currency_service import OrchestratorCurrencyService, CurrencyServiceConfig
+    from ..llm_first_layer import get_llm_first_layer_service as get_currency_service
+    LLM_CURRENCY_DETECTION_AVAILABLE = True
+except ImportError:
+    logger.warning("Currency detector not available")
+    LLM_CURRENCY_DETECTION_AVAILABLE = False
+
+class WorkflowIntent(str, Enum):
+    """Supported workflow intents."""
+    CALCULATION = "calculation"
+    TRADE_QUERY = "trade_query"
+    DEFINITION = "definition"
+    POLICY_QUERY = "policy_query"
+    HS_CODE_LOOKUP = "hs_code_lookup"
+    UNCLASSIFIED = "unclassified"
+    SMALL_TALK = "small_talk"
+
+
+class WorkflowStatus(str, Enum):
+    """Workflow execution status."""
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    PARTIAL = "partial"
+    CLARIFICATION_REQUIRED = "clarification_required"
+
+
+@dataclass
+class WorkflowContext:
+    """
+    Context for a single workflow execution.
+    Tracks state, results, and metadata across service calls.
+    """
+    request_id: str
+    question: str
+    session_id: Optional[str] = None
+    intent: Optional[WorkflowIntent] = None
+    status: WorkflowStatus = WorkflowStatus.PENDING
+    
+    # Input rewriting (context-aware input processing)
+    original_input: Optional[str] = None
+    rewritten_input: Optional[str] = None
+    rewrite_metadata: Optional[Dict[str, Any]] = None
+    session_context: Optional[Any] = None  # SessionContext from input_rewriter
+    cleaned_input: Optional[str] = None  # Query after filler pattern removal
+    
+    # Clarification state
+    clarification_locked_intent: Optional[WorkflowIntent] = None  # Intent locked from clarification resolution
+    skip_intent_detection: bool = False  # When True, use locked intent instead of detecting
+    clarification_confidence: float = 0.0  # Confidence score for locked intent (0.0 to 1.0)
+    
+    # Results from service calls
+    retrieval_result: Optional[Dict[str, Any]] = None
+    calculation_result: Optional[Dict[str, Any]] = None
+    trade_query_result: Optional[Dict[str, Any]] = None
+    
+    # Currency extraction (for calculation workflows)
+    detected_currency: Optional[str] = None
+    currency_confidence: float = 0.0
+    
+    # Metadata
+    start_time: float = None
+    end_time: float = None
+    latency_ms: float = 0.0
+    metadata: Dict[str, Any] = None  # Additional metadata like hs_validation
+    
+    # Error tracking
+    errors: List[str] = None
+    clarifications: List[str] = None
+    
+    def __post_init__(self):
+        """Initialize default values."""
+        if self.start_time is None:
+            self.start_time = time.time()
+        if self.errors is None:
+            self.errors = []
+        if self.clarifications is None:
+            self.clarifications = []
+        if self.metadata is None:
+            self.metadata = {}
+    
+    def add_error(self, error: str):
+        """Add error message."""
+        self.errors.append(error)
+        logger.error(f"[{self.request_id}] {error}")
+    
+    def add_clarification(self, clarification: str):
+        """Add clarification needed."""
+        self.clarifications.append(clarification)
+        logger.info(f"[{self.request_id}] Clarification: {clarification}")
+    
+    def set_result(self, result_type: str, result: Dict[str, Any]):
+        """
+        Set result for a service call.
+        
+        Args:
+            result_type: Type of result (retrieval, calculation, trade_query)
+            result: The result dictionary
+        """
+        if result_type == "retrieval":
+            self.retrieval_result = result
+        elif result_type == "calculation":
+            self.calculation_result = result
+        elif result_type == "trade_query":
+            self.trade_query_result = result
+    
+    def finalize(self):
+        """Mark workflow as completed and calculate latency."""
+        self.end_time = time.time()
+        self.latency_ms = (self.end_time - self.start_time) * 1000
+        
+        if not self.errors and self.status == WorkflowStatus.PENDING:
+            self.status = WorkflowStatus.COMPLETED
+
+
+class WorkflowExecutor:
+    """
+    Manages workflow execution and coordination.
+    Implements sequencing, fallback policies, and service orchestration.
+    Uses LLM-based intent detection with keyword fallback.
+    """
+    
+    def __init__(self, policy_engine=None, use_llm_intent: bool = True, llm_intent_timeout: int = 60, llm_service: Optional[Any] = None):
+        """
+        Initialize workflow executor.
+        
+        Args:
+            policy_engine: Policy engine for intent detection and rules
+            use_llm_intent: Whether to use LLM for intent detection (vs keyword matching)
+            llm_intent_timeout: Timeout for LLM intent detection in seconds
+            llm_service: Optional provider-neutral LLM abstraction layer
+        """
+        self.policy_engine = policy_engine
+        self.llm_service = llm_service
+        self.use_llm_intent = use_llm_intent and LLM_INTENT_DETECTION_AVAILABLE
+        
+        # Initialize LLM detector if enabled
+        if self.use_llm_intent:
+            try:
+                self.llm_detector = get_intent_service(IntentServiceConfig(timeout=llm_intent_timeout))
+                logger.info(f"LLM-based intent detection enabled (timeout: {llm_intent_timeout}s)")
+            except Exception as e:
+                logger.warning(f"Failed to initialize LLM detector: {e}, falling back to keyword detection")
+                self.use_llm_intent = False
+                self.llm_detector = None
+        else:
+            self.llm_detector = None
+            logger.info("Keyword-based intent detection enabled")
+        
+        # Initialize currency detector if available
+        if LLM_CURRENCY_DETECTION_AVAILABLE:
+            try:
+                self.currency_detector = get_currency_service(CurrencyServiceConfig(timeout=llm_intent_timeout))
+                logger.info(f"Currency detection enabled (timeout: {llm_intent_timeout}s)")
+            except Exception as e:
+                logger.warning(f"Failed to initialize currency detector: {e}")
+                self.currency_detector = None
+        else:
+            self.currency_detector = None
+            logger.info("Currency detection not available")
+        
+    def detect_intent(self, question: str) -> WorkflowIntent:
+        """
+        Detect question intent using LLM or keyword matching.
+        Falls back gracefully if LLM is unavailable.
+        
+        Args:
+            question: User question
+            
+        Returns:
+            Detected intent
+        """
+        if self.llm_service and hasattr(self.llm_service, "classify_intent"):
+            try:
+                intent_raw, confidence, reasoning = self.llm_service.classify_intent(question)
+                intent_value = getattr(intent_raw, "value", intent_raw)
+                try:
+                    intent = WorkflowIntent(str(intent_value))
+                except ValueError:
+                    intent = WorkflowIntent.UNCLASSIFIED
+                logger.info(f"LLM Intent Detection (facade): {intent.value} (confidence: {confidence:.2f}) - {reasoning}")
+                return intent
+            except Exception as e:
+                logger.warning(f"LLM facade intent detection failed, falling back to native detection: {e}")
+
+        # Try LLM detection first if enabled
+        if self.use_llm_intent and self.llm_detector:
+            try:
+                intent, confidence, reasoning = self.llm_detector.detect_intent(question)
+                logger.info(f"LLM Intent Detection: {intent.value} (confidence: {confidence:.2f}) - {reasoning}")
+                return intent
+            except Exception as e:
+                logger.warning(f"LLM intent detection failed, falling back to keyword matching: {e}")
+                return self._keyword_based_intent_detection(question)
+        else:
+            # Use keyword-based detection directly
+            return self._keyword_based_intent_detection(question)
+
+    def detect_intent_with_confidence(self, question: str) -> Tuple[WorkflowIntent, float]:
+        """
+        Detect intent and return (intent, confidence).
+
+        LLM/MiniLM path returns the model confidence directly.
+        Keyword fallback returns a deterministic confidence tier:
+          - keyword exact match  → 0.85
+          - pattern match        → 0.80
+          - compound rule        → 0.75
+          - ultimate fallback    → 0.50
+        """
+        # LLM facade path
+        if self.llm_service and hasattr(self.llm_service, "classify_intent"):
+            try:
+                intent_raw, confidence, reasoning = self.llm_service.classify_intent(question)
+                intent_value = getattr(intent_raw, "value", intent_raw)
+                try:
+                    intent = WorkflowIntent(str(intent_value))
+                except ValueError:
+                    intent = WorkflowIntent.UNCLASSIFIED
+                logger.info(f"[Intent+Conf] LLM facade: {intent.value} conf={confidence:.2f}")
+                return intent, confidence
+            except Exception as e:
+                logger.warning(f"LLM facade failed, falling back: {e}")
+
+        # Native LLM detector path
+        if self.use_llm_intent and self.llm_detector:
+            try:
+                intent, confidence, reasoning = self.llm_detector.detect_intent(question)
+                logger.info(f"[Intent+Conf] LLM: {intent.value} conf={confidence:.2f}")
+                return intent, confidence
+            except Exception as e:
+                logger.warning(f"LLM detection failed, falling back: {e}")
+
+        # Keyword fallback — assign confidence tiers
+        intent = self._keyword_based_intent_detection(question)
+        q_lower = question.lower()
+        import re as _re
+        # Heuristic confidence from keyword density
+        kw_maps = {
+            WorkflowIntent.CALCULATION:   ["calculate", "compute", "how much", "duty", "tax"],
+            WorkflowIntent.HS_CODE_LOOKUP: ["hs code", "classify", "code for", "tariff code"],
+            WorkflowIntent.TRADE_QUERY:   ["trade", "export", "import", "shipping"],
+            WorkflowIntent.POLICY_QUERY:  ["procedure", "regulation", "requirement", "compliance"],
+            WorkflowIntent.DEFINITION:    ["what is", "define", "meaning", "explain"],
+        }
+        hits = sum(1 for kw in kw_maps.get(intent, []) if kw in q_lower)
+        confidence = min(0.85, 0.55 + hits * 0.06)
+        logger.debug(f"[Intent+Conf] Keyword: {intent.value} conf={confidence:.2f} (hits={hits})")
+        return intent, confidence
+
+    def detect_intent_with_ask_back(
+        self,
+        question: str,
+        session=None,           # rewriter_service.core.models.SessionContext | None
+        turn_number: int = 1,
+    ):
+        """
+        Full intent detection pipeline with ask-back clarification support.
+
+        Returns a dict with:
+          {
+            "intent":        WorkflowIntent,
+            "confidence":    float,
+            "ask_back":      bool,           # True → return clarification question
+            "question":      str,            # clarification question (if ask_back=True)
+            "candidate_intents": List[str],  # intents surfaced to user
+            "trigger_reason":    str,        # why ask-back fired (for logging)
+          }
+
+        Caller flow:
+          result = executor.detect_intent_with_ask_back(text, session, turn)
+          if result["ask_back"]:
+              session.set_pending_clarification(result["candidate_intents"], rewritten_query)
+              return result["question"]   # return to user, stop processing
+          # else: route normally using result["intent"]
+        """
+        intent, confidence = self.detect_intent_with_confidence(question)
+
+        # Ask-back evaluation via AskBackService
+        try:
+            from ..llm_first_layer import get_llm_first_layer_service as get_ask_back_service
+            svc = get_ask_back_service()
+
+            candidate_scores = self._estimate_candidate_scores(question)
+            result = svc.get_clarification(          # sync — no LLM in workflow path
+                query=question,
+                intent_label=intent.value,
+                confidence=confidence,
+                session=session,
+                candidate_scores=candidate_scores,
+                turn_number=turn_number,
+            )
+
+            return {
+                "intent": intent,
+                "confidence": confidence,
+                "ask_back": result.should_ask_back,
+                "question": result.question,
+                "candidate_intents": result.candidate_intents,
+                "trigger_reason": result.trigger_reason,
+                "provider": result.provider,
+            }
+
+        except Exception as e:
+            logger.warning(f"[AskBack] Service evaluation failed: {e} — routing normally")
+            return {
+                "intent": intent,
+                "confidence": confidence,
+                "ask_back": False,
+                "question": "",
+                "candidate_intents": [],
+                "trigger_reason": "",
+                "provider": "none",
+            }
+
+    def _estimate_candidate_scores(self, question: str) -> Dict[str, float]:
+        """
+        Build a lightweight intent→score map from keyword density.
+        Used as candidate_scores input to AskBackPolicy when the intent
+        detector doesn't expose a full probability distribution.
+        """
+        q_lower = question.lower()
+        kw_maps = {
+            "calculation":    ["calculate", "compute", "how much duty", "how much tax",
+                               "import duty", "import tax", "duty rate", "tax rate",
+                               "cif value", "declared value", "duty exemption", "preferential rate"],
+            "hs_code_lookup": ["hs code", "ahtn", "tariff code", "harmonized code",
+                               "classify", "classification", "code for", "tariff number"],
+            "trade_query":    ["trade data", "trade statistics", "trade volume", "trade flow",
+                               "bilateral trade", "export data", "import data",
+                               "export statistics", "import statistics"],
+            "policy_query":   ["procedure", "requirement", "how to", "how do i", "steps",
+                               "what do i need", "documents needed", "regulations for", "compliance"],
+            "definition":     ["what is", "define", "meaning of", "explain", "describe", "what does"],
+        }
+        scores: Dict[str, float] = {}
+        for intent, keywords in kw_maps.items():
+            hits = sum(1 for kw in keywords if kw in q_lower)
+            scores[intent] = min(0.85, 0.40 + hits * 0.08)
+        return scores
+
+
+    def detect_currency(self, question: str, confidence_threshold: float = 0.6) -> Tuple[Optional[str], float]:
+        """
+        Detect currency with strict priority:
+        1. Regex/keyword detection
+        2. LLM detection via currency_detector
+        3. Country mention -> currency mapping
+        4. Default KHR
+
+        Args:
+            question: User question (string)
+            confidence_threshold: Minimum confidence score (0.0-1.0)
+
+        Returns:
+            (currency_code, confidence)
+        """
+
+        # 1) Pattern-based detection (existing)
+        pattern_currency, pattern_confidence = self._pattern_based_currency_detection(question, confidence_threshold)
+        if pattern_currency != "KHR" or pattern_confidence > 0.0:
+            logger.info(f"[Currency Detection] Pattern matched: {pattern_currency} (confidence: {pattern_confidence:.3f})")
+            return pattern_currency, pattern_confidence
+
+        # 2) LLM-based detection through provider-neutral llm_service
+        if self.llm_service and hasattr(self.llm_service, "detect_currency"):
+            try:
+                detected_currency, confidence, reasoning = self.llm_service.detect_currency(question)
+                if detected_currency and confidence >= confidence_threshold:
+                    logger.info(
+                        f"[Currency Detection] LLM service detected: {detected_currency} "
+                        f"(confidence: {confidence:.3f})"
+                    )
+                    return detected_currency, confidence
+                else:
+                    logger.debug(
+                        f"[Currency Detection] LLM service low-confidence or no result: "
+                        f"{detected_currency} ({confidence:.3f})"
+                    )
+            except Exception as e:
+                logger.warning(f"[Currency Detection] LLM service currency detection failed: {e}")
+
+        # 2B) Try dedicated currency detector (preferred over intent detector)
+        if self.currency_detector and self.currency_detector.is_available():
+            try:
+                detected_currency, confidence, reasoning = self.currency_detector.detect_currency(question)
+                if detected_currency and confidence >= confidence_threshold:
+                    logger.info(
+                        f"[Currency Detection] Currency detector detected: {detected_currency} "
+                        f"(confidence: {confidence:.3f})"
+                    )
+                    return detected_currency, confidence
+            except Exception as e:
+                logger.warning(f"[Currency Detection] Currency detector failed: {e}")
+
+        # 3) If LLM couldn't decide, check for a country mention and map to currency
+        country_currency, country_conf = self._detect_country_from_text(question)
+        if country_currency:
+            logger.info(f"[Currency Detection] Country-based fallback: {country_currency} (confidence: {country_conf:.2f})")
+            return country_currency, country_conf
+
+        # 4) Nothing matched — default to KHR
+        logger.debug("[Currency Detection] No currency detected, defaulting to KHR")
+        return "KHR", 0.0
+    
+    def _pattern_based_currency_detection(self, question: str, confidence_threshold: float = 0.6) -> Tuple[Optional[str], float]:
+        """
+        Fallback pattern-based currency detection (using regex/keywords).
+        
+        Args:
+            question: User question
+            confidence_threshold: Minimum confidence score
+            
+        Returns:
+            (currency_code, confidence) - defaults to 'KHR' if not found
+        """
+        import re
+        
+        q_lower = (question or "").replace("Â¥", "¥").replace("ï¿¥", "¥").lower()
+        logger.debug(f"[Currency Detection] Pattern-based checking for question: '{q_lower}'") 
+        
+        # Define currency patterns with confidence scores
+        # Vehicka-branch improved patterns use negative lookbehind/lookahead for better matching
+        patterns = {
+            "USD": [r'\$\s*\d', r'\d\s*\$', r'(?<![a-z])usd\b', r'(?<![a-z])dollar', r'(?<![a-z])greenback'],
+            "KHR": [r'៛', r'(?<![a-z])khm\b', r'(?<![a-z])riel\b', r'(?<![a-z])khmerian\b'],
+            "EUR": [r'€\s*\d', r'\d\s*€', r'(?<![a-z])eur\b', r'(?<![a-z])euro\b'],
+            "THB": [r'(?<![a-z])thb\b', r'(?<![a-z])baht\b'],
+            "CNY": [r'¥\s*\d', r'\d\s*¥', r'(?<![a-z])cny\b', r'(?<![a-z])yuan\b', r'(?<![a-z])rmb\b'],
+            "VND": [r'(?<![a-z])vnd\b', r'(?<![a-z])dong\b'],
+            "GBP": [r'£\s*\d', r'\d\s*£', r'(?<![a-z])gbp\b', r'(?<![a-z])pound\b'],
+            "JPY": [r'¥\s*\d', r'\d\s*¥', r'(?<![a-z])jpy\b', r'(?<![a-z])yen\b'],
+            "SGD": [r'(?<![a-z])sgd\b'],
+            "MYR": [r'(?<![a-z])myr\b', r'(?<![a-z])ringgit\b'],
+            "IDR": [r'(?<![a-z])idr\b', r'(?<![a-z])rupiah\b'],
+            "AUD": [r'(?<![a-z])aud\b'],
+            "CAD": [r'(?<![a-z])cad\b'],
+            "KRW": [r'₩\s*\d', r'\d\s*₩', r'(?<![a-z])krw\b', r'(?<![a-z])won\b'],
+            "HKD": [r'(?<![a-z])hkd\b'],
+            "TWD": [r'(?<![a-z])twd\b'],
+            "NZD": [r'(?<![a-z])nzd\b'],
+            "CHF": [r'(?<![a-z])chf\b', r'(?<![a-z])franc\b'],
+            "INR": [r'(?<![a-z])inr\b', r'(?<![a-z])rupee\b'],
+            "RUB": [r'₽', r'(?<![a-z])rub\b', r'(?<![a-z])ruble\b'],
+            "AED": [r'(?<![a-z])aed\b', r'(?<![a-z])dirham\b'],
+            "BRL": [r'(?<![a-z])brl\b', r'(?<![a-z])real\b'],
+        }
+        
+        # Check each currency pattern
+        for currency, pattern_list in patterns.items():
+            for pattern in pattern_list:
+                logger.debug(f"[Currency Detection] Testing pattern '{pattern}' for currency '{currency}'")
+                if re.search(pattern, q_lower, re.IGNORECASE):
+                    confidence = 0.75 if pattern_list.index(pattern) == 0 else 0.65  # Higher confidence for more specific patterns
+                    logger.debug(f"[Currency Detection] Pattern matched: {currency} (confidence: {confidence:.2f})")
+                    return currency, confidence
+        
+        # If no pattern matched, return default KHR
+        logger.debug(f"[Currency Detection] No currency pattern matched, defaulting to KHR")
+        return "KHR", 0.0
+    
+    def _detect_country_from_text(self, question: str) -> Tuple[Optional[str], float]:
+        """
+        Simple country -> currency mapping by keyword match.
+        Returns (currency_code, confidence) or (None, 0.0).
+        """
+        import re
+
+        q_lower = question.lower()
+
+        COUNTRY_TO_CURRENCY = {
+            "cambodia": "KHR",
+            "khmer": "KHR",
+            "cambodian": "KHR",
+            "laos": "LAK",
+            "vietnam": "VND",
+            "vietnamese": "VND",
+            "thailand": "THB",
+            "thai": "THB",
+            "china": "CNY",
+            "chinese": "CNY",
+            "united states": "USD",
+            "united states of america": "USD",
+            "usa": "USD",
+            "america": "USD",
+            "united kingdom": "GBP",
+            "uk": "GBP",
+            "great britain": "GBP",
+            "france": "EUR",
+            "germany": "EUR",
+            "europe": "EUR",
+        }
+
+        for country_keyword, curr in COUNTRY_TO_CURRENCY.items():
+            if re.search(r"\b" + re.escape(country_keyword) + r"\b", q_lower):
+                # Conservative confidence for country-derived inference
+                return curr, 0.65
+
+        return None, 0.0
+    
+    def cleanup_query(self, user_input: str) -> str:
+        """
+        Remove filler phrases from user query.
+        Ported from gemini_orchestrator_e2e.py test harness.
+        
+        Examples:
+        - "What is the HS code for smartphones?" → "smartphones"
+        - "Please tell me the HS code for textiles" → "textiles"
+        
+        Args:
+            user_input: Original user query
+            
+        Returns:
+            Cleaned query with filler patterns removed
+        """
+        import re
+        
+        filler_patterns = [
+            r"^what is the hs code for\s*",
+            r"^what hs code do i use for\s*",
+            r"^what hs code\s+(?:is|applies to|should i use)\s+for\s*",
+            r"^please tell me the hs code for\s*",
+            r"^i need the hs code for\s*",
+            r"^hs code for\s*",
+            r"\s*hs code\s*$",
+        ]
+        
+        result = user_input.strip()
+        for pattern in filler_patterns:
+            result = re.sub(pattern, "", result, flags=re.IGNORECASE).strip()
+        
+        return result
+    
+    def detect_simple_product_category(self, query: str) -> str:
+        """
+        Quickly categorize product into vehicle, food, textile, or other.
+        Ported from gemini_orchestrator_e2e.py test harness.
+        
+        Used to determine what critical discriminators to validate.
+        
+        Args:
+            query: Cleaned query text
+            
+        Returns:
+            Category: "vehicle" | "food" | "textile" | "other"
+        """
+        q = query.lower()
+        
+        if any(x in q for x in ["car", "truck", "van", "bus", "hearse", "vehicle", "motorcycle", "auto"]):
+            return "vehicle"
+        
+        if any(x in q for x in ["prepared", "preserved", "frozen", "fresh", "salted", "fish", "tuna", "salmon", "meat"]):
+            return "food"
+        
+        if any(x in q for x in ["womens", "mens", "girls", "boys", "trousers", "dress", "textile", "fabric", "clothing"]):
+            return "textile"
+        
+        return "other"
+    
+    def has_critical_discriminators(self, query: str, product_category: str) -> Tuple[bool, Optional[str]]:
+        """
+        Validate if query has critical discriminating information for HS classification.
+        Ported from gemini_orchestrator_e2e.py test harness.
+        
+        For vehicles: needs engine type + engine size
+        For food: needs preservation method (fresh/frozen/preserved)
+        For textile: needs construction + fiber type
+        
+        Args:
+            query: Cleaned query
+            product_category: Category from detect_simple_product_category()
+            
+        Returns:
+            (has_required_info, missing_field_name)
+        """
+        q = query.lower()
+        
+        if product_category == "vehicle":
+            has_engine_type = any(x in q for x in ["petrol", "diesel", "electric", "hybrid", "gasoline"])
+            has_engine_size = any(x in q for x in ["engine", "cc", "kw", "power", "gvwr", "ton", "displacement"])
+            
+            if not has_engine_type:
+                return False, "vehicle_engine"
+            if not has_engine_size:
+                return False, "vehicle_size"
+        
+        if product_category == "food" and ("prepared" in q or "preserved" in q):
+            has_preservation = any(x in q for x in ["fresh", "frozen", "airtight", "salted", "dried", "smoked", "cooked"])
+            if not has_preservation:
+                return False, "food_preservation"
+        
+        if product_category == "textile":
+            has_construction = any(x in q for x in ["knitted", "woven", "crocheted", "plain"])
+            has_fiber = any(x in q for x in ["wool", "synthetic", "cotton", "artificial", "animal hair", "polyester", "nylon"])
+            
+            if not has_construction:
+                return False, "textile_construction"
+            if not has_fiber:
+                return False, "textile_fiber"
+        
+        return True, None
+    
+    def extract_hs_code_from_doc(self, doc: Dict[str, Any]) -> Optional[str]:
+        """
+        Extract HS code from a retrieval document.
+        Handles various metadata field names.
+        
+        Args:
+            doc: Document from retrieval service
+            
+        Returns:
+            HS code string or None
+        """
+        metadata = doc.get("metadata") if isinstance(doc.get("metadata"), dict) else {}
+        return (
+            doc.get("hs_code") 
+            or metadata.get("hs_code") 
+            or metadata.get("hscode") 
+            or metadata.get("tariff_code")
+        )
+    
+    def detect_hs_semantic_conflict(
+        self, 
+        query: str, 
+        hs_code: Optional[str],
+        description: str
+    ) -> Optional[str]:
+        """
+        Detect semantic conflicts between query and HS classification.
+        Ported from gemini_orchestrator_e2e.py test harness.
+        
+        Checks for:
+        - Gendered textile mismatch (query says "women's" but candidate is "men's")
+        - Chemical name mismatch
+        
+        Args:
+            query: Original user query
+            hs_code: Selected HS code
+            description: HS code description from retrieval
+            
+        Returns:
+            Conflict message or None if no conflict
+        """
+        if not hs_code or not description:
+            return None
+        
+        desc = str(description).lower()
+        q = (query or "").lower()
+        
+        # Gendered textile mismatch guardrail
+        if any(t in q for t in ["women", "girls", "female"]) and any(t in desc for t in ["men", "boys", "male"]):
+            return "Selected candidate conflicts with gender qualifier in query (looking for women's but candidate is men's)."
+        
+        # Chemical-name mismatch guardrail
+        chem_tokens = ["acetic", "nitric", "sulphuric", "sulfuric", "hydrochloric", "phosphoric", "sodium", "calcium"]
+        q_chems = [t for t in chem_tokens if t in q]
+        d_chems = [t for t in chem_tokens if t in desc]
+        if q_chems and d_chems and not any(t in desc for t in q_chems):
+            return f"Selected candidate conflicts with requested chemical name in query (looking for {q_chems[0]} but candidate mentions {d_chems[0]})."
+        
+        return None
+    
+    def validate_hs_response(
+        self, 
+        query: str, 
+        retrieval_response: Dict[str, Any]
+    ) -> Tuple[str, Optional[str], List[str], str]:
+        """
+        Validate HS lookup response from retrieval service.
+        Ported from gemini_orchestrator_e2e.py test harness.
+        
+        Returns status: "success" | "not_found" | "ambiguous" | "inconsistent"
+        
+        Args:
+            query: User query
+            retrieval_response: Response from /v1/hs-code-lookup
+            
+        Returns:
+            (status, primary_code, candidates_list, validation_message)
+        """
+        docs = retrieval_response.get("documents", []) if isinstance(retrieval_response, dict) else []
+        
+        if not docs:
+            return "not_found", None, [], "No HS candidates returned from retrieval service."
+        
+        # Extract primary code from first document
+        primary = self.extract_hs_code_from_doc(docs[0])
+        candidates = [self.extract_hs_code_from_doc(d) for d in docs[:5]]
+        candidates = [c for c in candidates if c]
+        
+        if not primary:
+            return "not_found", None, candidates, "Top document does not include a parsable HS code."
+        
+        # Check for ambiguity: too many chapter prefixes
+        chapter_set = {c[:2] for c in candidates if len(c) >= 2}
+        if len(chapter_set) > 2:
+            return "ambiguous", primary, candidates, f"Top candidates span multiple chapters: {sorted(chapter_set)}"
+        
+        # Check for inconsistency: vehicle query but non-87xx code
+        q = query.lower()
+        if any(x in q for x in ["car", "truck", "bus", "van", "vehicle", "motorcycle"]) and not primary.startswith("87"):
+            return "inconsistent", primary, candidates, f"Expected vehicle chapter 87xx, but got {primary}."
+        
+        return "success", primary, candidates, "Validated retrieval result."
+    
+    def _keyword_based_intent_detection(self, question: str) -> WorkflowIntent:
+        """
+        Fallback keyword-based intent detection with enhanced safety gates.
+        Ported from gemini_orchestrator_e2e.py test harness.
+        
+        Priority order:
+        1. Explicit HS code or numeric code patterns
+        2. Fee/service questions (route to POLICY_QUERY, not HS)
+        3. Explicit HS markers
+        4. Policy/compliance keywords
+        5. Definition/explanation keywords
+        6. Calculation keywords
+        7. Trade keywords
+        8. Product phrase heuristic
+        9. Fallback to policy engine
+        
+        Args:
+            question: User question
+            
+        Returns:
+            Detected intent
+        """
+        q_lower = question.lower()
+
+        # PRIORITY 0: Combined signal — product + calculation/exemption/FTA/export
+        # If user mentions a product AND any tax/cost/exemption/FTA/export keyword,
+        # force calculation intent before the priority ladder kicks in.
+        combined_calc_markers = [
+            "calculate", "compute", "how much", "what.*cost", "what.*duty",
+            "what.*tax", "tax for", "duty for", "dues", "taxes", "import tax",
+            "how much.*import", "how much.*duty", "how much.*tax",
+            "import.*cost", "import.*tax", "import.*duty", "tariff rate",
+            "export", "exporting", "export tax",
+            "qip", "qualified investment",
+            "sez", "special economic zone",
+            "diplomatic", "embassy", "consulate",
+            "ngo", "unicef", "humanitarian", "relief", "donation",
+            "university", "school", "educational", "education",
+            "hospital", "medical", "health", "donated",
+            "passenger", "luggage", "personal effects",
+            "fta", "acfta", "afta", "atiga", "rcep", "preferential",
+            "dq", "deal", "quote agreement",
+            "cif", "declared value", "dv ",
+        ]
+        product_markers = [
+            "laptop", "phone", "computer", "electronics", "car", "vehicle",
+            "truck", "motorcycle", "bus", "rubber", "rice", "grain", "sugar",
+            "oil", "fish", "meat", "beef", "pork", "chicken", "poultry",
+            "textile", "fabric", "cloth", "cotton", "silk", "wool", "plastic",
+            "metal", "chemical", "machinery", "equipment", "pipe", "tube",
+            "cable", "medicine", "pharmaceutical", "food", "fruit", "vegetable",
+            "cigarette", "tobacco", "alcohol", "whisky", "spirits", "wine",
+            "beer", "container", "bag", "footwear", "shoe", "garment",
+            "clothing", "apparel", "fertilizer", "petroleum", "gasoline",
+            "diesel", "fuel", "medical", "supplies", "material", "microscope",
+            "machinery", "electronics", "device", "machine",
+        ]
+        has_calc_marker = any(kw in q_lower for kw in combined_calc_markers)
+        has_product = any(p in q_lower for p in product_markers)
+        has_hs_code = bool(re.search(r"(?<!\d)\d{4}(?:[\.\-/\s]?\d{2}){0,2}(?!\d)", q_lower))
+        has_cif_value = bool(re.search(r'\d{1,3}(?:,\d{3})*(?:\.\d+)?', q_lower)) and any(k in q_lower for k in ["cif", "value", "worth", "cost", "price"])
+        if has_calc_marker and (has_product or has_hs_code or has_cif_value):
+            logger.debug(f"Intent detection: CALCULATION (combined product/HS/CIF + calc/exemption/FTA/export signal)")
+            return WorkflowIntent.CALCULATION
+
+        # PRIORITY 1: Explicit HS code pattern (e.g., "0102.29.11")
+        if re.search(r"(?<!\d)\d{4}(?:[\.\-/\s]?\d{2}){0,2}(?!\d)", q_lower):
+            logger.debug(f"Intent detection: HS_CODE_LOOKUP (numeric code pattern)")
+            return WorkflowIntent.HS_CODE_LOOKUP
+
+        # PRIORITY 2: Non-HS service/fee markers (SAFETY GATE)
+        # These should never be routed to HS endpoint, but calculation intent overrides this.
+        non_hs_service_markers = [
+            "scanning fee", "scan fee", "service fee", "handling fee",
+            "storage fee", "inspection fee", "port fee", "terminal fee",
+            "fee", "charge", "charges", "cost", "price", "how much"
+        ]
+        if any(m in q_lower for m in non_hs_service_markers):
+            # Only force POLICY_QUERY if there is no explicit calculation intent
+            if not has_calc_marker:
+                logger.debug(f"Intent detection: POLICY_QUERY (service/fee question, safety gate)")
+                return WorkflowIntent.POLICY_QUERY
+            logger.debug(f"Intent detection: CALCULATION (fee marker overridden by calc signal)")
+            return WorkflowIntent.CALCULATION
+
+        # PRIORITY 3: Explicit HS classification markers
+        hs_markers = [
+            "hs code", "hs-code", "hscode",
+            "ahtn", "ahtn code",
+            "tariff code", "harmonized code", "harmonized system",
+            "tariff number", "hs number",
+            "classify", "classification", "code for",
+        ]
+        if any(m in q_lower for m in hs_markers):
+            logger.debug(f"Intent detection: HS_CODE_LOOKUP (explicit HS marker)")
+            return WorkflowIntent.HS_CODE_LOOKUP
+
+        # PRIORITY 4: Policy/compliance keywords
+        # PRIORITY 4B: Policy composite phrases — must be checked BEFORE bare "what is" keywords
+        # so "what is the procedure" routes to POLICY_QUERY, not DEFINITION.
+        policy_composite_phrases = [
+            "what is the procedure", "what are the procedures",
+            "what is the process", "what are the steps",
+            "what is the requirement", "what are the requirements",
+            "what do i need to", "how do i", "how to import",
+            "how to export", "how to declare", "how to register",
+            "how to apply", "how to obtain", "what documents",
+            "what permits", "procedure for", "requirements for",
+            "process for",
+        ]
+        if any(phrase in q_lower for phrase in policy_composite_phrases):
+            logger.debug(f"Intent detection: POLICY_QUERY (policy composite phrase)")
+            return WorkflowIntent.POLICY_QUERY
+
+        policy_keywords = [
+            "requirements", "requirement", "procedure", "regulation", "policy",
+            "compliance", "permit", "rules of origin"
+        ]
+        if any(kw in q_lower for kw in policy_keywords):
+            logger.debug(f"Intent detection: POLICY_QUERY (policy keyword)")
+            return WorkflowIntent.POLICY_QUERY
+
+        # PRIORITY 5: Definition keywords — only reached when no policy signal matched above
+        definition_keywords = [
+            "define", "definition of", "what is", "meaning of", "what does",
+        ]
+        if any(kw in q_lower for kw in definition_keywords):
+            # Override definition if calc signal is present (e.g., "what is the duty for...")
+            if has_calc_marker:
+                logger.debug(f"Intent detection: CALCULATION (definition marker overridden by calc signal)")
+                return WorkflowIntent.CALCULATION
+            logger.debug(f"Intent detection: DEFINITION (definition keyword)")
+            return WorkflowIntent.DEFINITION
+
+        # PRIORITY 6: Calculation keywords (SECONDARY to HS)
+        calculation_keywords = [
+            # Core verbs
+            "calculate", "compute",
+            # Duty / tax phrases (specific to avoid false-positives)
+            "how much duty", "how much tax", "how much vat",
+            "import duty", "import tax", "export duty", "export tax",
+            "customs duty", "customs tax", "tariff rate", "duty rate", "tax rate",
+            "vat rate", "duty for", "tax for", "dues",
+            # Value / shipment phrases
+            "cif value", "fob value", "declared value", "consignment value",
+            "shipment value", "cif:", "fob:",
+            # Exemptions / preferential
+            "duty exemption", "tax exemption", "duty-free", "tax-free",
+            "preferential rate", "fta rate", "atiga rate", "acfta rate", "rcep rate",
+            # Special entity exemptions
+            "qip", "qualified investment",
+            "sez", "special economic zone",
+            "diplomatic", "embassy",
+            "ngo", "unicef", "humanitarian", "relief",
+            "university", "school", "educational",
+            "hospital", "medical", "donated",
+            "passenger", "luggage",
+            # FTA keywords (already appear in combined_calc_markers)
+            "fta", "acfta", "afta", "atiga", "rcep", "preferential",
+        ]
+        if any(kw in q_lower for kw in calculation_keywords):
+            logger.debug(f"Intent detection: CALCULATION (calculation keyword)")
+            return WorkflowIntent.CALCULATION
+
+        # PRIORITY 7: Trade query keywords
+        # Use explicit data/statistics phrases only — avoids false-positives on
+        # "I am importing" or "export this product" which belong to CALCULATION/HS.
+        trade_keywords = [
+            "trade data", "trade statistics", "trade statistic",
+            "trade volume", "trade flow", "trade flows", "trade trend",
+            "bilateral trade", "trade between",
+            "export data", "export statistics", "export statistic",
+            "export volume", "top export",
+            "import data", "import statistics", "import statistic",
+            "import volume", "import trend",
+            "shipping data", "cargo data", "freight data",
+        ]
+        if any(kw in q_lower for kw in trade_keywords):
+            logger.debug(f"Intent detection: TRADE_QUERY (trade keyword)")
+            return WorkflowIntent.TRADE_QUERY
+        
+        # PRIORITY 8: Product phrase heuristic (short noun phrase → HS lookup)
+        # Import HS classification helper
+        from .hs_classifier import detect_simple_product_category
+        question_starters = ["what", "how", "why", "when", "where", "who", "tell me", "explain"]
+        looks_like_phrase = bool(question) and len(question.split()) <= 12 and not any(q_lower.startswith(s) for s in question_starters)
+        
+        product_category = detect_simple_product_category(question)
+        if (looks_like_phrase and product_category != "other") or (len(question.split()) <= 3 and product_category != "other"):
+            logger.debug(f"Intent detection: HS_CODE_LOOKUP (product phrase heuristic - category: {product_category})")
+            return WorkflowIntent.HS_CODE_LOOKUP
+        
+        # PRIORITY 9: Use policy engine if available
+        if self.policy_engine:
+            try:
+                intent_str = self.policy_engine.detect_intent_policy_based(question)
+                logger.debug(f"Intent detection: {intent_str} (policy engine)")
+                return WorkflowIntent(intent_str)
+            except Exception as e:
+                logger.warning(f"Policy engine intent detection failed: {e}")
+        
+        logger.debug(f"Intent detection: UNCLASSIFIED (fallback)")
+        return WorkflowIntent.UNCLASSIFIED
+    
+    def validate_calculation_inputs(self, question: str) -> Tuple[bool, Optional[List[str]]]:
+        """
+        Validate if calculation question has required inputs.
+        Returns (is_valid, missing_fields)
+        """
+        q_lower = question.lower()
+        
+        # Check for required components - merged patterns from both branches
+        required_patterns = {
+            "has_value": r'\d+\s*(usd|khr|eur|thb|vnd|currency)?',
+            # Accept explicit HS tokens, HS code numeric patterns, import/export keywords, and product categories
+            "has_product": r'(importing|exporting|goods|product|from|electronics|textile|machinery|hs\s*code|hs|cif|\b\d{4}(?:\.\d{2}){1,2}\b)',
+        }
+        
+        missing = []
+        for component, pattern in required_patterns.items():
+            if not __import__('re').search(pattern, q_lower):
+                missing.append(component)
+        
+        if missing:
+            return False, missing
+        
+        return True, None
+    
+    def get_workflow_sequence(self, intent: WorkflowIntent) -> List[str]:
+        """
+        Get the service sequence for the detected intent.
+        
+        Args:
+            intent: Detected workflow intent
+            
+        Returns:
+            List of service calls to execute in order
+        """
+        sequences = {
+            WorkflowIntent.CALCULATION: ["calculator"],
+            WorkflowIntent.TRADE_QUERY: ["trade_data"],
+            WorkflowIntent.DEFINITION: ["retrieval"],
+            WorkflowIntent.POLICY_QUERY: ["retrieval"],
+            WorkflowIntent.UNCLASSIFIED: ["retrieval"],
+        }
+        
+        return sequences.get(intent, ["retrieval"])
+    
+    def should_fallback(self, context: WorkflowContext) -> bool:
+        """
+        Determine if workflow should fallback to retrieval.
+        
+        Returns:
+            True if fallback is needed
+        """
+        # Fallback if primary service failed
+        if context.status == WorkflowStatus.FAILED:
+            return True
+        
+        # Fallback if result is empty/insufficient
+        if context.intent == WorkflowIntent.CALCULATION:
+            if context.calculation_result and not context.calculation_result.get("result"):
+                return True
+        
+        return False
+
+
+class RetryPolicy:
+    """
+    Retry policy for service calls.
+    Implements exponential backoff and circuit breaker patterns.
+    """
+    
+    def __init__(
+        self,
+        max_retries: int = 3,
+        initial_backoff_ms: int = 100,
+        max_backoff_ms: int = 5000
+    ):
+        """
+        Initialize retry policy.
+        
+        Args:
+            max_retries: Maximum number of retries
+            initial_backoff_ms: Initial backoff in milliseconds
+            max_backoff_ms: Maximum backoff in milliseconds
+        """
+        self.max_retries = max_retries
+        self.initial_backoff_ms = initial_backoff_ms
+        self.max_backoff_ms = max_backoff_ms
+    
+    def get_backoff_ms(self, attempt: int) -> int:
+        """
+        Calculate backoff duration for attempt number.
+        Uses exponential backoff with jitter.
+        
+        Args:
+            attempt: Attempt number (0-indexed)
+            
+        Returns:
+            Backoff duration in milliseconds
+        """
+        import random
+        
+        backoff = min(
+            self.initial_backoff_ms * (2 ** attempt),
+            self.max_backoff_ms
+        )
+        # Add jitter to prevent thundering herd
+        jitter = random.uniform(0, backoff * 0.1)
+        return int(backoff + jitter)
+    
+    def should_retry(self, attempt: int, exception: Exception) -> bool:
+        """
+        Determine if request should be retried.
+        
+        Args:
+            attempt: Current attempt number
+            exception: Exception that occurred
+            
+        Returns:
+            True if should retry
+        """
+        if attempt >= self.max_retries:
+            return False
+        
+        # Retry on connection errors, timeouts
+        retriable_errors = (
+            ConnectionError,
+            TimeoutError,
+            OSError,
+        )
+        
+        return isinstance(exception, retriable_errors)
+
+
+class FallbackPolicy:
+    """
+    Fallback policy for service calls.
+    Defines fallback behavior when primary service fails.
+    """
+    
+    def __init__(self):
+        """Initialize fallback policy."""
+        self.fallback_map = {
+            WorkflowIntent.CALCULATION: WorkflowIntent.RETRIEVAL,
+            WorkflowIntent.TRADE_QUERY: WorkflowIntent.RETRIEVAL,
+            WorkflowIntent.POLICY_QUERY: WorkflowIntent.DEFINITION,
+        }
+    
+    def get_fallback_intent(self, intent: WorkflowIntent) -> Optional[WorkflowIntent]:
+        """
+        Get fallback intent for the given intent.
+        
+        Args:
+            intent: Original intent
+            
+        Returns:
+            Fallback intent or None if no fallback available
+        """
+        return self.fallback_map.get(intent)

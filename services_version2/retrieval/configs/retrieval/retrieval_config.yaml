@@ -1,0 +1,617 @@
+hs_lookup:
+  strategy: "hybrid_orchestrated"
+  description: "Comprehensive HS code lookup with query normalization, hybrid retrieval, GIR reasoning, and confidence scoring"
+
+  # Defaults matching hs_code_lookup.schema.json
+  defaults:
+    top_k: 5
+    similarity_threshold: 0.5
+    language: "en"
+    return_tax_rates: true
+    return_examples: false
+
+  # Language Configuration
+  language_handling:
+    enabled: true
+    supported_languages: ["en", "km", "bilingual"]
+    default_language: "en"
+
+    translation_fallback: true
+    khmer_normalization: true
+
+    output_language_mapping:
+      en: "english"
+      km: "khmer"
+      bilingual: "english_and_khmer"
+
+  # Query Normalization Layer
+  query_normalization:
+    enabled: true
+    extract_attributes:
+      - "material"
+      - "material_category"
+      - "usage"
+      - "primary_function"
+      - "form"
+      - "form_detailed"
+      - "origin_country"
+      - "composition_type"
+      - "principal_material"
+      - "manufacturing_process"
+      - "finish_type"
+
+    normalize_synonyms: true
+    synonyms_file: "configs/retrieval/material_synonyms.json"
+    gir_materials_file: "configs/retrieval/gir_config.json"
+
+    confidence_thresholds:
+      material_detection: 0.70
+      form_detection: 0.75
+      usage_detection: 0.70
+
+  # Filter Configuration (maps to schema.filters)
+  filter_handling:
+    enabled: true
+
+    chapter_filtering:
+      enabled: true
+      pattern: "^\\d{2}$"
+      valid_range: [1, 99]
+
+    chapter_range_filtering:
+      enabled: true
+      description: "Filter by chapter range (e.g., start=01, end=05)"
+
+    heading_filtering:
+      enabled: true
+      pattern: "^\\d{4}$"
+      description: "4-digit HS heading filter"
+
+    subheading_prefix_filtering:
+      enabled: true
+      pattern: "^\\d{4}\\.\\d{2}$"
+      description: "6-digit subheading prefix filter"
+
+    effective_date_filtering:
+      enabled: true
+      pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+      description: "Filter codes valid on specific date"
+
+    product_category_filtering:
+      enabled: true
+      valid_categories:
+        [
+          "live_animals",
+          "animal_products",
+          "vegetables",
+          "food_beverages",
+          "mineral_products",
+          "chemicals",
+          "plastics_rubber",
+          "wood_products",
+          "textiles",
+          "footwear",
+          "stone_glass_ceramics",
+          "metals",
+          "machinery_electrical",
+          "vehicles",
+          "optical_medical",
+          "arms_ammunition",
+          "miscellaneous",
+          "art_antiques",
+        ]
+
+    exclude_obsolete:
+      enabled: true
+      default: true
+      description: "Exclude obsolete or superseded HS codes"
+
+  # Hybrid Retrieval Configuration
+  hybrid_retrieval:
+    vector_weight: 0.5
+    keyword_weight: 0.3
+    hierarchy_weight: 0.2
+
+    vector_search:
+      enabled: true
+      similarity_threshold: 0.60
+      top_k_default: 20
+      top_k_override: null
+      metric: "cosine"
+
+    keyword_search:
+      enabled: true
+      algorithm: "bm25"
+      threshold: 0.50
+      top_k_default: 20
+      top_k_override: null
+      fields: ["hs_code", "description", "heading_name", "keywords"]
+
+    hierarchy_search:
+      enabled: true
+      search_by_section: true
+      search_by_chapter: true
+      weight: 0.2
+
+    merging:
+      deduplication: true
+      score_combination: "average"
+      respect_user_top_k: true
+
+  # GIR Reasoning Engine Configuration
+  gir_reasoning:
+    enabled: true
+    config_file: "configs/retrieval/gir_config.json"
+
+    gir_rules:
+      rule_1:
+        enabled: true
+        name: "Headings and subheadings"
+        description: "The titles of sections and chapters are for reference purposes only"
+        weight: 0.15
+
+      rule_2:
+        enabled: true
+        name: "Goods qualifiable in two headings"
+        description: "Any reference to an article shall be taken to include that article, whether complete or incomplete"
+        weight: 0.15
+
+      rule_3:
+        enabled: true
+        name: "Mixtures and composite goods"
+        description: "Mixed goods or composite articles are classified by the component which confers essential character"
+        weight: 0.15
+
+      rule_4:
+        enabled: true
+        name: "Goods not elsewhere specified"
+        description: "Goods not classifiable under the preceding rules are classified under the heading appropriate to their essential character"
+        weight: 0.15
+
+      rule_5:
+        enabled: true
+        name: "Packaging and containers"
+        description: "Packing materials and containers are classified the same as their contents if integral to presentation"
+        weight: 0.15
+
+      rule_6:
+        enabled: true
+        name: "Fallback/transposition rule"
+        description: "Goods not classifiable under any preceding rules are classified under the heading to the last numbered group"
+        weight: 0.10
+
+    section_notes:
+      enabled: true
+      enforce_exclusions: true
+      sync_with_gir_config: true
+
+    chapter_notes:
+      enabled: true
+      enforce_material_exclusions: true
+      sync_with_gir_config: true
+
+    principal_component:
+      enabled: true
+      textile_by_weight_threshold: 0.50
+      machinery_by_essential_function: true
+      metal_by_composition_percentage: 0.50
+      use_gir_material_references: true
+      material_references_file: "configs/retrieval/gir_config.json"
+
+  # Confidence Scoring Configuration
+  confidence_scoring:
+    enabled: true
+
+    scoring_signals:
+      semantic_similarity:
+        enabled: true
+        weight: 0.25
+        thresholds:
+          high: 0.85
+          medium: 0.75
+          low: 0.60
+
+      keyword_match:
+        enabled: true
+        weight: 0.20
+        thresholds:
+          high: 0.80
+          medium: 0.65
+          low: 0.50
+
+      attribute_match:
+        enabled: true
+        weight: 0.25
+        thresholds:
+          high: 0.85
+          medium: 0.70
+          low: 0.50
+
+      code_specificity:
+        enabled: true
+        weight: 0.10
+        scoring:
+          eight_digit: 0.95
+          six_digit: 0.70
+          four_digit: 0.50
+
+      gir_reasoning:
+        enabled: true
+        weight: 0.15
+
+      data_validation:
+        enabled: true
+        weight: 0.05
+        check_duty_rates: true
+
+    thresholds:
+      min_confidence_for_direct_use: 0.85
+      min_confidence_for_with_note: 0.70
+      min_confidence_for_clarification: 0.50
+      ambiguity_detection_threshold: 0.75
+
+  # Clarification Logic
+  clarification:
+    enabled: true
+    auto_ask_if_low_confidence: true
+
+    confidence_thresholds:
+      high_priority_clarification: 0.70
+      medium_priority_clarification: 0.50
+
+    max_clarification_rounds: 2
+    max_questions_per_round: 3
+
+    question_types:
+      - "material_confirmation"
+      - "form_specification"
+      - "usage_clarification"
+      - "composition_detection"
+      - "principal_material_identification"
+
+    responses:
+      low_confidence:
+        action: "ask_clarification"
+        message: "I found multiple possible classifications. Could you provide more details?"
+
+      ambiguous:
+        action: "ask_clarification"
+        message: "This product could fit into several categories. Let me ask a few questions."
+
+      high_confidence:
+        action: "confirm_and_proceed"
+        message: "I'm confident this is classified as {code}."
+
+  # Category-Specific Weighting (All 18 from schema)
+  category_weights:
+    live_animals:
+      semantic: 0.25
+      keyword: 0.15
+      attribute: 0.25
+      specificity: 0.10
+      gir: 0.20
+      validation: 0.05
+      chapters: [1, 5]
+      complexity: "medium"
+
+    animal_products:
+      semantic: 0.25
+      keyword: 0.15
+      attribute: 0.25
+      specificity: 0.10
+      gir: 0.15
+      validation: 0.10
+      chapters: [5, 10, 15]
+      complexity: "medium"
+
+    vegetables:
+      semantic: 0.25
+      keyword: 0.15
+      attribute: 0.25
+      specificity: 0.10
+      gir: 0.20
+      validation: 0.05
+      chapters: [2, 6, 7, 14]
+      complexity: "low"
+
+    food_beverages:
+      semantic: 0.20
+      keyword: 0.20
+      attribute: 0.25
+      specificity: 0.10
+      gir: 0.20
+      validation: 0.05
+      chapters: [2, 4, 19, 21, 22]
+      complexity: "high"
+
+    mineral_products:
+      semantic: 0.25
+      keyword: 0.20
+      attribute: 0.20
+      specificity: 0.10
+      gir: 0.15
+      validation: 0.10
+      chapters: [25, 26, 27]
+      complexity: "medium"
+
+    chemicals:
+      semantic: 0.20
+      keyword: 0.25
+      attribute: 0.20
+      specificity: 0.15
+      gir: 0.15
+      validation: 0.05
+      chapters: [28, 29, 30, 38]
+      complexity: "very_high"
+
+    plastics_rubber:
+      semantic: 0.25
+      keyword: 0.20
+      attribute: 0.20
+      specificity: 0.10
+      gir: 0.15
+      validation: 0.10
+      chapters: [39, 40]
+      complexity: "high"
+
+    wood_products:
+      semantic: 0.25
+      keyword: 0.15
+      attribute: 0.25
+      specificity: 0.10
+      gir: 0.15
+      validation: 0.10
+      chapters: [44, 45, 48]
+      complexity: "medium"
+
+    textiles:
+      semantic: 0.30
+      keyword: 0.15
+      attribute: 0.20
+      specificity: 0.10
+      gir: 0.15
+      validation: 0.10
+      chapters: [50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]
+      complexity: "very_high"
+      principal_component: true
+
+    footwear:
+      semantic: 0.25
+      keyword: 0.15
+      attribute: 0.25
+      specificity: 0.10
+      gir: 0.15
+      validation: 0.10
+      chapters: [64, 65]
+      complexity: "medium"
+
+    stone_glass_ceramics:
+      semantic: 0.25
+      keyword: 0.20
+      attribute: 0.20
+      specificity: 0.10
+      gir: 0.15
+      validation: 0.10
+      chapters: [68, 69, 71]
+      complexity: "medium"
+
+    metals:
+      semantic: 0.25
+      keyword: 0.20
+      attribute: 0.30
+      specificity: 0.10
+      gir: 0.10
+      validation: 0.05
+      chapters: [72, 73, 74, 75, 76, 78, 79, 80, 81, 82]
+      complexity: "high"
+      composition_percentage: true
+
+    machinery_electrical:
+      semantic: 0.20
+      keyword: 0.15
+      attribute: 0.30
+      specificity: 0.10
+      gir: 0.20
+      validation: 0.05
+      chapters: [84, 85]
+      complexity: "very_high"
+      essential_function: true
+
+    vehicles:
+      semantic: 0.25
+      keyword: 0.15
+      attribute: 0.25
+      specificity: 0.10
+      gir: 0.15
+      validation: 0.10
+      chapters: [86, 87, 88, 89]
+      complexity: "high"
+
+    optical_medical:
+      semantic: 0.20
+      keyword: 0.20
+      attribute: 0.25
+      specificity: 0.15
+      gir: 0.10
+      validation: 0.10
+      chapters: [90, 91, 92]
+      complexity: "very_high"
+
+    arms_ammunition:
+      semantic: 0.25
+      keyword: 0.15
+      attribute: 0.25
+      specificity: 0.10
+      gir: 0.15
+      validation: 0.10
+      chapters: [93]
+      complexity: "low"
+
+    miscellaneous:
+      semantic: 0.25
+      keyword: 0.15
+      attribute: 0.25
+      specificity: 0.10
+      gir: 0.15
+      validation: 0.10
+      chapters: [94, 95, 96, 97]
+      complexity: "medium"
+
+    art_antiques:
+      semantic: 0.25
+      keyword: 0.15
+      attribute: 0.25
+      specificity: 0.10
+      gir: 0.15
+      validation: 0.10
+      chapters: [97]
+      complexity: "low"
+
+  # Output Configuration (maps to schema response)
+  output:
+    include_reasoning: true
+    include_alternative_codes: true
+    max_alternatives: 3
+
+    # Response fields - all schema-defined fields
+    response_fields:
+      primary_code: true
+      primary_confidence: true
+      primary_description: true
+      is_ambiguous: true
+      requires_clarification: true
+      alternative_codes: true
+      clarification_questions: true
+      confidence_summary: true
+
+    # Optional data based on schema flags
+    optional_data:
+      return_tax_rates:
+        enabled: true
+        data_source: "configs/calculator/calculator_config.yaml"
+        include_rates: true
+        include_duties: true
+        include_taxes: true
+
+      return_examples:
+        enabled: false
+        max_examples: 3
+        example_types: ["standard", "edge_case", "similar"]
+
+      return_related_codes:
+        enabled: true
+        max_related: 5
+        include_section_info: true
+        include_chapter_notes: true
+
+    explanation_detail:
+      brief: false
+      detailed: true
+      step_by_step: false
+      include_rule_chain: true
+      include_scoring_breakdown: true
+
+    citation_format: "include_source"
+    language_output: "respects_language_parameter"
+
+  # Performance & Limits
+  performance:
+    max_candidates_for_gir: 10
+    max_candidates_for_ranking: 5
+    max_search_variants: 8
+    timeout_seconds: 30
+
+  # Logging & Debugging
+  logging:
+    level: "INFO"
+    log_all_steps: false
+    log_step_details:
+      - "normalization"
+      - "filter_application"
+      - "retrieval_results"
+      - "gir_analysis"
+      - "confidence_scoring"
+      - "clarification_logic"
+      - "final_result"
+
+  # Filter Application Pipeline
+  filter_pipeline:
+    order:
+      - "chapter_range_filter"
+      - "product_category_filter"
+      - "effective_date_filter"
+      - "exclude_obsolete_filter"
+      - "heading_subheading_filter"
+
+    chapter_range_filter:
+      enabled: true
+      parameter_name: "chapter_range"
+      description: "Filter by chapter start and end (e.g., start=01, end=05)"
+
+    product_category_filter:
+      enabled: true
+      parameter_name: "product_category"
+      description: "Filter by schema-defined category (18 categories)"
+      categories_source: "category_weights"
+
+    effective_date_filter:
+      enabled: true
+      parameter_name: "effective_date"
+      description: "Return only codes effective on specified date"
+      default_behavior: "use_current_date"
+
+    exclude_obsolete_filter:
+      enabled: true
+      parameter_name: "exclude_obsolete"
+      default: true
+      description: "Exclude obsolete or superseded HS codes"
+
+    heading_subheading_filter:
+      enabled: true
+      parameters:
+        - "heading"
+        - "subheading_prefix"
+      description: "Precise heading/subheading filtering (4-digit or 6-digit)"
+
+  # API Response Schema
+  response_schema:
+    primary_code:
+      type: "string"
+      description: "Primary HS code (8 digits)"
+
+    primary_confidence:
+      type: "float"
+      description: "Confidence score 0-1"
+
+    primary_description:
+      type: "string"
+      description: "HS code description"
+
+    is_ambiguous:
+      type: "boolean"
+      description: "Whether result is ambiguous"
+
+    requires_clarification:
+      type: "boolean"
+      description: "Whether clarification questions needed"
+
+    alternative_codes:
+      type: "array"
+      items:
+        - hs_code: "string"
+        - confidence: "float"
+
+    clarification_questions:
+      type: "array"
+      items: "string"
+
+    confidence_summary:
+      type: "object"
+      description: "Breakdown of confidence scores by component"
+      properties:
+        semantic_score: "float"
+        keyword_score: "float"
+        attribute_score: "float"
+        specificity_score: "float"
+        gir_score: "float"
+        validation_score: "float"

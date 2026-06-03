@@ -1,0 +1,246 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "calculate_import_taxes.schema.json",
+  "title": "calculate_import_taxes",
+  "description": "Calculates Cambodia customs taxes for supported import cases and configured export cases. For documentation and rules, see DOCUMENTATION section below.",
+
+  "documentation": {
+    "purpose": "Input schema for customs duty, tax, and configured export tax calculations",
+    "use_cases": [
+      "Tax estimation query",
+      "Duty rate verification",
+      "Total import cost calculation",
+      "Rubber export tax calculation"
+    ],
+    "applies_to": "Goods imported into Cambodia, plus configured export cases such as rubber",
+    "reference_configs": [
+      "configs/hs_code_lookup.json",
+      "configs/exchange_rates.json",
+      "configs/formula_registry.json",
+      "configs/rounding_rules.json"
+    ]
+  },
+
+  "critical_rules": [
+    {
+      "rule_id": "HS_LOOKUP",
+      "sequence": 1,
+      "description": "Resolve HS code to 8-digit format",
+      "action": "Look up hs_code in hs_code_lookup.json using exact 8-digit code",
+      "error_handling": "If 4-6 digits provided, return list of candidate 8-digit codes with descriptions"
+    },
+    {
+      "rule_id": "RATE_SELECTION",
+      "sequence": 2,
+      "description": "Determine applicable tax rates",
+      "logic": {
+        "if_manual_rates_provided": "Use manual rates directly (bypass lookup)",
+        "else": "Look up hs_code in duty_rates.csv for duty rate, special tax rate, and vat rate"
+      },
+      "note": "FTA preferential rates not yet implemented - provide manual_rates if special agreement applies"
+    },
+    {
+      "rule_id": "CURRENCY_CONVERSION",
+      "sequence": 3,
+      "description": "Convert CIF to KHR if needed",
+      "action": "If currency is not KHR, use exchange_rates.json with effective_date rate"
+    },
+    {
+      "rule_id": "CALCULATION_AND_ROUNDING",
+      "sequence": 4,
+      "description": "Execute calculations with proper rounding",
+      "action": "All intermediate amounts rounded UP to 100 per rounding_rules.json"
+    }
+  ],
+
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["cif_value"],
+
+  "properties": {
+    "cif_value": {
+      "type": "number",
+      "description": "CIF (Cost, Insurance, Freight) value - the customs valuation basis",
+      "minimum": 0,
+      "exclusive_minimum": false,
+      "constraints": {
+        "must_be_positive": true,
+        "units": "In currency specified by 'currency' field"
+      }
+    },
+
+    "declared_value": {
+      "type": "number",
+      "description": "Optional DV override. DV is the fair amount of price used to keep the market in the middle, not too high or too low.",
+      "minimum": 0,
+      "exclusive_minimum": true,
+      "constraints": {
+        "optional": true,
+        "default_behavior": "When omitted, calculator derives DV from customs value",
+        "used_by": ["petroleum_case", "rubber_case", "fta_dv_case", "fta_dv_dq_case"]
+      }
+    },
+
+    "declared_value_basis": {
+      "type": "string",
+      "enum": ["total", "per_ton"],
+      "default": "total",
+      "description": "How declared_value should be interpreted. Use per_ton for petroleum/rubber formulas that calculate DV x Exchange Rate x Net Mass / 1000."
+    },
+
+    "dq_factor": {
+      "type": "number",
+      "description": "Optional user-provided DQ adjustment factor. No backend registry — user must supply the factor directly.",
+      "minimum": 0,
+      "exclusive_minimum": true,
+      "default": 1,
+      "constraints": {
+        "optional": true,
+        "used_when": "dq_applicable is true or dq_factor differs from 1"
+      }
+    },
+
+    "dq_applicable": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether a user-provided DQ adjustment applies."
+    },
+
+    "currency": {
+      "type": "string",
+      "enum": ["USD", "KHR"],
+      "default": "KHR",
+      "description": "Currency of CIF value",
+      "constraints": {
+        "default_behavior": "When omitted, assumes KHR",
+        "conversion_required": "When USD, must use exchange_rates.json"
+      }
+    },
+
+    "hs_code": {
+      "type": "string",
+      "pattern": "^\\d{4,8}$",
+      "description": "HS (Harmonized System) code for goods classification",
+      "constraints": {
+        "ideal_length": 8,
+        "minimum_length": 4,
+        "ambiguity_handling": "4-6 digit codes trigger candidate list instead of calculation"
+      },
+      "validation_rules": [
+        "Must be numeric digits only",
+        "6-digit codes resolve to 8-digit candidates",
+        "Lookup performed in hs_code_lookup.json"
+      ],
+      "fallback": "If omitted or invalid, must provide description for semantic lookup or manual_rates"
+    },
+
+    "description": {
+      "type": "string",
+      "description": "Natural language description of goods for semantic HS code lookup",
+      "lookup_process": "If provided, use hs_code_lookup methodology: search duty_rates.csv for matching product descriptions, return top candidates with HS codes and tax rates. See tools_contracts/json_schema/hs_code_lookup.schema.json for detailed lookup process.",
+      "examples": [
+        "used 2020 Toyota Camry sedan",
+        "frozen beef from Vietnam",
+        "electronics components",
+        "smartphones for cellular networks",
+        "mechanical parts for vehicles"
+      ],
+      "use_when": "HS code unknown, invalid, or ambiguous"
+    },
+
+    "origin_country": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}$",
+      "description": "ISO 3166-1 alpha-2 country code (e.g., 'VN', 'CN', 'TH') - NOT YET USED",
+      "constraints": {
+        "format": "Exactly 2 uppercase letters",
+        "purpose": "Reserved for future FTA preferential rates",
+        "current_status": "Not implemented - provide manual_rates if needed"
+      },
+      "behavior": "Currently ignored in calculations"
+    },
+
+    "certificate_of_origin": {
+      "type": ["string", "null"],
+      "enum": [
+        "Form D",
+        "Form E",
+        "Form AK",
+        "Form AJ",
+        "Form RCEP",
+        "Form AANZ",
+        null
+      ],
+      "default": null,
+      "description": "Certificate of Origin document type - NOT YET IMPLEMENTED",
+      "constraints": {
+        "current_status": "Not used in calculations",
+        "purpose": "Reserved for future FTA preferential rates",
+        "implementation_timeline": "To be added when FTA rates needed"
+      },
+      "certificate_meanings": {
+        "Form D": "ATIGA (ASEAN Trade in Goods Agreement)",
+        "Form E": "ACFTA (ASEAN-China Free Trade Area)",
+        "Form AK": "AKFTA (ASEAN-Korea Free Trade Agreement)",
+        "Form AJ": "AJCEP (ASEAN-Japan Comprehensive Economic Partnership)",
+        "Form RCEP": "RCEP (Regional Comprehensive Economic Partnership)",
+        "Form AANZ": "AANZFTA (ASEAN-Australia-New Zealand FTA)",
+        "null": "No preferential agreement"
+      }
+    },
+
+    "manual_rates": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Override all lookup-based rates when user explicitly specifies rates",
+      "constraints": {
+        "use_only_when": "User provides explicit rate percentages",
+        "overrides": "HS code lookup and FTA rules"
+      },
+      "properties": {
+        "customs_duty": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Customs duty as percentage",
+          "constraints": {
+            "type": "percentage",
+            "range": [0, 100],
+            "applied_to": "CIF value"
+          }
+        },
+        "special_tax": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Special tax as percentage (for alcohol, tobacco, vehicles, luxury goods)",
+          "constraints": {
+            "type": "percentage",
+            "range": [0, 100],
+            "applied_to": "CIF value"
+          }
+        },
+        "vat": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Value Added Tax (VAT) as percentage",
+          "constraints": {
+            "type": "percentage",
+            "range": [0, 100],
+            "standard_rate": 10,
+            "applied_to": "CIF + Duty + Special Tax"
+          }
+        }
+      }
+    }
+  },
+
+  "input_resolution_logic": {
+    "when_hs_code_AND_description_both_omitted": "REJECT - require at least one",
+    "when_hs_code_not_found_in_duty_rates": "Return list of close matches or request manual_rates",
+    "when_manual_rates_provided": "Ignore lookup, use provided rates directly",
+    "when_currency_USD": "Convert to KHR using exchange_rates.csv",
+    "fta_rates_not_yet_supported": "If user needs FTA rates, provide them via manual_rates"
+  }
+}

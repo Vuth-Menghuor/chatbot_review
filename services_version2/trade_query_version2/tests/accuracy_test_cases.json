@@ -1,0 +1,3482 @@
+[
+  {
+    "id": 1,
+    "question": "What was Cambodia's total export value in 2025?",
+    "intent": "summary",
+    "expected_params": {
+      "intent": "summary",
+      "origin_country": "KH",
+      "trade_direction": "EX",
+      "year": 2025
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "period": "2025",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 2,
+    "question": "What was Cambodia's total import value in 2024?",
+    "intent": "summary",
+    "expected_params": {
+      "intent": "summary",
+      "origin_country": "KH",
+      "trade_direction": "IM",
+      "year": 2024
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "period": "2024",
+      "filter": [
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 3,
+    "question": "Show total imports in 2023",
+    "intent": "summary",
+    "expected_params": {
+      "intent": "summary",
+      "trade_direction": "IM",
+      "year": 2023
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "period": "2023",
+      "filter": [
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 4,
+    "question": "Show total exports for Cambodia in 2025",
+    "intent": "summary",
+    "expected_params": {
+      "intent": "summary",
+      "trade_direction": "EX",
+      "year": 2025
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "period": "2025",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 5,
+    "question": "What was the total export value of Cambodian rice in 2025?",
+    "intent": "summary",
+    "expected_params": {
+      "intent": "summary",
+      "trade_direction": "EX",
+      "hs_code": "1006",
+      "year": 2025
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "period": "2025",
+      "filter": [
+        "FLOW:eq:EX",
+        "HS_HEADING:eq:1006"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 6,
+    "question": "How much milled rice did Cambodia import in 2024?",
+    "intent": "summary",
+    "expected_params": {
+      "intent": "summary",
+      "trade_direction": "IM",
+      "hs_code": "1006",
+      "year": 2024
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "period": "2024",
+      "filter": [
+        "FLOW:eq:IM",
+        "HS_HEADING:eq:1006"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 7,
+    "question": "What was the value of electronics imports from China in 2025?",
+    "intent": "summary",
+    "expected_params": {
+      "intent": "summary",
+      "trade_direction": "IM",
+      "origin_country": "CN",
+      "hs_code": "8517",
+      "year": 2025
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "period": "2025",
+      "filter": [
+        "PARTNER_COUNTRY:eq:CN",
+        "FLOW:eq:IM",
+        "HS_HEADING:eq:8517"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 8,
+    "question": "Show total export of garments (HS 61) to the United States in 2024",
+    "intent": "summary",
+    "expected_params": {
+      "intent": "summary",
+      "trade_direction": "EX",
+      "destination_country": "US",
+      "hs_chapter": "61",
+      "year": 2024
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "period": "2024",
+      "filter": [
+        "PARTNER_COUNTRY:eq:US",
+        "FLOW:eq:EX",
+        "HS_CHAPTER:eq:61"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 9,
+    "question": "Show sea imports from Japan in Q1 2026",
+    "intent": "summary",
+    "expected_params": {
+      "intent": "summary",
+      "trade_direction": "IM",
+      "origin_country": "JP",
+      "quarter": "Q1",
+      "year": 2026,
+      "mode_of_transport": "sea"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "period": "2026-Q1",
+      "frequency": "Q",
+      "filter": [
+        "PARTNER_COUNTRY:eq:JP",
+        "FLOW:eq:IM",
+        "MODE_OF_TRANSPORT:eq:1"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 10,
+    "question": "Show the total value of sea cargo imports from Japan in Q1 2026",
+    "intent": "summary",
+    "expected_params": {
+      "intent": "summary",
+      "trade_direction": "IM",
+      "origin_country": "JP",
+      "quarter": "Q1",
+      "year": 2026,
+      "mode_of_transport": "sea"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "period": "2026-Q1",
+      "frequency": "Q",
+      "filter": [
+        "PARTNER_COUNTRY:eq:JP",
+        "FLOW:eq:IM",
+        "MODE_OF_TRANSPORT:eq:1"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 11,
+    "question": "What is the total value of air freight exports to Germany in 2025?",
+    "intent": "summary",
+    "expected_params": {
+      "intent": "summary",
+      "trade_direction": "EX",
+      "destination_country": "DE",
+      "year": 2025,
+      "mode_of_transport": "air"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "period": "2025",
+      "filter": [
+        "PARTNER_COUNTRY:eq:DE",
+        "FLOW:eq:EX",
+        "MODE_OF_TRANSPORT:eq:4"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 12,
+    "question": "How much did Cambodia export in total last year?",
+    "intent": "summary",
+    "expected_params": {
+      "intent": "summary",
+      "trade_direction": "EX",
+      "year": 2025
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "period": "2025",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 13,
+    "question": "Show total imports this year",
+    "intent": "summary",
+    "expected_params": {
+      "intent": "summary",
+      "trade_direction": "IM",
+      "year": 2026
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "period": "2026",
+      "filter": [
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 14,
+    "question": "imports from Japan",
+    "intent": "summary",
+    "expected_params": {
+      "intent": "summary",
+      "trade_direction": "IM",
+      "origin_country": "JP"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "filter": [
+        "PARTNER_COUNTRY:eq:JP",
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 15,
+    "question": "exports to Japan",
+    "intent": "summary",
+    "expected_params": {
+      "intent": "summary",
+      "trade_direction": "EX",
+      "destination_country": "JP"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "filter": [
+        "PARTNER_COUNTRY:eq:JP",
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 16,
+    "question": "Rice exports",
+    "intent": "summary",
+    "expected_params": {
+      "intent": "summary",
+      "trade_direction": "EX",
+      "hs_code": "1006"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "filter": [
+        "FLOW:eq:EX",
+        "HS_HEADING:eq:1006"
+      ]
+    },
+    "ambiguous": true,
+    "expected_behavior": "default_year",
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 17,
+    "question": "Trade with Japan",
+    "intent": "summary",
+    "expected_params": {
+      "intent": "summary",
+      "partner_country": "JP"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "filter": [
+        "PARTNER_COUNTRY:eq:JP"
+      ]
+    },
+    "ambiguous": true,
+    "expected_behavior": "default_year",
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 18,
+    "question": "How much last year",
+    "intent": "summary",
+    "expected_params": {
+      "intent": "summary",
+      "year": 2025
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "period": "2025"
+    },
+    "ambiguous": true,
+    "expected_behavior": "default_flow",
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 19,
+    "question": "Imports by sea",
+    "intent": "summary",
+    "expected_params": {
+      "intent": "summary",
+      "trade_direction": "IM",
+      "mode_of_transport": "sea"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "filter": [
+        "FLOW:eq:IM",
+        "MODE_OF_TRANSPORT:eq:1"
+      ]
+    },
+    "ambiguous": true,
+    "expected_behavior": "default_year",
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 20,
+    "question": "Show total trade in 2025",
+    "intent": "summary",
+    "expected_params": {
+      "intent": "summary",
+      "year": 2025
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "period": "2025"
+    },
+    "ambiguous": true,
+    "expected_behavior": "default_flow",
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 21,
+    "question": "What was Cambodia's rice export value in 2025?",
+    "intent": "summary",
+    "expected_params": {
+      "intent": "summary",
+      "trade_direction": "EX",
+      "hs_code": "1006",
+      "year": 2025
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "period": "2025",
+      "filter": [
+        "FLOW:eq:EX",
+        "HS_HEADING:eq:1006"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": true,
+    "expected_answer_contains": [
+      "1006",
+      "2025",
+      "USD"
+    ]
+  },
+  {
+    "id": 22,
+    "question": "Give me a summary of all imports in Q1 2026.",
+    "intent": "summary",
+    "expected_params": {
+      "intent": "summary",
+      "trade_direction": "IM",
+      "quarter": "Q1",
+      "year": 2026
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "period": "2026-Q1",
+      "frequency": "Q",
+      "filter": [
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": true,
+    "expected_answer_contains": [
+      "import",
+      "2026",
+      "Q1"
+    ]
+  },
+  {
+    "id": 23,
+    "question": "What was Cambodia's total export value last year?",
+    "intent": "summary",
+    "expected_params": {
+      "intent": "summary",
+      "trade_direction": "EX",
+      "year": 2025
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "period": "2025",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": true,
+    "expected_answer_contains": [
+      "export",
+      "2025"
+    ]
+  },
+  {
+    "id": 24,
+    "question": "Top 10 export destinations in 2025.",
+    "intent": "ranking",
+    "expected_params": {
+      "intent": "ranking",
+      "trade_direction": "EX",
+      "year": 2025,
+      "limit": 10,
+      "sort_order": "desc"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "period": "2025",
+      "limit": 10,
+      "sort": "VALUE_USD:desc",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 25,
+    "question": "Which countries imported the most from Cambodia?",
+    "intent": "ranking",
+    "expected_params": {
+      "intent": "ranking",
+      "trade_direction": "EX",
+      "limit": 10,
+      "sort_order": "desc"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "limit": 10,
+      "sort": "VALUE_USD:desc",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 26,
+    "question": "Rank Cambodia's export partners by value.",
+    "intent": "ranking",
+    "expected_params": {
+      "intent": "ranking",
+      "trade_direction": "EX",
+      "sort_order": "desc"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "sort": "VALUE_USD:desc",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 27,
+    "question": "Who are Cambodia's top 5 trading partners by export value?",
+    "intent": "ranking",
+    "expected_params": {
+      "intent": "ranking",
+      "trade_direction": "EX",
+      "limit": 5,
+      "sort_order": "desc"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "limit": 5,
+      "sort": "VALUE_USD:desc",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 28,
+    "question": "Rank the top 10 HS chapters by import volume.",
+    "intent": "ranking",
+    "expected_params": {
+      "intent": "ranking",
+      "trade_direction": "IM",
+      "limit": 10,
+      "sort_order": "desc",
+      "group_by": [
+        "hs_chapter"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "HS_CHAPTER",
+      "limit": 10,
+      "sort": "VALUE_USD:desc",
+      "filter": [
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 29,
+    "question": "Which partner countries import the most Cambodian rice?",
+    "intent": "ranking",
+    "expected_params": {
+      "intent": "ranking",
+      "trade_direction": "EX",
+      "hs_code": "1006",
+      "sort_order": "desc"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "sort": "VALUE_USD:desc",
+      "filter": [
+        "FLOW:eq:EX",
+        "HS_HEADING:eq:1006"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 30,
+    "question": "Show me the bottom 20 partner countries by trade value.",
+    "intent": "ranking",
+    "expected_params": {
+      "intent": "ranking",
+      "limit": 20,
+      "sort_order": "asc"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "limit": 20,
+      "sort": "VALUE_USD:asc"
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 31,
+    "question": "Top 5 destination countries for air exports in 2024",
+    "intent": "ranking",
+    "expected_params": {
+      "intent": "ranking",
+      "trade_direction": "EX",
+      "year": 2024,
+      "limit": 5,
+      "sort_order": "desc",
+      "mode_of_transport": "air"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "period": "2024",
+      "limit": 5,
+      "sort": "VALUE_USD:desc",
+      "filter": [
+        "FLOW:eq:EX",
+        "MODE_OF_TRANSPORT:eq:4"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 32,
+    "question": "Which countries imported the largest volume of Cambodian garments (HS 61) by air?",
+    "intent": "ranking",
+    "expected_params": {
+      "intent": "ranking",
+      "trade_direction": "EX",
+      "hs_chapter": "61",
+      "mode_of_transport": "air",
+      "sort_order": "desc"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "sort": "VALUE_USD:desc",
+      "filter": [
+        "FLOW:eq:EX",
+        "HS_CHAPTER:eq:61",
+        "MODE_OF_TRANSPORT:eq:4"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 33,
+    "question": "Rank top import origins in 2025",
+    "intent": "ranking",
+    "expected_params": {
+      "intent": "ranking",
+      "trade_direction": "IM",
+      "year": 2025,
+      "sort_order": "desc"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "period": "2025",
+      "sort": "VALUE_USD:desc",
+      "filter": [
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 34,
+    "question": "Rank countries by trade value in 2025",
+    "intent": "ranking",
+    "expected_params": {
+      "intent": "ranking",
+      "year": 2025,
+      "sort_order": "desc"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "period": "2025",
+      "sort": "VALUE_USD:desc"
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 35,
+    "question": "Show top countries",
+    "intent": "ranking",
+    "expected_params": {
+      "intent": "ranking",
+      "sort_order": "desc"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "sort": "VALUE_USD:desc"
+    },
+    "ambiguous": true,
+    "expected_behavior": "default_year_and_flow",
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 36,
+    "question": "Rank exports by country",
+    "intent": "ranking",
+    "expected_params": {
+      "intent": "ranking",
+      "trade_direction": "EX",
+      "sort_order": "desc"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "sort": "VALUE_USD:desc",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": true,
+    "expected_behavior": "default_year",
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 37,
+    "question": "Top partners for Cambodia imports",
+    "intent": "ranking",
+    "expected_params": {
+      "intent": "ranking",
+      "trade_direction": "IM",
+      "sort_order": "desc"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "sort": "VALUE_USD:desc",
+      "filter": [
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 38,
+    "question": "Bottom 10 countries we imported goods from in 2025.",
+    "intent": "ranking",
+    "expected_params": {
+      "intent": "ranking",
+      "trade_direction": "IM",
+      "year": 2025,
+      "limit": 10,
+      "sort_order": "asc"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "period": "2025",
+      "limit": 10,
+      "sort": "VALUE_USD:asc",
+      "filter": [
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 39,
+    "question": "Rank the top 10 most exported HS codes to China.",
+    "intent": "ranking",
+    "expected_params": {
+      "intent": "ranking",
+      "trade_direction": "EX",
+      "destination_country": "CN",
+      "limit": 10,
+      "sort_order": "desc",
+      "group_by": [
+        "hs_code"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "HS_CHAPTER",
+      "limit": 10,
+      "sort": "VALUE_USD:desc",
+      "filter": [
+        "PARTNER_COUNTRY:eq:CN",
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 40,
+    "question": "Who are the top buyers of Cambodian rubber?",
+    "intent": "ranking",
+    "expected_params": {
+      "intent": "ranking",
+      "trade_direction": "EX",
+      "hs_code": "4001",
+      "sort_order": "desc"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "sort": "VALUE_USD:desc",
+      "filter": [
+        "FLOW:eq:EX",
+        "HS_HEADING:eq:4001"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 41,
+    "question": "What are the top 5 imported products from Thailand?",
+    "intent": "ranking",
+    "expected_params": {
+      "intent": "ranking",
+      "trade_direction": "IM",
+      "origin_country": "TH",
+      "limit": 5,
+      "sort_order": "desc",
+      "group_by": [
+        "hs_code"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "HS_CHAPTER",
+      "limit": 5,
+      "sort": "VALUE_USD:desc",
+      "filter": [
+        "PARTNER_COUNTRY:eq:TH",
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 42,
+    "question": "Rank exports of rice by transport mode",
+    "intent": "ranking",
+    "expected_params": {
+      "intent": "ranking",
+      "trade_direction": "EX",
+      "hs_code": "1006",
+      "sort_order": "desc",
+      "group_by": [
+        "mode_of_transport"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "MODE_OF_TRANSPORT",
+      "sort": "VALUE_USD:desc",
+      "filter": [
+        "FLOW:eq:EX",
+        "HS_HEADING:eq:1006"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 43,
+    "question": "Rank partner countries by weight",
+    "intent": "ranking",
+    "expected_params": {
+      "intent": "ranking",
+      "sort_order": "desc",
+      "sort_metric": "NET_WEIGHT"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "sort": "NET_WEIGHT:desc"
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 44,
+    "question": "Who are Cambodia's top 5 trading partners by export value?",
+    "intent": "ranking",
+    "expected_params": {
+      "intent": "ranking",
+      "trade_direction": "EX",
+      "limit": 5,
+      "sort_order": "desc"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "limit": 5,
+      "sort": "VALUE_USD:desc",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": true,
+    "expected_answer_contains": [
+      "top",
+      "partner",
+      "export"
+    ]
+  },
+  {
+    "id": 45,
+    "question": "Show the bottom 10 countries we imported goods from in 2025.",
+    "intent": "ranking",
+    "expected_params": {
+      "intent": "ranking",
+      "trade_direction": "IM",
+      "year": 2025,
+      "limit": 10,
+      "sort_order": "asc"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "period": "2025",
+      "limit": 10,
+      "sort": "VALUE_USD:asc",
+      "filter": [
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": true,
+    "expected_answer_contains": [
+      "bottom",
+      "import",
+      "2025"
+    ]
+  },
+  {
+    "id": 46,
+    "question": "Show exports from 2020 to 2025.",
+    "intent": "trend",
+    "expected_params": {
+      "intent": "trend",
+      "trade_direction": "EX",
+      "start_period": "2020",
+      "end_period": "2025"
+    },
+    "expected_url_params": {
+      "dimensions": "PERIOD,FLOW",
+      "start-period": "2020",
+      "end-period": "2025",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 47,
+    "question": "How have imports changed over the last five years?",
+    "intent": "trend",
+    "expected_params": {
+      "intent": "trend",
+      "trade_direction": "IM",
+      "start_period": "2022",
+      "end_period": "2026"
+    },
+    "expected_url_params": {
+      "dimensions": "PERIOD,FLOW",
+      "start-period": "2022",
+      "end-period": "2026",
+      "filter": [
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 48,
+    "question": "How did exports to China trend over the last 3 years?",
+    "intent": "trend",
+    "expected_params": {
+      "intent": "trend",
+      "trade_direction": "EX",
+      "destination_country": "CN",
+      "start_period": "2024",
+      "end_period": "2026"
+    },
+    "expected_url_params": {
+      "dimensions": "PERIOD,FLOW",
+      "start-period": "2024",
+      "end-period": "2026",
+      "filter": [
+        "PARTNER_COUNTRY:eq:CN",
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 49,
+    "question": "Show me the monthly import trend for HS Code 8517 in 2025.",
+    "intent": "trend",
+    "expected_params": {
+      "intent": "trend",
+      "trade_direction": "IM",
+      "hs_code": "8517",
+      "year": 2025,
+      "frequency": "M"
+    },
+    "expected_url_params": {
+      "dimensions": "PERIOD,FLOW",
+      "period": "2025",
+      "frequency": "M",
+      "filter": [
+        "FLOW:eq:IM",
+        "HS_HEADING:eq:8517"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 50,
+    "question": "What is the quarterly trade balance trend for 2024?",
+    "intent": "trend",
+    "expected_params": {
+      "intent": "trend",
+      "year": 2024,
+      "frequency": "Q"
+    },
+    "expected_url_params": {
+      "dimensions": "PERIOD,FLOW",
+      "period": "2024",
+      "frequency": "Q"
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 51,
+    "question": "Show monthly exports of rice in 2025",
+    "intent": "trend",
+    "expected_params": {
+      "intent": "trend",
+      "trade_direction": "EX",
+      "hs_code": "1006",
+      "year": 2025,
+      "frequency": "M"
+    },
+    "expected_url_params": {
+      "dimensions": "PERIOD,FLOW",
+      "period": "2025",
+      "frequency": "M",
+      "filter": [
+        "FLOW:eq:EX",
+        "HS_HEADING:eq:1006"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 52,
+    "question": "How have imports from Japan trended monthly?",
+    "intent": "trend",
+    "expected_params": {
+      "intent": "trend",
+      "trade_direction": "IM",
+      "origin_country": "JP",
+      "frequency": "M"
+    },
+    "expected_url_params": {
+      "dimensions": "PERIOD,FLOW",
+      "frequency": "M",
+      "filter": [
+        "PARTNER_COUNTRY:eq:JP",
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 53,
+    "question": "Show trend of trade value with Vietnam from 2021 to 2025",
+    "intent": "trend",
+    "expected_params": {
+      "intent": "trend",
+      "partner_country": "VN",
+      "start_period": "2021",
+      "end_period": "2025"
+    },
+    "expected_url_params": {
+      "dimensions": "PERIOD,FLOW",
+      "start-period": "2021",
+      "end-period": "2025",
+      "filter": [
+        "PARTNER_COUNTRY:eq:VN"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 54,
+    "question": "How did Cambodia's trade balance trend each month last year?",
+    "intent": "trend",
+    "expected_params": {
+      "intent": "trend",
+      "year": 2025,
+      "frequency": "M"
+    },
+    "expected_url_params": {
+      "dimensions": "PERIOD,FLOW",
+      "period": "2025",
+      "frequency": "M"
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 55,
+    "question": "Trend of garment exports by air since 2023",
+    "intent": "trend",
+    "expected_params": {
+      "intent": "trend",
+      "trade_direction": "EX",
+      "hs_chapter": "61",
+      "mode_of_transport": "air",
+      "start_period": "2023"
+    },
+    "expected_url_params": {
+      "dimensions": "PERIOD,FLOW",
+      "start-period": "2023",
+      "filter": [
+        "FLOW:eq:EX",
+        "HS_CHAPTER:eq:61",
+        "MODE_OF_TRANSPORT:eq:4"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 56,
+    "question": "Quarterly import trend for cars",
+    "intent": "trend",
+    "expected_params": {
+      "intent": "trend",
+      "trade_direction": "IM",
+      "hs_code": "8703",
+      "frequency": "Q"
+    },
+    "expected_url_params": {
+      "dimensions": "PERIOD,FLOW",
+      "frequency": "Q",
+      "filter": [
+        "FLOW:eq:IM",
+        "HS_HEADING:eq:8703"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 57,
+    "question": "Monthly export trend",
+    "intent": "trend",
+    "expected_params": {
+      "intent": "trend",
+      "trade_direction": "EX",
+      "frequency": "M"
+    },
+    "expected_url_params": {
+      "dimensions": "PERIOD,FLOW",
+      "frequency": "M",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": true,
+    "expected_behavior": "default_year",
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 58,
+    "question": "Trade trend last 3 years",
+    "intent": "trend",
+    "expected_params": {
+      "intent": "trend",
+      "start_period": "2024",
+      "end_period": "2026"
+    },
+    "expected_url_params": {
+      "dimensions": "PERIOD,FLOW",
+      "start-period": "2024",
+      "end-period": "2026"
+    },
+    "ambiguous": true,
+    "expected_behavior": "default_flow",
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 59,
+    "question": "Show the import trend over the last 5 years.",
+    "intent": "trend",
+    "expected_params": {
+      "intent": "trend",
+      "trade_direction": "IM",
+      "start_period": "2022",
+      "end_period": "2026"
+    },
+    "expected_url_params": {
+      "dimensions": "PERIOD,FLOW",
+      "start-period": "2022",
+      "end-period": "2026",
+      "filter": [
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 60,
+    "question": "How did Cambodia's exports to China trend over the last 3 years?",
+    "intent": "trend",
+    "expected_params": {
+      "intent": "trend",
+      "trade_direction": "EX",
+      "destination_country": "CN",
+      "start_period": "2024",
+      "end_period": "2026"
+    },
+    "expected_url_params": {
+      "dimensions": "PERIOD,FLOW",
+      "start-period": "2024",
+      "end-period": "2026",
+      "filter": [
+        "PARTNER_COUNTRY:eq:CN",
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 61,
+    "question": "Show me the monthly import trend for HS Code 8517 in 2025.",
+    "intent": "trend",
+    "expected_params": {
+      "intent": "trend",
+      "trade_direction": "IM",
+      "hs_code": "8517",
+      "year": 2025,
+      "frequency": "M"
+    },
+    "expected_url_params": {
+      "dimensions": "PERIOD,FLOW",
+      "period": "2025",
+      "frequency": "M",
+      "filter": [
+        "FLOW:eq:IM",
+        "HS_HEADING:eq:8517"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 62,
+    "question": "Monthly export value for rice in 2024",
+    "intent": "trend",
+    "expected_params": {
+      "intent": "trend",
+      "trade_direction": "EX",
+      "hs_code": "1006",
+      "year": 2024,
+      "frequency": "M"
+    },
+    "expected_url_params": {
+      "dimensions": "PERIOD,FLOW",
+      "period": "2024",
+      "frequency": "M",
+      "filter": [
+        "FLOW:eq:EX",
+        "HS_HEADING:eq:1006"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 63,
+    "question": "Quarterly trade balance trend for 2024",
+    "intent": "trend",
+    "expected_params": {
+      "intent": "trend",
+      "year": 2024,
+      "frequency": "Q"
+    },
+    "expected_url_params": {
+      "dimensions": "PERIOD,FLOW",
+      "period": "2024",
+      "frequency": "Q"
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 64,
+    "question": "How did Cambodia's trade balance trend each month last year?",
+    "intent": "trend",
+    "expected_params": {
+      "intent": "trend",
+      "year": 2025,
+      "frequency": "M"
+    },
+    "expected_url_params": {
+      "dimensions": "PERIOD,FLOW",
+      "period": "2025",
+      "frequency": "M"
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 65,
+    "question": "Exports trend over time",
+    "intent": "trend",
+    "expected_params": {
+      "intent": "trend",
+      "trade_direction": "EX"
+    },
+    "expected_url_params": {
+      "dimensions": "PERIOD,FLOW",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": true,
+    "expected_behavior": "default_period",
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 66,
+    "question": "How have Cambodia's exports to China trended over the last 3 years?",
+    "intent": "trend",
+    "expected_params": {
+      "intent": "trend",
+      "trade_direction": "EX",
+      "destination_country": "CN",
+      "start_period": "2024",
+      "end_period": "2026"
+    },
+    "expected_url_params": {
+      "dimensions": "PERIOD,FLOW",
+      "start-period": "2024",
+      "end-period": "2026",
+      "filter": [
+        "PARTNER_COUNTRY:eq:CN",
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": true,
+    "expected_answer_contains": [
+      "export",
+      "trend",
+      "China"
+    ]
+  },
+  {
+    "id": 67,
+    "question": "Show me the monthly import trend for HS Code 8517 in 2025.",
+    "intent": "trend",
+    "expected_params": {
+      "intent": "trend",
+      "trade_direction": "IM",
+      "hs_code": "8517",
+      "year": 2025,
+      "frequency": "M"
+    },
+    "expected_url_params": {
+      "dimensions": "PERIOD,FLOW",
+      "period": "2025",
+      "frequency": "M",
+      "filter": [
+        "FLOW:eq:IM",
+        "HS_HEADING:eq:8517"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": true,
+    "expected_answer_contains": [
+      "import",
+      "monthly",
+      "2025"
+    ]
+  },
+  {
+    "id": 68,
+    "question": "Compare exports to Japan and China.",
+    "intent": "comparison",
+    "expected_params": {
+      "intent": "comparison",
+      "trade_direction": "EX",
+      "partner_countries": [
+        "JP",
+        "CN"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY,FLOW",
+      "filter": [
+        "PARTNER_COUNTRY:in:JP,CN",
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 69,
+    "question": "Compare imports in 2024 vs 2025.",
+    "intent": "comparison",
+    "expected_params": {
+      "intent": "comparison",
+      "trade_direction": "IM",
+      "years": [
+        2024,
+        2025
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY,FLOW",
+      "start_period": "2024",
+      "end_period": "2025",
+      "filter": [
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 70,
+    "question": "Compare Cambodia's exports to the USA vs exports to Germany in 2025.",
+    "intent": "comparison",
+    "expected_params": {
+      "intent": "comparison",
+      "trade_direction": "EX",
+      "partner_countries": [
+        "US",
+        "DE"
+      ],
+      "year": 2025
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY,FLOW",
+      "period": "2025",
+      "filter": [
+        "PARTNER_COUNTRY:in:US,DE",
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 71,
+    "question": "Show me a side-by-side comparison of import values for HS Chapter 84 vs HS Chapter 85.",
+    "intent": "comparison",
+    "expected_params": {
+      "intent": "comparison",
+      "trade_direction": "IM",
+      "hs_chapters": [
+        "84",
+        "85"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY,FLOW",
+      "filter": [
+        "FLOW:eq:IM",
+        "HS_CHAPTER:in:84,85"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 72,
+    "question": "Compare Q1 2025 trade performance against Q1 2024.",
+    "intent": "comparison",
+    "expected_params": {
+      "intent": "comparison",
+      "quarters": [
+        "2024-Q1",
+        "2025-Q1"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY,FLOW"
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 73,
+    "question": "Compare air freight exports to Japan against sea freight exports to Japan.",
+    "intent": "comparison",
+    "expected_params": {
+      "intent": "comparison",
+      "trade_direction": "EX",
+      "partner_country": "JP",
+      "mode_of_transport": "air"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY,FLOW",
+      "filter": [
+        "PARTNER_COUNTRY:eq:JP",
+        "FLOW:eq:EX",
+        "MODE_OF_TRANSPORT:eq:4"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 74,
+    "question": "Compare exports to US and China in 2024",
+    "intent": "comparison",
+    "expected_params": {
+      "intent": "comparison",
+      "trade_direction": "EX",
+      "partner_countries": [
+        "US",
+        "CN"
+      ],
+      "year": 2024
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY,FLOW",
+      "period": "2024",
+      "filter": [
+        "PARTNER_COUNTRY:in:US,CN",
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 75,
+    "question": "Compare imports of rice and wheat in 2025",
+    "intent": "comparison",
+    "expected_params": {
+      "intent": "comparison",
+      "trade_direction": "IM",
+      "hs_codes": [
+        "1006",
+        "1001"
+      ],
+      "year": 2025
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY,FLOW",
+      "period": "2025",
+      "filter": [
+        "FLOW:eq:IM",
+        "HS_HEADING:in:1006,1001"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 76,
+    "question": "Compare Cambodia exports to ASEAN vs EU",
+    "intent": "comparison",
+    "expected_params": {
+      "intent": "comparison",
+      "trade_direction": "EX"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY,FLOW",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 77,
+    "question": "Compare trade with Vietnam and Thailand",
+    "intent": "comparison",
+    "expected_params": {
+      "intent": "comparison",
+      "partner_countries": [
+        "VN",
+        "TH"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY,FLOW",
+      "filter": [
+        "PARTNER_COUNTRY:in:VN,TH"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 78,
+    "question": "Compare imports by sea vs imports by air",
+    "intent": "comparison",
+    "expected_params": {
+      "intent": "comparison",
+      "trade_direction": "IM",
+      "mode_of_transport": "sea"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY,FLOW",
+      "filter": [
+        "FLOW:eq:IM",
+        "MODE_OF_TRANSPORT:eq:1"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 79,
+    "question": "Compare trade",
+    "intent": "comparison",
+    "expected_params": {
+      "intent": "comparison"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY,FLOW"
+    },
+    "ambiguous": true,
+    "expected_behavior": "default_year_and_flow_and_partners",
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 80,
+    "question": "Compare exports to Japan vs exports to Korea",
+    "intent": "comparison",
+    "expected_params": {
+      "intent": "comparison",
+      "trade_direction": "EX",
+      "partner_countries": [
+        "JP",
+        "KR"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY,FLOW",
+      "filter": [
+        "PARTNER_COUNTRY:in:JP,KR",
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": true,
+    "expected_behavior": "default_year",
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 81,
+    "question": "Compare Cambodia's exports to the US versus exports to China in 2024.",
+    "intent": "comparison",
+    "expected_params": {
+      "intent": "comparison",
+      "trade_direction": "EX",
+      "partner_countries": [
+        "US",
+        "CN"
+      ],
+      "year": 2024
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY,FLOW",
+      "period": "2024",
+      "filter": [
+        "PARTNER_COUNTRY:in:US,CN",
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 82,
+    "question": "Show me a side-by-side comparison of import values for HS Chapter 84 vs HS Chapter 85.",
+    "intent": "comparison",
+    "expected_params": {
+      "intent": "comparison",
+      "trade_direction": "IM",
+      "hs_chapters": [
+        "84",
+        "85"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY,FLOW",
+      "filter": [
+        "FLOW:eq:IM",
+        "HS_CHAPTER:in:84,85"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 83,
+    "question": "Compare Q1 2025 trade performance against Q1 2024.",
+    "intent": "comparison",
+    "expected_params": {
+      "intent": "comparison",
+      "quarters": [
+        "2024-Q1",
+        "2025-Q1"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY,FLOW"
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 84,
+    "question": "Compare air freight exports to Japan against sea freight exports to Japan.",
+    "intent": "comparison",
+    "expected_params": {
+      "intent": "comparison",
+      "trade_direction": "EX",
+      "partner_country": "JP",
+      "mode_of_transport": "air"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY,FLOW",
+      "filter": [
+        "PARTNER_COUNTRY:eq:JP",
+        "FLOW:eq:EX",
+        "MODE_OF_TRANSPORT:eq:4"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 85,
+    "question": "Compare imports from Thailand vs imports from Vietnam in 2025.",
+    "intent": "comparison",
+    "expected_params": {
+      "intent": "comparison",
+      "trade_direction": "IM",
+      "partner_countries": [
+        "TH",
+        "VN"
+      ],
+      "year": 2025
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY,FLOW",
+      "period": "2025",
+      "filter": [
+        "PARTNER_COUNTRY:in:TH,VN",
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 86,
+    "question": "Compare exports to China in 2024 and 2025",
+    "intent": "comparison",
+    "expected_params": {
+      "intent": "comparison",
+      "trade_direction": "EX",
+      "destination_country": "CN",
+      "years": [
+        2024,
+        2025
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY,FLOW",
+      "start_period": "2024",
+      "end_period": "2025",
+      "filter": [
+        "PARTNER_COUNTRY:eq:CN",
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 87,
+    "question": "Compare rice exports by air vs sea",
+    "intent": "comparison",
+    "expected_params": {
+      "intent": "comparison",
+      "trade_direction": "EX",
+      "hs_code": "1006",
+      "mode_of_transport": "air"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY,FLOW",
+      "filter": [
+        "FLOW:eq:EX",
+        "HS_HEADING:eq:1006",
+        "MODE_OF_TRANSPORT:eq:4"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 88,
+    "question": "Compare Cambodia's exports to the US versus exports to China in 2024.",
+    "intent": "comparison",
+    "expected_params": {
+      "intent": "comparison",
+      "trade_direction": "EX",
+      "partner_countries": [
+        "US",
+        "CN"
+      ],
+      "year": 2024
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY,FLOW",
+      "period": "2024",
+      "filter": [
+        "PARTNER_COUNTRY:in:US,CN",
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": true,
+    "expected_answer_contains": [
+      "compare",
+      "US",
+      "China",
+      "2024"
+    ]
+  },
+  {
+    "id": 89,
+    "question": "Compare imports from Thailand vs imports from Vietnam in 2025.",
+    "intent": "comparison",
+    "expected_params": {
+      "intent": "comparison",
+      "trade_direction": "IM",
+      "partner_countries": [
+        "TH",
+        "VN"
+      ],
+      "year": 2025
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY,FLOW",
+      "period": "2025",
+      "filter": [
+        "PARTNER_COUNTRY:in:TH,VN",
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": true,
+    "expected_answer_contains": [
+      "compare",
+      "Thailand",
+      "Vietnam",
+      "2025"
+    ]
+  },
+  {
+    "id": 90,
+    "question": "Break down exports by transport mode.",
+    "intent": "breakdown",
+    "expected_params": {
+      "intent": "breakdown",
+      "trade_direction": "EX",
+      "group_by": [
+        "mode_of_transport"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "MODE_OF_TRANSPORT",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 91,
+    "question": "Show export composition by product.",
+    "intent": "breakdown",
+    "expected_params": {
+      "intent": "breakdown",
+      "trade_direction": "EX",
+      "group_by": [
+        "hs_code"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "HS_CHAPTER",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 92,
+    "question": "Break down Cambodia's total exports by HS Chapter for 2025.",
+    "intent": "breakdown",
+    "expected_params": {
+      "intent": "breakdown",
+      "trade_direction": "EX",
+      "year": 2025,
+      "group_by": [
+        "hs_chapter"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "HS_CHAPTER",
+      "period": "2025",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 93,
+    "question": "Show me the breakdown of imports by mode of transport.",
+    "intent": "breakdown",
+    "expected_params": {
+      "intent": "breakdown",
+      "trade_direction": "IM",
+      "group_by": [
+        "mode_of_transport"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "MODE_OF_TRANSPORT",
+      "filter": [
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 94,
+    "question": "Divide Cambodia's trade with ASEAN partners by HS Heading.",
+    "intent": "breakdown",
+    "expected_params": {
+      "intent": "breakdown",
+      "group_by": [
+        "hs_heading"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "HS_CHAPTER"
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 95,
+    "question": "Create a pie chart showing the breakdown of 2024 agricultural exports.",
+    "intent": "breakdown",
+    "expected_params": {
+      "intent": "breakdown",
+      "trade_direction": "EX",
+      "year": 2024,
+      "group_by": [
+        "hs_chapter"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "HS_CHAPTER",
+      "period": "2024",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 96,
+    "question": "Break down imports from China by HS code in 2025",
+    "intent": "breakdown",
+    "expected_params": {
+      "intent": "breakdown",
+      "trade_direction": "IM",
+      "origin_country": "CN",
+      "year": 2025,
+      "group_by": [
+        "hs_code"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "HS_CHAPTER",
+      "period": "2025",
+      "filter": [
+        "PARTNER_COUNTRY:eq:CN",
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 97,
+    "question": "Break down exports to Japan by transport mode",
+    "intent": "breakdown",
+    "expected_params": {
+      "intent": "breakdown",
+      "trade_direction": "EX",
+      "destination_country": "JP",
+      "group_by": [
+        "mode_of_transport"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "MODE_OF_TRANSPORT",
+      "filter": [
+        "PARTNER_COUNTRY:eq:JP",
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 98,
+    "question": "Divide Cambodia's total trade last year by partner country.",
+    "intent": "breakdown",
+    "expected_params": {
+      "intent": "breakdown",
+      "year": 2025,
+      "group_by": [
+        "partner_country"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "period": "2025"
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 99,
+    "question": "Break down rice exports by country",
+    "intent": "breakdown",
+    "expected_params": {
+      "intent": "breakdown",
+      "trade_direction": "EX",
+      "hs_code": "1006",
+      "group_by": [
+        "partner_country"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "filter": [
+        "FLOW:eq:EX",
+        "HS_HEADING:eq:1006"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 100,
+    "question": "Breakdown of imports by country of origin in 2025",
+    "intent": "breakdown",
+    "expected_params": {
+      "intent": "breakdown",
+      "trade_direction": "IM",
+      "year": 2025,
+      "group_by": [
+        "partner_country"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "period": "2025",
+      "filter": [
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 101,
+    "question": "Breakdown exports",
+    "intent": "breakdown",
+    "expected_params": {
+      "intent": "breakdown",
+      "trade_direction": "EX"
+    },
+    "expected_url_params": {
+      "dimensions": "HS_CHAPTER",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": true,
+    "expected_behavior": "default_group_by_and_year",
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 102,
+    "question": "Show breakdown by transport",
+    "intent": "breakdown",
+    "expected_params": {
+      "intent": "breakdown",
+      "group_by": [
+        "mode_of_transport"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "MODE_OF_TRANSPORT"
+    },
+    "ambiguous": true,
+    "expected_behavior": "default_year_and_flow",
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 103,
+    "question": "Break down Cambodia's total exports by HS Chapter for 2025.",
+    "intent": "breakdown",
+    "expected_params": {
+      "intent": "breakdown",
+      "trade_direction": "EX",
+      "year": 2025,
+      "group_by": [
+        "hs_chapter"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "HS_CHAPTER",
+      "period": "2025",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 104,
+    "question": "Show me the breakdown of imports by mode of transport.",
+    "intent": "breakdown",
+    "expected_params": {
+      "intent": "breakdown",
+      "trade_direction": "IM",
+      "group_by": [
+        "mode_of_transport"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "MODE_OF_TRANSPORT",
+      "filter": [
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 105,
+    "question": "Divide Cambodia's total trade last year by partner country.",
+    "intent": "breakdown",
+    "expected_params": {
+      "intent": "breakdown",
+      "year": 2025,
+      "group_by": [
+        "partner_country"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "period": "2025"
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 106,
+    "question": "Create a pie chart showing the breakdown of 2024 agricultural exports.",
+    "intent": "breakdown",
+    "expected_params": {
+      "intent": "breakdown",
+      "trade_direction": "EX",
+      "year": 2024,
+      "group_by": [
+        "hs_chapter"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "HS_CHAPTER",
+      "period": "2024",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 107,
+    "question": "Breakdown of 2025 imports from Thailand by product.",
+    "intent": "breakdown",
+    "expected_params": {
+      "intent": "breakdown",
+      "trade_direction": "IM",
+      "origin_country": "TH",
+      "year": 2025,
+      "group_by": [
+        "hs_code"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "HS_CHAPTER",
+      "period": "2025",
+      "filter": [
+        "PARTNER_COUNTRY:eq:TH",
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 108,
+    "question": "Show the transport mode breakdown for electronics exports to the US.",
+    "intent": "breakdown",
+    "expected_params": {
+      "intent": "breakdown",
+      "trade_direction": "EX",
+      "destination_country": "US",
+      "hs_code": "8517",
+      "group_by": [
+        "mode_of_transport"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "MODE_OF_TRANSPORT",
+      "filter": [
+        "PARTNER_COUNTRY:eq:US",
+        "FLOW:eq:EX",
+        "HS_HEADING:eq:8517"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 109,
+    "question": "Breakdown total trade by direction in 2025",
+    "intent": "breakdown",
+    "expected_params": {
+      "intent": "breakdown",
+      "year": 2025,
+      "group_by": [
+        "flow"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "period": "2025"
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 110,
+    "question": "Break down Cambodia's total exports by HS Chapter for 2025.",
+    "intent": "breakdown",
+    "expected_params": {
+      "intent": "breakdown",
+      "trade_direction": "EX",
+      "year": 2025,
+      "group_by": [
+        "hs_chapter"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "HS_CHAPTER",
+      "period": "2025",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": true,
+    "expected_answer_contains": [
+      "breakdown",
+      "export",
+      "2025"
+    ]
+  },
+  {
+    "id": 111,
+    "question": "Show me the breakdown of imports by mode of transport.",
+    "intent": "breakdown",
+    "expected_params": {
+      "intent": "breakdown",
+      "trade_direction": "IM",
+      "group_by": [
+        "mode_of_transport"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "MODE_OF_TRANSPORT",
+      "filter": [
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": true,
+    "expected_answer_contains": [
+      "breakdown",
+      "import",
+      "transport"
+    ]
+  },
+  {
+    "id": 112,
+    "question": "What was export growth from 2024 to 2025?",
+    "intent": "growth",
+    "expected_params": {
+      "intent": "growth",
+      "trade_direction": "EX",
+      "years": [
+        2024,
+        2025
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "start_period": "2024",
+      "end_period": "2025",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 113,
+    "question": "Which products grew the fastest?",
+    "intent": "growth",
+    "expected_params": {
+      "intent": "growth",
+      "group_by": [
+        "hs_code"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY"
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 114,
+    "question": "What is the year-over-year growth of exports to Vietnam?",
+    "intent": "growth",
+    "expected_params": {
+      "intent": "growth",
+      "trade_direction": "EX",
+      "destination_country": "VN"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "filter": [
+        "PARTNER_COUNTRY:eq:VN",
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 115,
+    "question": "Show me the growth rate for HS Code 6109 imports from 2024 to 2025.",
+    "intent": "growth",
+    "expected_params": {
+      "intent": "growth",
+      "trade_direction": "IM",
+      "hs_code": "6109",
+      "years": [
+        2024,
+        2025
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "start_period": "2024",
+      "end_period": "2025",
+      "filter": [
+        "FLOW:eq:IM",
+        "HS_CODE:eq:6109"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 116,
+    "question": "Which partner countries showed the highest growth in trade value this quarter?",
+    "intent": "growth",
+    "expected_params": {
+      "intent": "growth",
+      "frequency": "Q"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "frequency": "Q"
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 117,
+    "question": "What is the import growth rate from Thailand in 2025?",
+    "intent": "growth",
+    "expected_params": {
+      "intent": "growth",
+      "trade_direction": "IM",
+      "origin_country": "TH",
+      "year": 2025
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "period": "2025",
+      "filter": [
+        "PARTNER_COUNTRY:eq:TH",
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 118,
+    "question": "Which HS chapters had the highest export growth in 2025?",
+    "intent": "growth",
+    "expected_params": {
+      "intent": "growth",
+      "trade_direction": "EX",
+      "year": 2025,
+      "group_by": [
+        "hs_chapter"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "period": "2025",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 119,
+    "question": "What is the YoY export growth of garments?",
+    "intent": "growth",
+    "expected_params": {
+      "intent": "growth",
+      "trade_direction": "EX",
+      "hs_chapter": "61"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "filter": [
+        "FLOW:eq:EX",
+        "HS_CHAPTER:eq:61"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 120,
+    "question": "Show me import growth from China over the last 3 years",
+    "intent": "growth",
+    "expected_params": {
+      "intent": "growth",
+      "trade_direction": "IM",
+      "origin_country": "CN",
+      "start_period": "2024",
+      "end_period": "2026"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "start_period": "2024",
+      "end_period": "2026",
+      "filter": [
+        "PARTNER_COUNTRY:eq:CN",
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 121,
+    "question": "Which transport modes had the fastest import growth in 2025?",
+    "intent": "growth",
+    "expected_params": {
+      "intent": "growth",
+      "trade_direction": "IM",
+      "year": 2025,
+      "group_by": [
+        "mode_of_transport"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "period": "2025",
+      "filter": [
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 122,
+    "question": "Show product growth rates in 2025",
+    "intent": "growth",
+    "expected_params": {
+      "intent": "growth",
+      "year": 2025,
+      "group_by": [
+        "hs_code"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "period": "2025"
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 123,
+    "question": "Measure growth",
+    "intent": "growth",
+    "expected_params": {
+      "intent": "growth"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY"
+    },
+    "ambiguous": true,
+    "expected_behavior": "default_year_and_flow",
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 124,
+    "question": "Show growth for exports to US",
+    "intent": "growth",
+    "expected_params": {
+      "intent": "growth",
+      "trade_direction": "EX",
+      "destination_country": "US"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "filter": [
+        "PARTNER_COUNTRY:eq:US",
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": true,
+    "expected_behavior": "default_year",
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 125,
+    "question": "Which partner country had the highest export growth rate last year?",
+    "intent": "growth",
+    "expected_params": {
+      "intent": "growth",
+      "trade_direction": "EX",
+      "year": 2025
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "period": "2025",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 126,
+    "question": "What was the year-over-year import growth rate for cars (HS 8703)?",
+    "intent": "growth",
+    "expected_params": {
+      "intent": "growth",
+      "trade_direction": "IM",
+      "hs_code": "8703"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "filter": [
+        "FLOW:eq:IM",
+        "HS_HEADING:eq:8703"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 127,
+    "question": "Which HS chapters saw the largest decline in export value in 2025?",
+    "intent": "growth",
+    "expected_params": {
+      "intent": "growth",
+      "trade_direction": "EX",
+      "year": 2025,
+      "group_by": [
+        "hs_chapter"
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "period": "2025",
+      "filter": [
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 128,
+    "question": "What was the month-over-month growth of imports from Vietnam this year?",
+    "intent": "growth",
+    "expected_params": {
+      "intent": "growth",
+      "trade_direction": "IM",
+      "origin_country": "VN",
+      "year": 2026,
+      "frequency": "M"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "period": "2026",
+      "frequency": "M",
+      "filter": [
+        "PARTNER_COUNTRY:eq:VN",
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 129,
+    "question": "Which country has the fastest growing exports to Cambodia?",
+    "intent": "growth",
+    "expected_params": {
+      "intent": "growth",
+      "trade_direction": "IM"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "filter": [
+        "FLOW:eq:IM"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 130,
+    "question": "Identify top 5 growth markets for rice exports.",
+    "intent": "growth",
+    "expected_params": {
+      "intent": "growth",
+      "trade_direction": "EX",
+      "hs_code": "1006",
+      "limit": 5
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "limit": 5,
+      "filter": [
+        "FLOW:eq:EX",
+        "HS_HEADING:eq:1006"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 131,
+    "question": "Compute quarterly export growth to Japan in 2025",
+    "intent": "growth",
+    "expected_params": {
+      "intent": "growth",
+      "trade_direction": "EX",
+      "destination_country": "JP",
+      "year": 2025,
+      "frequency": "Q"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "period": "2025",
+      "frequency": "Q",
+      "filter": [
+        "PARTNER_COUNTRY:eq:JP",
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 132,
+    "question": "What is the year-over-year growth of exports to Vietnam?",
+    "intent": "growth",
+    "expected_params": {
+      "intent": "growth",
+      "trade_direction": "EX",
+      "destination_country": "VN"
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "filter": [
+        "PARTNER_COUNTRY:eq:VN",
+        "FLOW:eq:EX"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": true,
+    "expected_answer_contains": [
+      "growth",
+      "export",
+      "Vietnam"
+    ]
+  },
+  {
+    "id": 133,
+    "question": "Show me the growth rate for HS Code 6109 imports from 2024 to 2025.",
+    "intent": "growth",
+    "expected_params": {
+      "intent": "growth",
+      "trade_direction": "IM",
+      "hs_code": "6109",
+      "years": [
+        2024,
+        2025
+      ]
+    },
+    "expected_url_params": {
+      "dimensions": "PARTNER_COUNTRY",
+      "start_period": "2024",
+      "end_period": "2025",
+      "filter": [
+        "FLOW:eq:IM",
+        "HS_CODE:eq:6109"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": true,
+    "expected_answer_contains": [
+      "growth",
+      "import",
+      "6109"
+    ]
+  },
+  {
+    "id": 134,
+    "question": "What was Cambodia's trade balance in 2025?",
+    "intent": "trade_balance",
+    "expected_params": {
+      "intent": "trade_balance",
+      "year": 2025
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "period": "2025"
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 135,
+    "question": "Show trade balance from 2020–2025.",
+    "intent": "trade_balance",
+    "expected_params": {
+      "intent": "trade_balance",
+      "start_period": "2020",
+      "end_period": "2025"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "start-period": "2020",
+      "end-period": "2025"
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 136,
+    "question": "What is Cambodia's trade balance with the EU?",
+    "intent": "trade_balance",
+    "expected_params": {
+      "intent": "trade_balance",
+      "partner_country": "EU"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "filter": [
+        "PARTNER_COUNTRY:eq:EU"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 137,
+    "question": "Show me the export vs import surplus for HS Chapter 62.",
+    "intent": "trade_balance",
+    "expected_params": {
+      "intent": "trade_balance",
+      "hs_chapter": "62"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "filter": [
+        "HS_CHAPTER:eq:62"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 138,
+    "question": "Which partner countries do we have a trade deficit with?",
+    "intent": "trade_balance",
+    "expected_params": {
+      "intent": "trade_balance"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW"
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 139,
+    "question": "What is Cambodia's trade balance with Thailand?",
+    "intent": "trade_balance",
+    "expected_params": {
+      "intent": "trade_balance",
+      "partner_country": "TH"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "filter": [
+        "PARTNER_COUNTRY:eq:TH"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 140,
+    "question": "Show the export vs import surplus for HS Chapter 64 (footwear).",
+    "intent": "trade_balance",
+    "expected_params": {
+      "intent": "trade_balance",
+      "hs_chapter": "64"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "filter": [
+        "HS_CHAPTER:eq:64"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 141,
+    "question": "Which countries does Cambodia run a trade deficit with?",
+    "intent": "trade_balance",
+    "expected_params": {
+      "intent": "trade_balance"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW"
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 142,
+    "question": "Show the monthly trade balance surplus with the USA in 2025.",
+    "intent": "trade_balance",
+    "expected_params": {
+      "intent": "trade_balance",
+      "partner_country": "US",
+      "year": 2025,
+      "frequency": "M"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "period": "2025",
+      "frequency": "M",
+      "filter": [
+        "PARTNER_COUNTRY:eq:US"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 143,
+    "question": "What is the trade balance with China in 2025 by sea?",
+    "intent": "trade_balance",
+    "expected_params": {
+      "intent": "trade_balance",
+      "partner_country": "CN",
+      "year": 2025,
+      "mode_of_transport": "sea"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "period": "2025",
+      "filter": [
+        "PARTNER_COUNTRY:eq:CN",
+        "MODE_OF_TRANSPORT:eq:sea"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 144,
+    "question": "Quarterly trade balance with Vietnam",
+    "intent": "trade_balance",
+    "expected_params": {
+      "intent": "trade_balance",
+      "partner_country": "VN",
+      "frequency": "Q"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "frequency": "Q",
+      "filter": [
+        "PARTNER_COUNTRY:eq:VN"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 145,
+    "question": "Show trade balance",
+    "intent": "trade_balance",
+    "expected_params": {
+      "intent": "trade_balance"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW"
+    },
+    "ambiguous": true,
+    "expected_behavior": "default_year_and_partner",
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 146,
+    "question": "Trade balance with Japan",
+    "intent": "trade_balance",
+    "expected_params": {
+      "intent": "trade_balance",
+      "partner_country": "JP"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "filter": [
+        "PARTNER_COUNTRY:eq:JP"
+      ]
+    },
+    "ambiguous": true,
+    "expected_behavior": "default_year",
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 147,
+    "question": "What is Cambodia's trade balance with the EU?",
+    "intent": "trade_balance",
+    "expected_params": {
+      "intent": "trade_balance",
+      "partner_country": "EU"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "filter": [
+        "PARTNER_COUNTRY:eq:EU"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 148,
+    "question": "Show me the export vs import surplus for HS Chapter 62.",
+    "intent": "trade_balance",
+    "expected_params": {
+      "intent": "trade_balance",
+      "hs_chapter": "62"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "filter": [
+        "HS_CHAPTER:eq:62"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 149,
+    "question": "Which partner countries do we have a trade deficit with?",
+    "intent": "trade_balance",
+    "expected_params": {
+      "intent": "trade_balance"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW"
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 150,
+    "question": "What is Cambodia's trade balance with Thailand?",
+    "intent": "trade_balance",
+    "expected_params": {
+      "intent": "trade_balance",
+      "partner_country": "TH"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "filter": [
+        "PARTNER_COUNTRY:eq:TH"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 151,
+    "question": "Show the export vs import surplus for HS Chapter 64 (footwear).",
+    "intent": "trade_balance",
+    "expected_params": {
+      "intent": "trade_balance",
+      "hs_chapter": "64"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "filter": [
+        "HS_CHAPTER:eq:64"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 152,
+    "question": "Which countries does Cambodia run a trade deficit with?",
+    "intent": "trade_balance",
+    "expected_params": {
+      "intent": "trade_balance"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW"
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 153,
+    "question": "Show the monthly trade balance surplus with the USA in 2025.",
+    "intent": "trade_balance",
+    "expected_params": {
+      "intent": "trade_balance",
+      "partner_country": "US",
+      "year": 2025,
+      "frequency": "M"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "period": "2025",
+      "frequency": "M",
+      "filter": [
+        "PARTNER_COUNTRY:eq:US"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": false,
+    "expected_answer_contains": null
+  },
+  {
+    "id": 154,
+    "question": "What is Cambodia's trade balance with Thailand?",
+    "intent": "trade_balance",
+    "expected_params": {
+      "intent": "trade_balance",
+      "partner_country": "TH"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "filter": [
+        "PARTNER_COUNTRY:eq:TH"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": true,
+    "expected_answer_contains": [
+      "trade balance",
+      "Thailand"
+    ]
+  },
+  {
+    "id": 155,
+    "question": "Show the export vs import surplus for HS Chapter 64 (footwear).",
+    "intent": "trade_balance",
+    "expected_params": {
+      "intent": "trade_balance",
+      "hs_chapter": "64"
+    },
+    "expected_url_params": {
+      "dimensions": "FLOW",
+      "filter": [
+        "HS_CHAPTER:eq:64"
+      ]
+    },
+    "ambiguous": false,
+    "expected_behavior": null,
+    "e2e": true,
+    "expected_answer_contains": [
+      "surplus",
+      "64",
+      "footwear"
+    ]
+  }
+]

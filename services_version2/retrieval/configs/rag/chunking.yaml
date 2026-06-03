@@ -1,0 +1,29 @@
+strategy: markdown_structure
+
+drop_patterns:
+  - "^!\\[.*\\]\\(.*\\)$" # remove all images
+  - "^\\s*$" # allow blank lines
+  - "^[-_]{3,}$" # horizontal rules
+  - "^[-–]?\\s*\\d+\\s*[-–]?$" # standalone page numbers
+
+skip_sections:
+  - "Table of Content" # skip TOC completely
+  - "Table of Contents"
+
+heading_rules:
+  # detect headings by keywords and common doc patterns
+  accept_heading_if_matches:
+    - "^(Preface|Introduction|Note)$"
+    - "^(Chapter|Part)\\s+\\w+"
+    - "^Section\\s+\\d+\\b"
+    - "^(Annex|Appendix)\\b"
+    - "^Article\\s+\\d+\\b"
+    - "^Definitions\\b"
+    - "^Law\\s+On\\s+Customs$"
+
+max_words_per_chunk: 900
+min_words_per_chunk: 180
+overlap_words: 80
+
+definitions:
+  keep_definitions_together: true

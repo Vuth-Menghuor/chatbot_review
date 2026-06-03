@@ -1,0 +1,25 @@
+strategy: markdown_structure
+
+drop_patterns:
+  - "^!\\[\\]\\(images/.*\\)$"          # remove images
+  - "^\\s*$"                            # allow blank lines
+
+skip_sections:
+  - "Table of Content"                  # skip TOC completely
+
+heading_rules:
+  # because your file uses lots of #, we detect “real” headings by keywords
+  accept_heading_if_matches:
+    - "^(Preface|Introduction)$"
+    - "^Section\\s+\\d+\\b"
+    - "^(Annex|Appendix)\\b"
+    - "^(Chapter|Part)\\b"
+    - "^Article\\s+\\d+\\b"
+    - "^Definitions\\b"
+
+max_words_per_chunk: 1100
+min_words_per_chunk: 150
+overlap_words: 80
+
+definitions:
+  keep_definitions_together: true

@@ -1,0 +1,89 @@
+{
+  "timestamp": "2026_06_02_151334",
+  "overall_accuracy": 9.7,
+  "total_cases": 155,
+  "total_passed": 15,
+  "attribute_accuracies": {
+    "intent": {
+      "correct": 150,
+      "total": 155,
+      "accuracy": 96.8
+    },
+    "country": {
+      "correct": 26,
+      "total": 41,
+      "accuracy": 63.4
+    },
+    "year": {
+      "correct": 77,
+      "total": 84,
+      "accuracy": 91.7
+    },
+    "hs_code": {
+      "correct": 26,
+      "total": 30,
+      "accuracy": 86.7
+    },
+    "transport": {
+      "correct": 8,
+      "total": 8,
+      "accuracy": 100.0
+    },
+    "dal_url": {
+      "correct": 22,
+      "total": 155,
+      "accuracy": 14.2
+    }
+  },
+  "intent_accuracies": {
+    "summary": {
+      "total": 23,
+      "intent_accuracy": 100.0,
+      "parameter_accuracy": 91.3,
+      "url_accuracy": 0.0,
+      "e2e_accuracy": 66.7
+    },
+    "ranking": {
+      "total": 22,
+      "intent_accuracy": 100.0,
+      "parameter_accuracy": 68.2,
+      "url_accuracy": 31.8,
+      "e2e_accuracy": 0.0
+    },
+    "trend": {
+      "total": 22,
+      "intent_accuracy": 86.4,
+      "parameter_accuracy": 77.3,
+      "url_accuracy": 0.0,
+      "e2e_accuracy": 50.0
+    },
+    "comparison": {
+      "total": 22,
+      "intent_accuracy": 100.0,
+      "parameter_accuracy": 54.5,
+      "url_accuracy": 27.3,
+      "e2e_accuracy": 50.0
+    },
+    "breakdown": {
+      "total": 22,
+      "intent_accuracy": 100.0,
+      "parameter_accuracy": 18.2,
+      "url_accuracy": 22.7,
+      "e2e_accuracy": 0.0
+    },
+    "growth": {
+      "total": 22,
+      "intent_accuracy": 90.9,
+      "parameter_accuracy": 40.9,
+      "url_accuracy": 18.2,
+      "e2e_accuracy": 0.0
+    },
+    "trade_balance": {
+      "total": 22,
+      "intent_accuracy": 100.0,
+      "parameter_accuracy": 54.5,
+      "url_accuracy": 0.0,
+      "e2e_accuracy": 0.0
+    }
+  }
+}

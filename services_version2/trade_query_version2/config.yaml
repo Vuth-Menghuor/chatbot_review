@@ -1,0 +1,21 @@
+# Trade Query Service — Configuration
+# All values are loaded from environment variables at runtime via python-dotenv.
+
+dal:
+  base_url: "${DAL_BASE_URL}"          # Default: http://localhost:8000
+  api_key: "${DAL_API_KEY}"            # Default: (empty)
+  dataset_code: "${DAL_DATASET_CODE}"  # Default: trade_volume
+
+service:
+  host: "${TRADE_SERVICE_HOST}"        # Default: 0.0.0.0
+  port: "${TRADE_SERVICE_PORT}"        # Default: 8005
+  title: "GDCE Trade Query Service"
+  version: "1.0.0"
+
+limits:
+  result_limit: 1000
+  max_payload_size_mb: "${MAX_PAYLOAD_SIZE_MB}"   # Default: 1
+
+security:
+  rate_limit_requests: "${RATE_LIMIT_REQUESTS}"   # Per minute
+  allowed_origins: "${ALLOWED_ORIGINS}"             # Default: *

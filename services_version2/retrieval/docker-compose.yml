@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.17.0
+    container_name: qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  retrieval-service:
+    build: .
+    container_name: retrieval-service
+    env_file:
+      - .env
+    ports:
+      - "8003:8003"
+    depends_on:
+      - qdrant
+    restart: unless-stopped
+
+volumes:
+  qdrant_data:
+    external: true
+    name: retrieval_version2_qdrant_data
