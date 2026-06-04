@@ -10,7 +10,8 @@ from ..app import app
 @pytest.fixture
 def client():
     """Provide test client."""
-    return TestClient(app)
+    with TestClient(app) as client:
+        yield client
 
 
 class TestQueryEndpoint:
@@ -97,7 +98,7 @@ class TestStatusEndpoint:
         
         assert response.status_code == 200
         data = response.json()
-        assert data["service"] == "orchestrator_v2"
+        assert data["service"] == "GDCE Orchestrator v2"
         assert "version" in data
         assert "status" in data
 
@@ -111,7 +112,7 @@ class TestInfoEndpoint:
         
         assert response.status_code == 200
         data = response.json()
-        assert "name" in data
+        assert "service" in data
         assert "version" in data
         assert "description" in data
         assert "capabilities" in data
@@ -131,5 +132,5 @@ class TestExplainEndpoint:
         data = response.json()
         assert "question" in data
         assert "intent" in data
-        assert "routing" in data
-        assert "sequence" in data["routing"]
+        assert "intended_workflow" in data
+        assert "primary_service" in data["intended_workflow"]

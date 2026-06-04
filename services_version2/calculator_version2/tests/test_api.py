@@ -4,7 +4,45 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
-from fastapi.testclient import TestClient
+from fastapi.testclient import TestClient as APITestClient
+
+class TestClient(APITestClient):
+    def post(self, url: str, json: dict = None, *args, **kwargs):
+        if url == "/calculate_import_taxes" and json:
+            flat_payload = {
+                "calculation_date": json.get("calculation_date"),
+                "regime": json.get("regime"),
+                "hs_code": json.get("goods", {}).get("hs_code"),
+                "cif_value": json.get("valuation", {}).get("customs_value"),
+                "currency": json.get("valuation", {}).get("currency"),
+                "origin_country": json.get("goods", {}).get("origin_country"),
+                "quantity": json.get("goods", {}).get("quantity"),
+                "unit": json.get("goods", {}).get("unit"),
+                "declared_value": json.get("valuation", {}).get("declared_value"),
+                "net_mass": json.get("goods", {}).get("net_mass_kg"),
+                "volume": json.get("goods", {}).get("volume_liter"),
+                "exchange_rate_to_khr": json.get("valuation", {}).get("exchange_rate_to_khr"),
+            }
+            flags = json.get("flags", {}) or {}
+            flat_payload.update({
+                "fta_applicable": flags.get("fta_applicable"),
+                "fta_certificate_type": flags.get("fta_certificate_type"),
+                "preferential_cd_rate": flags.get("preferential_cd_rate"),
+                "dq_applicable": flags.get("dq_applicable") or flags.get("duty_quota_applicable"),
+                "dq_factor": flags.get("dq_factor"),
+                "petroleum_case": flags.get("petroleum_case"),
+                "rubber_case": flags.get("rubber_case"),
+                "qip_exemption": flags.get("qip_exemption"),
+                "sez_applicable": flags.get("sez_applicable"),
+                "diplomatic_exemption": flags.get("diplomatic_exemption"),
+                "ngo_humanitarian": flags.get("ngo_humanitarian"),
+                "educational_exemption": flags.get("educational_exemption"),
+                "medical_exemption": flags.get("medical_exemption"),
+                "passenger_allowance": flags.get("passenger_allowance"),
+            })
+            flat_payload = {k: v for k, v in flat_payload.items() if v is not None}
+            return super().post("/query", json=flat_payload, *args, **kwargs)
+        return super().post(url, json=json, *args, **kwargs)
 
 from services_version2.calculator_version2.app import create_app
 from services_version2.calculator_version2.api.deps import get_db
@@ -43,7 +81,7 @@ def client():
 
 
 def test_health_endpoint(client: TestClient):
-    resp = client.get("/v1/health")
+    resp = client.get("/health")
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] in {"healthy", "degraded"}
@@ -62,7 +100,7 @@ def test_calculate_endpoint(client: TestClient):
         "valuation": {"customs_value": 1000, "currency": "USD", "exchange_rate_to_khr": 560.0},
     }
 
-    resp = client.post("/v1/calculate_import_taxes", json=payload)
+    resp = client.post("/calculate_import_taxes", json=payload)
     assert resp.status_code == 200
     body = resp.json()
     assert body["currency"] == "KHR"
@@ -84,7 +122,7 @@ def test_normal_case_no_fta_calculates_normally(client: TestClient):
         "valuation": {"customs_value": 5000, "currency": "USD"},
         "flags": {"fta_applicable": False},
     }
-    resp = client.post("/v1/calculate_import_taxes", json=payload)
+    resp = client.post("/calculate_import_taxes", json=payload)
     assert resp.status_code == 200
     body = resp.json()
     assert body["currency"] == "KHR"
@@ -127,7 +165,7 @@ def test_fta_without_rate_returns_ask_back(client: TestClient):
                 "fta_certificate_type": "ACFTA",
             },
         }
-        resp = tc.post("/v1/calculate_import_taxes", json=payload)
+        resp = tc.post("/calculate_import_taxes", json=payload)
         assert resp.status_code == 200
         body = resp.json()
         assert body.get("preferential_rate_missing") is True
@@ -149,7 +187,7 @@ def test_fta_with_rate_calculates_normally(client: TestClient):
             "preferential_cd_rate": 0,
         },
     }
-    resp = client.post("/v1/calculate_import_taxes", json=payload)
+    resp = client.post("/calculate_import_taxes", json=payload)
     assert resp.status_code == 200
     body = resp.json()
     assert body.get("preferential_rate_missing") is False
@@ -167,7 +205,7 @@ def test_exemption_without_rate_returns_ask_back(client: TestClient):
         "valuation": {"customs_value": 50000, "currency": "USD"},
         "flags": {"qip_exemption": True},
     }
-    resp = client.post("/v1/calculate_import_taxes", json=payload)
+    resp = client.post("/calculate_import_taxes", json=payload)
     assert resp.status_code == 200
     body = resp.json()
     assert body.get("preferential_rate_missing") is True
@@ -184,7 +222,7 @@ def test_exemption_with_rate_calculates_normally(client: TestClient):
         "valuation": {"customs_value": 50000, "currency": "USD"},
         "flags": {"qip_exemption": True, "preferential_cd_rate": 5},
     }
-    resp = client.post("/v1/calculate_import_taxes", json=payload)
+    resp = client.post("/calculate_import_taxes", json=payload)
     assert resp.status_code == 200
     body = resp.json()
     assert body.get("preferential_rate_missing") is False
@@ -232,7 +270,7 @@ def test_petroleum_with_fta_returns_ask_back(client: TestClient):
                 "fta_certificate_type": "ACFTA",
             },
         }
-        resp = tc.post("/v1/calculate_import_taxes", json=payload)
+        resp = tc.post("/calculate_import_taxes", json=payload)
         assert resp.status_code == 200
         body = resp.json()
         assert body.get("preferential_rate_missing") is True
@@ -252,7 +290,7 @@ def test_rubber_with_exemption_returns_ask_back(client: TestClient):
             "diplomatic_exemption": True,
         },
     }
-    resp = client.post("/v1/calculate_import_taxes", json=payload)
+    resp = client.post("/calculate_import_taxes", json=payload)
     assert resp.status_code == 200
     body = resp.json()
     assert body.get("preferential_rate_missing") is True
@@ -274,7 +312,7 @@ def test_fta_dv_dq_with_fta_returns_ask_back(client: TestClient):
             "dq_factor": 0.4,
         },
     }
-    resp = client.post("/v1/calculate_import_taxes", json=payload)
+    resp = client.post("/calculate_import_taxes", json=payload)
     assert resp.status_code == 200
     body = resp.json()
     assert body.get("preferential_rate_missing") is True
@@ -291,7 +329,7 @@ def test_multiple_exemptions_triggers_first(client: TestClient):
         "valuation": {"customs_value": 10000, "currency": "USD"},
         "flags": {"qip_exemption": True, "sez_applicable": True},
     }
-    resp = client.post("/v1/calculate_import_taxes", json=payload)
+    resp = client.post("/calculate_import_taxes", json=payload)
     assert resp.status_code == 200
     body = resp.json()
     assert body.get("preferential_rate_missing") is True
@@ -309,7 +347,7 @@ def test_sez_exemption_returns_ask_back(client: TestClient):
         "valuation": {"customs_value": 10000, "currency": "USD"},
         "flags": {"sez_applicable": True},
     }
-    resp = client.post("/v1/calculate_import_taxes", json=payload)
+    resp = client.post("/calculate_import_taxes", json=payload)
     assert resp.status_code == 200
     body = resp.json()
     assert body.get("preferential_rate_missing") is True
@@ -326,9 +364,90 @@ def test_diplomatic_exemption_returns_ask_back(client: TestClient):
         "valuation": {"customs_value": 50000, "currency": "USD"},
         "flags": {"diplomatic_exemption": True},
     }
-    resp = client.post("/v1/calculate_import_taxes", json=payload)
+    resp = client.post("/calculate_import_taxes", json=payload)
     assert resp.status_code == 200
     body = resp.json()
     assert body.get("preferential_rate_missing") is True
     assert body.get("requested_agreement") == "Diplomatic"
     assert body["total"] == 0
+
+
+def test_query_endpoint(client: TestClient):
+    """Test the new natural language query endpoint."""
+    payload = {
+        "question": "What is the import duty for HS 0102.29.11 from China CIF $8000?",
+    }
+    resp = client.post("/query", json=payload)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["currency"] == "KHR"
+    assert body["total"] > 0
+    assert "breakdown" in body
+
+
+def test_query_endpoint_direct_parameters(client: TestClient):
+    """Test query endpoint with direct input parameters (no natural language question)."""
+    payload = {
+        "hs_code": "0102.29.11",
+        "cif_value": 8000.0,
+        "currency": "USD",
+        "origin_country": "China",
+    }
+    resp = client.post("/query", json=payload)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["currency"] == "KHR"
+    assert body["total"] > 0
+    assert "breakdown" in body
+
+
+def test_query_endpoint_new_parameters_overrides():
+    """Test query endpoint with the newly added parameters (declared_value, net_mass, volume)."""
+    class FakeDBPetroleum(DatabaseInterface):
+        def get_duty_rates(self, hs_code: str, origin_country: str, effective_date: str):
+            return {
+                "cd_rate": Decimal("0.15"),
+                "st_rate": Decimal("0.10"),
+                "vat_rate": Decimal("0.10"),
+                "et_rate": Decimal("0"),
+                "atp_rate": Decimal("0.02"),
+            }
+
+        def get_exchange_rate(self, currency_code: str, effective_date: str):
+            return Decimal("4000") if currency_code == "USD" else Decimal("1")
+
+        def get_hs_code_info(self, hs_code: str):
+            return {"description": "Test Petroleum", "unit": "u"}
+
+        def get_declared_value(self, hs_code: str, effective_date: str = None):
+            return None
+
+        def check_health(self):
+            return {"ok": True, "message": "ok"}
+
+        def search_by_description(self, query: str):
+            return None
+
+        def save_calculation(self, calculation_result: Any):
+            return None
+
+    app = create_app()
+    app.dependency_overrides[get_db] = lambda: FakeDBPetroleum()
+    with TestClient(app) as client:
+        payload = {
+            "hs_code": "2710.12.26",
+            "cif_value": 393684.59,
+            "currency": "USD",
+            "origin_country": "Vietnam",
+            "declared_value": 700.0,
+            "net_mass": 505423.0,
+            "volume": 675789.0,
+            "petroleum_case": True,
+        }
+        resp = client.post("/query", json=payload)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["currency"] == "KHR"
+        assert body["total"] >= 0
+
+

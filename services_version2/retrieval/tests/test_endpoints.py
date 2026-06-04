@@ -3,18 +3,19 @@ Tests for API Endpoints
 """
 
 import pytest
+import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
 from services_version2.retrieval.app import app
 from services_version2.retrieval.api.endpoints import set_service
 
 
 @pytest.fixture(autouse=True)
-async def setup_service(retrieval_service):
+def setup_service(retrieval_service):
     """Setup service in endpoints for each test."""
     set_service(retrieval_service)
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def client():
     """Create AsyncClient with proper ASGI transport."""
     transport = ASGITransport(app=app)
@@ -29,7 +30,7 @@ class TestRetrieveEndpoint:
     async def test_retrieve_success(self, client):
         """Test successful retrieve endpoint."""
         response = await client.post(
-            "/v1/retrieval/retrieve",
+            "/retrieval/retrieve",
             json={
                 "query": "HS code for cotton",
                 "top_k": 10
@@ -46,7 +47,7 @@ class TestRetrieveEndpoint:
         """Test retrieve endpoint with session ID."""
         session_id = "test-session-123"
         response = await client.post(
-            "/v1/retrieval/retrieve",
+            "/retrieval/retrieve",
             json={
                 "query": "test query",
                 "session_id": session_id
@@ -60,7 +61,7 @@ class TestRetrieveEndpoint:
     async def test_retrieve_custom_top_k(self, client):
         """Test retrieve endpoint with custom top_k."""
         response = await client.post(
-            "/v1/retrieval/retrieve",
+            "/retrieval/retrieve",
             json={
                 "query": "test",
                 "top_k": 5
@@ -74,7 +75,7 @@ class TestRetrieveEndpoint:
     async def test_retrieve_invalid_query(self, client):
         """Test retrieve with empty query."""
         response = await client.post(
-            "/v1/retrieval/retrieve",
+            "/retrieval/retrieve",
             json={"query": ""}
         )
         
@@ -86,7 +87,7 @@ class TestRetrieveEndpoint:
     async def test_retrieve_missing_query(self, client):
         """Test retrieve without query parameter."""
         response = await client.post(
-            "/v1/retrieval/retrieve",
+            "/retrieval/retrieve",
             json={}
         )
         
@@ -96,7 +97,7 @@ class TestRetrieveEndpoint:
     async def test_retrieve_too_large_top_k(self, client):
         """Test retrieve with top_k exceeding max."""
         response = await client.post(
-            "/v1/retrieval/retrieve",
+            "/retrieval/retrieve",
             json={
                 "query": "test",
                 "top_k": 1000
@@ -115,7 +116,7 @@ class TestHealthEndpoint:
     
     async def test_health_check_success(self, client):
         """Test health check endpoint."""
-        response = await client.get("/v1/health")
+        response = await client.get("/health")
         
         assert response.status_code == 200
         data = response.json()
@@ -124,7 +125,7 @@ class TestHealthEndpoint:
     
     async def test_health_status_values(self, client):
         """Test health endpoint returns valid status values."""
-        response = await client.get("/v1/health")
+        response = await client.get("/health")
         
         assert response.status_code == 200
         data = response.json()
@@ -132,7 +133,7 @@ class TestHealthEndpoint:
     
     async def test_health_check_components(self, client):
         """Test health endpoint includes component details."""
-        response = await client.get("/v1/health")
+        response = await client.get("/health")
         
         assert response.status_code == 200
         data = response.json()
@@ -148,20 +149,20 @@ class TestEndpointIntegration:
         """Test sequence of retrieval and health check."""
         # First, retrieve
         response1 = await client.post(
-            "/v1/retrieval/retrieve",
+            "/retrieval/retrieve",
             json={"query": "test"}
         )
         assert response1.status_code == 200
         
         # Then, health check
-        response2 = await client.get("/v1/health")
+        response2 = await client.get("/health")
         assert response2.status_code == 200
     
     async def test_multiple_retrieve_requests(self, client):
         """Test multiple retrieve requests."""
         for i in range(3):
             response = await client.post(
-                "/v1/retrieval/retrieve",
+                "/retrieval/retrieve",
                 json={"query": f"Query {i}"}
             )
             assert response.status_code == 200

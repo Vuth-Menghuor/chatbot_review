@@ -37,7 +37,7 @@ class RetrievalClient:
             logger.warning("Retrieval service URL is not configured. Skipping lookup.")
             return None
 
-        url = f"{self.base_url}/v1/hs-code-candidates"
+        url = f"{self.base_url}/hs-code-candidates"
         payload = {
             "query": query,
             "top_k": top_k,

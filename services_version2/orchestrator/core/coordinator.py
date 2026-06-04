@@ -339,35 +339,78 @@ async def detect_small_talk(query: str, llm_service=None) -> Optional[str]:
     """
     # Predefined fallback responses when LLM is down
     PREDEFINED_RESPONSES = {
-        "greeting": "Hello! I'm here to help you with customs and trade questions. How can I assist you today?",
-        "goodbye": "Thank you for using GDCE ChatBot. Feel free to reach out anytime you need customs assistance!",
-        "gratitude": "You're welcome! If you have any more questions about imports, exports, or customs procedures, I'm here to help.",
+        "greeting": "Hello! I'm here to help you with Cambodia customs and trade questions. How can I assist you today?",
+        "goodbye": "Thank you for using GDCE ChatBot. Have a wonderful day ahead, and feel free to reach out anytime you need customs assistance!",
+        "gratitude": "You're very welcome! If you have any more questions about imports, exports, or customs procedures, I'm here to help.",
+        "casual": "I am doing well, thank you for asking! Ready to help you with any customs or trade questions you have.",
+        "joke": "Why did the customs officer go to school? To learn how to classify himself! Let me know if you need help classifying actual goods.",
+        "roast": "You must be an HS code, because you're incredibly complicated to classify.",
+        "social": "Nice to meet you too! Let me know if there's anything about customs or trade you'd like to discuss.",
         "confirmation": "Got it! Please go ahead with your customs or trade-related question.",
     }
     
-    # Fast heuristic: avoid calling LLM for very short single-token queries
-    # (e.g., "bus?", "car") which are likely product tokens. This
-    # prevents an expensive LLM roundtrip and reduces latency for short
-    # product-description queries. Still handle obvious greetings via
-    # predefined fallback without LLM.
+    # Fast heuristic checks for obvious small talk categories
     low = (query or "").strip().lower()
+    norm = re.sub(r"[^\w\s]", "", low).strip()
+    
+    is_obvious_small_talk = False
+    matched_category = "confirmation"
+    
+    # 1. Greetings
+    if norm in ["hi", "hello", "hey", "good morning", "good afternoon", "good evening", "howdy", "greetings"] or any(re.search(rf"\b{re.escape(w)}\b", norm) for w in ["hi", "hello", "hey"]):
+        is_obvious_small_talk = True
+        matched_category = "greeting"
+    # 2. Gratitude
+    elif any(re.search(rf"\b{re.escape(w)}\b", norm) for w in ["thanks", "thank you", "appreciate"]):
+        is_obvious_small_talk = True
+        matched_category = "gratitude"
+    # 3. Farewells
+    elif any(re.search(rf"\b{re.escape(w)}\b", norm) for w in ["bye", "goodbye", "farewell", "have a good day", "have a nice day"]):
+        is_obvious_small_talk = True
+        matched_category = "goodbye"
+    # 4. Social remarks
+    elif any(re.search(rf"\b{re.escape(w)}\b", norm) for w in ["nice to meet you", "pleasure to meet you", "glad to meet you"]):
+        is_obvious_small_talk = True
+        matched_category = "social"
+    # 5. Casual conversation
+    elif any(re.search(rf"\b{re.escape(w)}\b", norm) for w in ["how are you", "whats up", "how is your day", "hows your day", "hows it going", "how is it going"]):
+        is_obvious_small_talk = True
+        matched_category = "casual"
+    # 6. Jokes & entertainment
+    elif any(re.search(rf"\b{re.escape(w)}\b", norm) for w in ["tell me a joke", "tell a joke", "make me laugh", "joke"]):
+        is_obvious_small_talk = True
+        matched_category = "joke"
+    elif any(re.search(rf"\b{re.escape(w)}\b", norm) for w in ["roast me"]):
+        is_obvious_small_talk = True
+        matched_category = "roast"
+
+    # Fast heuristic: avoid calling LLM for very short single-token queries
+    # (e.g., "bus?", "car") which are likely product tokens.
     stripped_alpha = re.sub(r"[^a-z]", "", low)
     if stripped_alpha and len(stripped_alpha) <= 5:
-        # If it's a clear greeting/thanks/farewell, return a predefined reply
-        if any(w in low for w in ["hi", "hello", "hey", "thanks", "thank you", "bye"]):
-            return {
-                "greeting": "Hello! I'm here to help you with customs and trade questions. How can I assist you today?",
-            }.get("greeting")
-        # Otherwise, avoid LLM and let normal intent detection handle short product tokens
-        return None
+        # If it is obvious small talk, return the predefined reply directly or let it proceed.
+        # But if it's NOT obvious small talk, avoid LLM and return None (to be processed as product token).
+        if not is_obvious_small_talk:
+            return None
 
+    # If the LLM service is not available, we use the local fallback responses
+    # for recognized obvious small talk rather than returning None (which would raise Out of Scope).
     if not llm_service or not llm_service.is_available():
+        if is_obvious_small_talk:
+            return PREDEFINED_RESPONSES.get(matched_category, PREDEFINED_RESPONSES["greeting"])
         return None
         
     prompt = (
-        "Determine if the following user query is pure 'small talk' (e.g., greeting, gratitude, farewell, confirmation). "
-        "If it is pure small talk, generate a friendly, brief response (1-2 sentences) acknowledging it in the context of a Cambodia Customs and Trade bot. "
-        "If it is NOT pure small talk (i.e., it asks a real question about HS codes, taxes, trade data, or policy), return ONLY the exact word 'FALSE'.\n\n"
+        "Determine if the following user query is small talk, casual conversation, a joke/roast request, or a social remark.\n"
+        "Examples of small talk include:\n"
+        "- Greetings (e.g., 'hello', 'hi', 'hey', 'good morning')\n"
+        "- Casual conversation (e.g., 'how are you', 'what's up', 'how is your day going')\n"
+        "- Jokes and entertainment (e.g., 'tell me a joke', 'roast me in one line')\n"
+        "- Social remarks and gratitude (e.g., 'nice to meet you', 'thanks', 'have a good day', 'goodbye')\n\n"
+        "If it is small talk, casual conversation, a joke/entertainment request, or a social remark, "
+        "generate a friendly, brief, and engaging response (1-2 sentences) acknowledging it in the context of a Cambodia Customs and Trade assistant. "
+        "For joke/roast requests, provide a lighthearted, witty joke or roast related to customs, shipping, or trade if possible. "
+        "If the query is NOT small talk (i.e., it asks a real question about HS codes, taxes, trade data, or policy), return ONLY the exact word 'FALSE'.\n\n"
         f"Query: {query}"
     )
     
@@ -376,6 +419,8 @@ async def detect_small_talk(query: str, llm_service=None) -> Optional[str]:
         provider = llm_service.router.providers.get("gemini")
             
         if not provider or not provider.is_available():
+            if is_obvious_small_talk:
+                return PREDEFINED_RESPONSES.get(matched_category, PREDEFINED_RESPONSES["greeting"])
             return None
             
         if provider.name == "gemini":
@@ -383,24 +428,24 @@ async def detect_small_talk(query: str, llm_service=None) -> Optional[str]:
             response = await asyncio.to_thread(provider.gen_model.generate_content, prompt)
             content = (response.text or "").strip()
         else:
+            if is_obvious_small_talk:
+                return PREDEFINED_RESPONSES.get(matched_category, PREDEFINED_RESPONSES["greeting"])
             return None
             
         if content.upper() == "FALSE" or "FALSE" in content.upper()[:10]:
+            # Double check: if it matched our obvious local heuristics but LLM said FALSE,
+            # we should still treat it as small talk and return the predefined response to be safe.
+            if is_obvious_small_talk:
+                return PREDEFINED_RESPONSES.get(matched_category, PREDEFINED_RESPONSES["greeting"])
             return None
             
         return content
     except Exception as e:
         logger.warning(f"LLM small talk detection failed: {e} - using predefined fallback")
-        # Fallback to predefined response when LLM fails
-        query_lower = query.lower()
-        if any(w in query_lower for w in ["hi", "hello", "hey"]):
-            return PREDEFINED_RESPONSES["greeting"]
-        elif any(w in query_lower for w in ["bye", "goodbye", "farewell"]):
-            return PREDEFINED_RESPONSES["goodbye"]
-        elif any(w in query_lower for w in ["thanks", "thank you", "appreciate"]):
-            return PREDEFINED_RESPONSES["gratitude"]
-        else:
-            return PREDEFINED_RESPONSES["confirmation"]
+        if is_obvious_small_talk:
+            return PREDEFINED_RESPONSES.get(matched_category, PREDEFINED_RESPONSES["greeting"])
+        return PREDEFINED_RESPONSES["confirmation"]
+
 
 class ServiceCoordinator:
     """
@@ -1946,7 +1991,7 @@ class ServiceCoordinator:
         """
         Handle trade query workflow with intent-specific timeout (STEP 4).
         """
-        logger.info(f"[{context.request_id}] Routing to trade data service")
+        logger.info(f"[{context.request_id}] [FLOW] Macro-intent 'trade_query' detected. Initiating trade query orchestration workflow...")
         
         try:
             if not self.trade_data_client:
@@ -1964,11 +2009,18 @@ class ServiceCoordinator:
             extracted_params = None
             if self.llm_service:
                 try:
+                    logger.info(f"[{context.request_id}] [FLOW] Invoking Orchestrator LLM Service to extract parameters and sub-intent from user query...")
                     extracted_params = await self.llm_service.extract_trade_parameters(context.question)
-                    logger.info(f"[{context.request_id}] Extracted trade parameters: {extracted_params}")
+                    sub_intent = extracted_params.get("intent", "summary")
+                    logger.info(
+                        f"[{context.request_id}] [FLOW] Orchestrator LLM parameter extraction complete:\n"
+                        f"  - Target Question: '{context.question}'\n"
+                        f"  - Extracted Sub-intent: '{sub_intent}' (Chosen from 7 sub-intents: summary, trend, comparison, breakdown, ranking, growth, trade_balance)\n"
+                        f"  - Parameters Extracted: {extracted_params}"
+                    )
                 except Exception as e:
                     logger.warning(
-                        f"[{context.request_id}] Orchestrator LLM trade parameter extraction failed, "
+                        f"[{context.request_id}] [FLOW] Orchestrator LLM trade parameter extraction failed, "
                         f"falling back to trade service's internal extraction: {e}"
                     )
             
@@ -1977,20 +2029,28 @@ class ServiceCoordinator:
                 query_kwargs = {}
                 if extracted_params:
                     query_kwargs["extracted_params"] = extracted_params
+                
+                logger.info(
+                    f"[{context.request_id}] [FLOW] Sending request to downstream Trade Data Service:\n"
+                    f"  - Client: {self.trade_data_client}\n"
+                    f"  - Method: POST\n"
+                    f"  - Payload: {{'question': '{context.question}', 'extracted_params': {extracted_params}}}"
+                )
                 result = await asyncio.wait_for(
                     self.trade_data_client.query(context.question, **query_kwargs),
                     timeout=timeout_sec
                 )
+                logger.info(f"[{context.request_id}] [FLOW] Received response from Trade Data Service successfully.")
                 context.set_result("trade_query", result)
                 context.status = WorkflowStatus.COMPLETED
             
             except asyncio.TimeoutError:
-                logger.error(f"[{context.request_id}] Trade data service timed out after {timeout_sec}s")
+                logger.error(f"[{context.request_id}] [FLOW] Trade data service timed out after {timeout_sec}s")
                 context.add_error(f"Trade data service timed out after {timeout_sec}s")
                 context.status = WorkflowStatus.FAILED
         
         except Exception as e:
-            logger.error(f"[{context.request_id}] Trade query failed: {e}")
+            logger.error(f"[{context.request_id}] [FLOW] Trade query workflow failed: {e}")
             context.add_error(f"Trade data service error: {str(e)}")
             context.status = WorkflowStatus.FAILED
     
@@ -2086,7 +2146,7 @@ class ServiceCoordinator:
     
     async def _handle_hs_code_lookup(self, context: WorkflowContext):
         """
-        Handle HS code lookup workflow using Retrieval v2 /v1/hs-code-lookup endpoint.
+        Handle HS code lookup workflow using Retrieval /hs-code-candidates endpoint.
         Includes:
         - Query cleanup to remove filler patterns
         - Critical discriminators validation (vehicles, food, textiles)
@@ -2094,7 +2154,7 @@ class ServiceCoordinator:
         - Caching (STEP 8)
         - Semantic conflict detection
         """
-        logger.info(f"[{context.request_id}] Routing to retrieval v2 /v1/hs-code-candidates")
+        logger.info(f"[{context.request_id}] Routing to retrieval /hs-code-candidates")
         
         try:
             if not self.retrieval_client:
@@ -2222,12 +2282,12 @@ class ServiceCoordinator:
     
     async def _handle_definition(self, context: WorkflowContext):
         """
-        Handle definition/policy workflow using Retrieval v2 intent-specific endpoints.
-        Routes to /v1/definition or /v1/policy-inquiry based on intent.
+        Handle definition/policy workflow using Retrieval intent-specific routing.
+        Routes to /retrieval/retrieve with appropriate intent.
         Includes intent-specific timeout (STEP 4) and caching (STEP 8).
         """
         endpoint_name = "policy-inquiry" if context.intent == WorkflowIntent.POLICY_QUERY else "definition"
-        logger.info(f"[{context.request_id}] Routing to retrieval v2 /v1/{endpoint_name}")
+        logger.info(f"[{context.request_id}] Routing to retrieval /retrieval/retrieve (intent: {endpoint_name})")
         
         try:
             if not self.retrieval_client:
@@ -2311,10 +2371,10 @@ class ServiceCoordinator:
     
     async def _handle_default(self, context: WorkflowContext):
         """
-        Handle default workflow using Retrieval v2 /v1/general endpoint.
+        Handle default workflow using Retrieval /retrieval/retrieve endpoint.
         Fall back to general retrieval for unclassified queries.
         """
-        logger.info(f"[{context.request_id}] Using default workflow - routing to /v1/general")
+        logger.info(f"[{context.request_id}] Using default workflow - routing to /retrieval/retrieve (intent: general)")
         
         try:
             if not self.retrieval_client:
@@ -2956,7 +3016,24 @@ class ServiceCoordinator:
                     for key in keys:
                         if key in row_dict:
                             label = key.replace("_", " ").title()
-                            lines.append(f"   - {label}: {row_dict.get(key)}")
+                            val = row_dict.get(key)
+                            key_lower = key.lower()
+                            if "value" in key_lower or "usd" in key_lower:
+                                try:
+                                    val = f"${float(val):,.2f}"
+                                except (TypeError, ValueError):
+                                    pass
+                            elif "weight" in key_lower or "qty" in key_lower or "quantity" in key_lower:
+                                try:
+                                    val = f"{float(val):,.2f}"
+                                except (TypeError, ValueError):
+                                    pass
+                            elif "flow" in key_lower:
+                                if str(val).upper() == "EX":
+                                    val = "Export (EX)"
+                                elif str(val).upper() == "IM":
+                                    val = "Import (IM)"
+                            lines.append(f"   - {label}: {val}")
                 if len(rows) > limit:
                     lines.append(f"... and {len(rows) - limit} more")
                 return lines
@@ -3632,7 +3709,6 @@ class ServiceCoordinator:
                 lines.append(f"**Note**: {payload.get('note') or trade_result.get('note')}")
 
             lines.append("")
-            lines.append("> **Data Source**: Trade Query Service v2 (PostgreSQL)  ")
             lines.append(f"> **Query Timestamp**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             
             return "\n".join(lines)

@@ -146,7 +146,7 @@ class OrchestratorConfig:
         
         # Gemini LLM Configuration
         self.gemini_api_key = os.getenv("GEMINI_API_KEY", "")
-        self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
         self.gemini_timeout = int(os.getenv("GEMINI_TIMEOUT", "30"))
         self.gemini_enabled = os.getenv("GEMINI_ENABLED", "true").lower() == "true"
         

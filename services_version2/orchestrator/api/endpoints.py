@@ -67,7 +67,7 @@ async def get_config(request: Request):
 # =====================================================
 
 
-@router.post("/v1/query", response_model=QueryResponse)
+@router.post("/query", response_model=QueryResponse)
 async def process_query(
     req: QueryRequest,
     app_request: Request,
@@ -150,6 +150,11 @@ async def process_query(
                 ]
             record_query(response.intent, response.status, latency_ms / 1000.0)
             return response
+        else:
+            logger.info(
+                f"[{request_id}] ❌ Cache MISS for query: '{question}' "
+                f"— initiating full orchestrator query processing workflow..."
+            )
         
         # ===== STEP 2: PROCESS THROUGH COORDINATOR =====
         result = await coordinator.process_query(
@@ -240,7 +245,7 @@ async def process_query(
                 source=result_intent,
             )
             logger.info(
-                f"[{request_id}] 💾 Cached '{result_intent}' response "
+                f"[{request_id}] 💾 Successfully stored query results in cache for intent '{result_intent}' "
                 f"(TTL: {ttl}s, key: hash(question))"
             )
         
@@ -293,13 +298,13 @@ async def chat(req: QueryRequest, app_request: Request, coordinator=Depends(get_
     return await process_query(req, app_request, coordinator)
 
 
-@router.get("/v1/health", response_model=HealthCheckResponse)
+@router.get("/health", response_model=HealthCheckResponse)
 async def health_check() -> HealthCheckResponse:
     """
     Quick health check - orchestrator service itself only.
     
     Does NOT check downstream services to keep response fast.
-    Use /v1/status for comprehensive health checks.
+    Use /status for comprehensive health checks.
     
     Returns:
         Health check response indicating service is running
@@ -312,7 +317,7 @@ async def health_check() -> HealthCheckResponse:
     )
 
 
-@router.get("/v1/status", response_model=dict)
+@router.get("/status", response_model=dict)
 async def get_status(config=Depends(get_config)) -> dict:
     """
     Get detailed orchestrator service status.
@@ -455,10 +460,10 @@ async def root():
         "port": 8001,
         "status": "online",
         "endpoints": {
-            "health": "GET /v1/health",
-            "status": "GET /v1/status",
-            "query": "POST /v1/query",
-            "explain": "POST /v1/explain",
+            "health": "GET /health",
+            "status": "GET /status",
+            "query": "POST /query",
+            "explain": "POST /query/explain",
             "swagger": "/docs",
             "openapi": "/openapi.json"
         },

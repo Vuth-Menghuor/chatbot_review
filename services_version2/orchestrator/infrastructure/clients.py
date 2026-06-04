@@ -561,7 +561,7 @@ class RetrievalServiceClient(HttpxServiceClient):
             if session_id:
                 payload["session_id"] = session_id
             
-            result = await self._post("v1/hs-code-candidates", payload)
+            result = await self._post("hs-code-candidates", payload)
             
             # Log key result fields for debugging
             status = result.get("status", "unknown")
@@ -610,7 +610,7 @@ class RetrievalServiceClient(HttpxServiceClient):
             if session_id:
                 payload["session_id"] = session_id
             
-            result = await self._post("v1/retrieval/retrieve", payload)
+            result = await self._post("retrieval/retrieve", payload)
             
             status = result.get("status", "unknown")
             has_answer = "final_answer" in result
@@ -654,7 +654,7 @@ class RetrievalServiceClient(HttpxServiceClient):
             if session_id:
                 payload["session_id"] = session_id
             
-            result = await self._post("v1/retrieval/retrieve", payload)
+            result = await self._post("retrieval/retrieve", payload)
             
             status = result.get("status", "unknown")
             has_answer = "final_answer" in result
@@ -698,7 +698,7 @@ class RetrievalServiceClient(HttpxServiceClient):
             if session_id:
                 payload["session_id"] = session_id
             
-            result = await self._post("v1/retrieval/retrieve", payload)
+            result = await self._post("retrieval/retrieve", payload)
             
             status = result.get("status", "unknown")
             has_answer = "final_answer" in result
@@ -732,7 +732,7 @@ class RetrievalServiceClient(HttpxServiceClient):
     async def health(self) -> Dict[str, Any]:
         """Check health of retrieval service."""
         try:
-            result = await self._get("v1/health")
+            result = await self._get("health")
             return result
         except Exception as e:
             logger.error(f"Retrieval service health check failed: {e}")
@@ -1091,78 +1091,59 @@ class CalculatorServiceClient(HttpxServiceClient):
             # Preserve original CIF value and currency for response formatting
             original_cif_value = parsed.get("cif_value")
             original_currency = parsed.get("currency")
-            
-            # Build the CalculateImportTaxesRequest structure
             payload = {
-                "calculation_date": datetime.now().strftime("%Y-%m-%d"),
+                "question": question,
+                "hs_code": parsed.get("hs_code"),
+                "cif_value": parsed.get("cif_value"),
+                "currency": parsed.get("currency"),
+                "origin_country": parsed.get("origin_country"),
+                "quantity": parsed.get("quantity"),
+                "unit": parsed.get("unit"),
+                "fta_applicable": parsed.get("fta_applicable"),
+                "fta_certificate_type": parsed.get("fta_certificate_type"),
+                "preferential_cd_rate": parsed.get("preferential_cd_rate"),
+                "dq_applicable": parsed.get("dq_applicable") or parsed.get("duty_quota_applicable"),
+                "dq_factor": parsed.get("dq_factor"),
+                "declared_value": parsed.get("declared_value"),
+                "net_mass": parsed.get("net_mass"),
+                "volume": parsed.get("volume"),
+                "petroleum_case": parsed.get("petroleum_case"),
+                "rubber_case": parsed.get("rubber_case"),
                 "regime": parsed.get("regime", "import"),
-                "goods": {
-                    "description": parsed.get("description", question),
-                    "hs_code": parsed.get("hs_code"),
-                    "origin_country": parsed.get("origin_country"),
-                    "quantity": parsed.get("quantity"),
-                    "unit": parsed.get("unit"),
-                    "net_mass_kg": parsed.get("net_mass"),
-                    "volume_liter": parsed.get("volume"),
-                },
-                "valuation": {
-                    "customs_value": parsed.get("cif_value", 0),
-                    "currency": parsed.get("currency", "KHR"),
-                    "declared_value": parsed.get("declared_value"),
-                    "declared_value_basis": "per_ton" if parsed.get("petroleum_case") else "total",
-                    "dq_factor": parsed.get("dq_factor"),
-                },
-                "flags": {
-                    "fta_applicable": parsed.get("fta_applicable", False),
-                    "fta_certificate_type": parsed.get("fta_certificate_type"),
-                    "preferential_cd_rate": parsed.get("preferential_cd_rate"),
-                    "duty_quota_applicable": parsed.get("duty_quota_applicable", False),
-                    "dq_applicable": parsed.get("dq_applicable", False),
-                    "dq_factor": parsed.get("dq_factor"),
-                    "petroleum_case": parsed.get("petroleum_case", False),
-                    "rubber_case": parsed.get("rubber_case", False),
-                    "qip_exemption": parsed.get("qip_exemption", False),
-                    "sez_applicable": parsed.get("sez_applicable", False),
-                    "diplomatic_exemption": parsed.get("diplomatic_exemption", False),
-                    "ngo_humanitarian": parsed.get("ngo_humanitarian", False),
-                    "educational_exemption": parsed.get("educational_exemption", False),
-                    "medical_exemption": parsed.get("medical_exemption", False),
-                    "passenger_allowance": parsed.get("passenger_allowance", False),
-                }
+                "calculation_date": datetime.now().strftime("%Y-%m-%d"),
             }
+            # Clean None values
+            payload = {k: v for k, v in payload.items() if v is not None}
             
-            # Build the calculate Import Taxes Request Structure 
-            goods = payload["goods"]
-            goods = {k: v for k, v in goods.items() if v is not None}
-            payload["goods"] = goods
-            
-            # Ensure required fields
-            if payload["valuation"]["customs_value"] == 0:
-                logger.warning(f"No CIF value found in question: {question}")
-            if "description" not in payload["goods"]:
-                payload["goods"]["description"] = question
-            
-            logger.info(f"Sending to calculator: customs_value={payload['valuation']['customs_value']}, "
-                       f"hs_code={payload['goods'].get('hs_code')}, "
-                       f"currency={payload['valuation'].get('currency')}, "
-                       f"origin={payload['goods'].get('origin_country')}, "
-                       f"fta_applicable={payload['flags'].get('fta_applicable')}, "
-                       f"fta_certificate_type={payload['flags'].get('fta_certificate_type')}, "
-                       f"preferential_cd_rate={payload['flags'].get('preferential_cd_rate')}")
-            
-            result = await self._post("calculate_import_taxes", payload)
+            logger.info(f"Sending to calculator query: {payload}")
+            result = await self._post("query", payload)
             
             # Add original CIF value and currency to response for proper formatting
             result["original_cif_value"] = original_cif_value
             result["original_currency"] = original_currency
             
-            logger.info(f"Calculator service returned: total_tax={result.get('total_tax', 'N/A')}, "
-                       f"currency={result.get('currency', 'N/A')}")
+            logger.info(f"Calculator service returned: total={result.get('total', 'N/A')}, "
+                        f"currency={result.get('currency', 'N/A')}")
             return result
         except Exception as e:
             logger.error(f"Calculator service error: {e}")
             raise
     
+    async def query(self, question: str, **kwargs) -> Dict[str, Any]:
+        """
+        Query the calculator service directly with a natural language question.
+        """
+        logger.info(f"Calling calculator service query endpoint: {question[:100]}...")
+        try:
+            payload = {"question": question}
+            payload.update(kwargs)
+            result = await self._post("query", payload)
+            logger.info(f"Calculator service returned results")
+            return result
+        except Exception as e:
+            logger.error(f"Calculator service query error: {e}")
+            raise
+
     async def health(self) -> Dict[str, Any]:
         """Check health of calculator service."""
         try:
@@ -1414,9 +1395,9 @@ class ServiceClientFactory:
     @staticmethod
     def create_calculator_client(base_url: str) -> CalculatorServiceClient:
         """Create calculator service client."""
-        # Ensure calculator endpoints are under /v1 prefix
-        if not base_url.endswith("/v1"):
-            base_url = f"{base_url}/v1"
+        # Strip trailing slash if present
+        if base_url.endswith("/"):
+            base_url = base_url[:-1]
         return CalculatorServiceClient(base_url)
     
     @staticmethod

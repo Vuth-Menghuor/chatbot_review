@@ -24,10 +24,15 @@ from .schemas import (
     CalculateImportTaxesResponse,
     HSCodeInfoModel,
     ErrorResponse,
+    QueryRequest,
+    GoodsModel,
+    ValuationModel,
+    FlagsModel,
 )
 from ..core.calculator import CalculationRequest, ImportTaxCalculator
 from ..core.models import TaxReference
 from ..infrastructure.retrieval_client import RetrievalClient
+from ..core.parser import parse_question_for_calculation
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +47,8 @@ async def root() -> Dict[str, Any]:
         "version": "2.0.0",
         "status": "ready",
         "endpoints": {
-            "health": "/v1/health",
-            "calculate": "/v1/calculate_import_taxes",
+            "health": "/health",
+            "query": "/query",
             "docs": "/docs",
         },
     }
@@ -196,15 +201,6 @@ async def get_hs_code_candidates(
         }
 
 
-@router.post(
-    "/calculate_import_taxes",
-    tags=["Calculation"],
-    response_model=CalculateImportTaxesResponse,
-    responses={
-        400: {"model": ErrorResponse, "description": "Validation error"},
-        500: {"model": ErrorResponse, "description": "Internal error"},
-    },
-)
 async def calculate_import_taxes(
     request: CalculateImportTaxesRequest,
     format_with_llm: bool = False,
@@ -510,3 +506,127 @@ async def _format_calculation_with_llm(
     except Exception as e:
         logger.warning(f"⚠️  Error in LLM formatting: {e}. Continuing with unformatted response.")
         return result_dict
+
+
+@router.post(
+    "/query",
+    tags=["Calculation"],
+    response_model=CalculateImportTaxesResponse,
+    responses={
+        400: {"model": ErrorResponse, "description": "Validation error"},
+        500: {"model": ErrorResponse, "description": "Internal error"},
+    },
+)
+async def query_import_taxes(
+    query_request: QueryRequest,
+    format_with_llm: bool = False,
+    db=Depends(get_db),
+    fastapi_request: Request = None,
+) -> CalculateImportTaxesResponse:
+    """
+    Calculate import taxes from a natural language question.
+    """
+    try:
+        question = query_request.question.strip() if query_request.question else None
+        parsed_params = {}
+        if question:
+            parsed_params = parse_question_for_calculation(question)
+
+        # Merge direct attributes from query_request if they are not None
+        direct_overrides = {
+            "hs_code": query_request.hs_code,
+            "cif_value": query_request.cif_value,
+            "currency": query_request.currency,
+            "origin_country": query_request.origin_country,
+            "quantity": query_request.quantity,
+            "unit": query_request.unit,
+            "fta_applicable": query_request.fta_applicable,
+            "fta_certificate_type": query_request.fta_certificate_type,
+            "preferential_cd_rate": query_request.preferential_cd_rate,
+            "dq_applicable": query_request.dq_applicable,
+            "dq_factor": query_request.dq_factor,
+            "petroleum_case": query_request.petroleum_case,
+            "rubber_case": query_request.rubber_case,
+            "regime": query_request.regime,
+            "calculation_date": query_request.calculation_date,
+            "declared_value": query_request.declared_value,
+            "net_mass": query_request.net_mass,
+            "volume": query_request.volume,
+            "exchange_rate_to_khr": query_request.exchange_rate_to_khr,
+            "qip_exemption": query_request.qip_exemption,
+            "sez_applicable": query_request.sez_applicable,
+            "diplomatic_exemption": query_request.diplomatic_exemption,
+            "ngo_humanitarian": query_request.ngo_humanitarian,
+            "educational_exemption": query_request.educational_exemption,
+            "medical_exemption": query_request.medical_exemption,
+            "passenger_allowance": query_request.passenger_allowance,
+        }
+        for k, v in direct_overrides.items():
+            if v is not None:
+                parsed_params[k] = v
+
+        # Override with extracted_params if explicitly provided
+        if query_request.extracted_params:
+            for k, v in query_request.extracted_params.items():
+                if v is not None:
+                    parsed_params[k] = v
+
+        # Build the CalculateImportTaxesRequest payload
+        calculation_date = parsed_params.get("calculation_date") or datetime.utcnow().strftime("%Y-%m-%d")
+
+        goods = GoodsModel(
+            description=parsed_params.get("description") or question or "Direct input calculation",
+            hs_code=parsed_params.get("hs_code"),
+            origin_country=parsed_params.get("origin_country"),
+            quantity=parsed_params.get("quantity"),
+            unit=parsed_params.get("unit"),
+            net_mass_kg=parsed_params.get("net_mass"),
+            volume_liter=parsed_params.get("volume"),
+        )
+
+        valuation = ValuationModel(
+            customs_value=parsed_params.get("cif_value") or 0.0,
+            currency=parsed_params.get("currency"),
+            exchange_rate_to_khr=parsed_params.get("exchange_rate_to_khr"),
+            declared_value=parsed_params.get("declared_value"),
+            declared_value_basis="per_ton" if parsed_params.get("petroleum_case") else "total",
+            dq_factor=parsed_params.get("dq_factor"),
+        )
+
+        flags = FlagsModel(
+            fta_applicable=parsed_params.get("fta_applicable", False),
+            fta_certificate_type=parsed_params.get("fta_certificate_type"),
+            preferential_cd_rate=parsed_params.get("preferential_cd_rate"),
+            dq_applicable=parsed_params.get("dq_applicable", False),
+            dq_factor=parsed_params.get("dq_factor"),
+            petroleum_case=parsed_params.get("petroleum_case", False),
+            rubber_case=parsed_params.get("rubber_case", False),
+            qip_exemption=parsed_params.get("qip_exemption", False),
+            sez_applicable=parsed_params.get("sez_applicable", False),
+            diplomatic_exemption=parsed_params.get("diplomatic_exemption", False),
+            ngo_humanitarian=parsed_params.get("ngo_humanitarian", False),
+            educational_exemption=parsed_params.get("educational_exemption", False),
+            medical_exemption=parsed_params.get("medical_exemption", False),
+            passenger_allowance=parsed_params.get("passenger_allowance", False),
+        )
+
+        calc_request = CalculateImportTaxesRequest(
+            calculation_date=calculation_date,
+            regime=parsed_params.get("regime", "import"),
+            goods=goods,
+            valuation=valuation,
+            flags=flags,
+        )
+
+        # Invoke the existing calculate_import_taxes function
+        return await calculate_import_taxes(
+            request=calc_request,
+            format_with_llm=format_with_llm,
+            db=db,
+            fastapi_request=fastapi_request,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("Error during query calculation")
+        raise HTTPException(status_code=500, detail="Internal server error during query calculation")

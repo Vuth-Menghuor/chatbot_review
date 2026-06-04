@@ -39,9 +39,47 @@ def check_service() -> bool:
 
 def run_case(name: str, payload: dict) -> dict:
     """Send one calculation request and return the JSON response."""
-    url = f"{CALCULATOR_URL}/v1/calculate_import_taxes"
+    # Convert nested CalculateImportTaxesRequest payload to flat QueryRequest payload
+    flat_payload = {
+        "calculation_date": payload.get("calculation_date"),
+        "regime": payload.get("regime"),
+        "hs_code": payload.get("goods", {}).get("hs_code"),
+        "cif_value": payload.get("valuation", {}).get("customs_value"),
+        "currency": payload.get("valuation", {}).get("currency"),
+        "origin_country": payload.get("goods", {}).get("origin_country"),
+        "quantity": payload.get("goods", {}).get("quantity"),
+        "unit": payload.get("goods", {}).get("unit"),
+        "declared_value": payload.get("valuation", {}).get("declared_value"),
+        "net_mass": payload.get("goods", {}).get("net_mass_kg"),
+        "volume": payload.get("goods", {}).get("volume_liter"),
+        "exchange_rate_to_khr": payload.get("valuation", {}).get("exchange_rate_to_khr"),
+    }
+    
+    # Add flags
+    flags = payload.get("flags", {}) or {}
+    flat_payload.update({
+        "fta_applicable": flags.get("fta_applicable"),
+        "fta_certificate_type": flags.get("fta_certificate_type"),
+        "preferential_cd_rate": flags.get("preferential_cd_rate"),
+        "dq_applicable": flags.get("dq_applicable") or flags.get("duty_quota_applicable"),
+        "dq_factor": flags.get("dq_factor"),
+        "petroleum_case": flags.get("petroleum_case"),
+        "rubber_case": flags.get("rubber_case"),
+        "qip_exemption": flags.get("qip_exemption"),
+        "sez_applicable": flags.get("sez_applicable"),
+        "diplomatic_exemption": flags.get("diplomatic_exemption"),
+        "ngo_humanitarian": flags.get("ngo_humanitarian"),
+        "educational_exemption": flags.get("educational_exemption"),
+        "medical_exemption": flags.get("medical_exemption"),
+        "passenger_allowance": flags.get("passenger_allowance"),
+    })
+    
+    # Filter out None values
+    flat_payload = {k: v for k, v in flat_payload.items() if v is not None}
+    
+    url = f"{CALCULATOR_URL}/query"
     try:
-        r = client.post(url, json=payload)
+        r = client.post(url, json=flat_payload)
         if r.status_code != 200:
             return {"_error": True, "status": r.status_code, "detail": r.text}
         return r.json()

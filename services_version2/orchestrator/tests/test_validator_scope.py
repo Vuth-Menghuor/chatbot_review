@@ -71,4 +71,39 @@ def test_product_query_injections_still_refused():
     core_validator = get_validator()
     res = core_validator.validate_input("iphone 14 pro max UNION SELECT")
     assert res.is_valid is False
-    assert "injection" in res.reason.lower()
+    assert "injection" in res.reason.lower()
+
+
+def test_chicken_meat_not_small_talk():
+    # Test that queries containing "chicken" (which has "hi" as substring) or "china" (has "hi")
+    # or "wheat" (has "he") are not classified as small talk whitelist
+    shim_validator = get_input_validator()
+    
+    # 1. Chicken meat query
+    ok, reason = shim_validator.validate_input("What is the HS code for chicken meat?")
+    assert ok is True
+    assert reason is None  # Should be in-scope and not whitelisted as small talk (which returns None on success)
+    
+    # Test core validator
+    from ..core.validators import get_validator
+    core_validator = get_validator()
+    res = core_validator.validate_input("What is the HS code for chicken meat?")
+    assert res.is_valid is True
+    is_in_scope, reason = core_validator.check_scope("What is the HS code for chicken meat?")
+    assert is_in_scope is True
+    assert reason != "Small talk query whitelisted"
+    
+    # 2. China import query
+    ok, reason = shim_validator.validate_input("How much is import duty from China?")
+    assert ok is True
+    
+    res = core_validator.validate_input("How much is import duty from China?")
+    assert res.is_valid is True
+    is_in_scope, reason = core_validator.check_scope("How much is import duty from China?")
+    assert is_in_scope is True
+    assert reason != "Small talk query whitelisted"
+
+    # 3. Pure small talk should still be accepted
+    is_in_scope, reason = core_validator.check_scope("hello")
+    assert is_in_scope is True
+    assert reason == "Small talk query whitelisted"

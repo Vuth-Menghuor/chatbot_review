@@ -128,6 +128,19 @@ class RuleBasedValidatorProvider:
             if re.search(p, low):
                 return ValidationResult.injection("injection detected")
 
+        # Whitelist obvious small talk phrases
+        norm = re.sub(r"[^\w\s]", "", low).strip()
+        greetings = ["hi", "hello", "hey", "good morning", "good afternoon", "good evening", "howdy", "greetings"]
+        small_talk_patterns = [
+            "thanks", "thank you", "appreciate",
+            "bye", "goodbye", "farewell", "have a good day", "have a nice day",
+            "nice to meet you", "pleasure to meet you", "glad to meet you",
+            "how are you", "whats up", "how is your day", "hows your day", "hows it going", "how is it going",
+            "tell me a joke", "tell a joke", "make me laugh", "joke", "roast me"
+        ]
+        if norm in greetings or any(re.search(rf"\b{re.escape(w)}\b", norm) for w in greetings) or any(re.search(rf"\b{re.escape(p)}\b", norm) for p in small_talk_patterns):
+            return ValidationResult.in_scope("small_talk_whitelist")
+
         # Blocklist/out-of-scope
         for p in self.BLOCKLIST:
             if re.search(p, low):

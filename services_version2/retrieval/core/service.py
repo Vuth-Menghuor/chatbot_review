@@ -1,4 +1,4 @@
-﻿"""
+"""
 Service Layer - Retrieval service
 High-level service implementing business rules and orchestration
 UPDATED: Added comprehensive ambiguity detection and multi-candidate handling
@@ -654,7 +654,7 @@ class RetrievalService:
                     "missing_parameters": ["period"],
                     "clarification": "Please provide a time period (month, quarter, or year) for trade data queries.",
                     "api_visibility": {
-                        "api_called": "v1/retrieval/retrieve",
+                        "api_called": "/retrieval/retrieve",
                         "collection_used": collection or (self.orchestrator.vector_store.collection_name if self.orchestrator and self.orchestrator.vector_store else "gdce_docs"),
                         "processing_path": "period_guard",
                     },
@@ -687,7 +687,7 @@ class RetrievalService:
                     "error": "Query processing failed",
                     "status": "invalid_query",
                     "api_visibility": {
-                        "api_called": "v1/retrieval/retrieve",
+                        "api_called": "/retrieval/retrieve",
                         "collection_used": collection or "gdce_docs",
                         "processing_path": "query_validation",
                     },
@@ -785,7 +785,7 @@ class RetrievalService:
                     result["session_id"] = session_id
                     result["language"] = processed.language
                     result["api_visibility"] = {
-                        "api_called": "v1/retrieval/retrieve",
+                        "api_called": "/retrieval/retrieve",
                         "collection_used": collection_used,
                         "processing_path": "semantic+structured+ambiguity_detection",
                     }
@@ -844,7 +844,7 @@ class RetrievalService:
             result["session_id"] = session_id
             result["language"] = processed.language
             result["api_visibility"] = {
-                "api_called": "v1/retrieval/retrieve",
+                "api_called": "/retrieval/retrieve",
                 "collection_used": collection_used,
                 "processing_path": "semantic+structured",
             }
@@ -866,7 +866,7 @@ class RetrievalService:
                 "status": "error",
                 "session_id": session_id,
                 "api_visibility": {
-                    "api_called": "v1/retrieval/retrieve",
+                    "api_called": "/retrieval/retrieve",
                     "collection_used": collection or "gdce_docs",
                     "processing_path": "exception",
                 },

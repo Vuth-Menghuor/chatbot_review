@@ -134,8 +134,8 @@ def create_app() -> FastAPI:
     # Set service in endpoints
     set_service(service)
     
-    # Include routers with /v1 prefix (consistent with Calculator service)
-    app.include_router(router, prefix="/v1")
+    # Include routers (consistent with Calculator service)
+    app.include_router(router)
     
     # Register startup/shutdown events
     @app.on_event("startup")

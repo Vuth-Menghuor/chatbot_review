@@ -23,7 +23,7 @@ class LLMServiceConfig:
     ollama_timeout: int = 30
 
     gemini_api_key: Optional[str] = None
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.1-flash-lite"
     gemini_timeout: int = 30
 
     openai_api_key: Optional[str] = None

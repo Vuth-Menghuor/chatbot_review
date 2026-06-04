@@ -13,7 +13,7 @@ from .countries import COUNTRY_TO_CODE_MAP, VALID_COUNTRY_CODES
 logger = logging.getLogger(__name__)
 
 # Default configurations
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
 DEFAULT_TIMEOUT_SEC = 10
 
 SYSTEM_INSTRUCTION = """You are an expert at parsing natural language trade query questions into structured search parameters for the trade data service.
@@ -268,6 +268,9 @@ def parse_and_resolve_parameters(raw: Dict[str, Any], question: str) -> Dict[str
     if isinstance(group_by, list):
         params["group_by"] = [str(g) for g in group_by if g]
         params["dimensions"] = params["group_by"]
+    elif isinstance(group_by, str) and group_by:
+        params["group_by"] = [group_by]
+        params["dimensions"] = [group_by]
         
     # Filter out None values
     return {k: v for k, v in params.items() if v is not None}

@@ -66,7 +66,7 @@ def create_app() -> FastAPI:
     # ------------------------------------------------------------------
     # Routers
     # ------------------------------------------------------------------
-    app.include_router(calculator_router, prefix="/v1")
+    app.include_router(calculator_router)
 
     # ------------------------------------------------------------------
     # Dynamic Rules Engine — Admin Router
@@ -85,6 +85,11 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def on_startup() -> None:
         logger.info("Calculator Service starting up — version %s", settings.calculator_version)
+        # Skip database pre-warm during tests
+        import sys
+        if "pytest" in sys.modules or os.getenv("TESTING") == "true":
+            logger.info("Skipping database pre-warm during test execution")
+            return
         # Pre-warm database so the first request doesn't pay the cold-start cost
         try:
             from .api.deps import get_db
@@ -191,7 +196,7 @@ def _init_rules_engine(app: FastAPI, settings: Any) -> None:
 
     # Wire up admin endpoints
     init_admin(rules_db, rules_provider, formula_engine)
-    app.include_router(admin_router, prefix="/v1")
+    app.include_router(admin_router)
 
     # Store on app state for access from other endpoints
     app.state.rules_provider = rules_provider

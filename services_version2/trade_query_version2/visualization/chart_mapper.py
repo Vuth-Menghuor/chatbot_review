@@ -61,7 +61,9 @@ def _build_dynamic_title(intent: str, config_title: str, query_params: Dict[str,
     # Adjust default title to be specific
     title = config_title
     if intent == "ranking":
-        title = f"Top {flow_text}{entity_text}{year_text}"
+        sort_order = query_params.get("sort_order") or ""
+        prefix = "Bottom" if "asc" in str(sort_order).lower() else "Top"
+        title = f"{prefix} {flow_text}{entity_text}{year_text}"
     elif intent == "trend":
         title = f"{flow_text}Trade Trend over Time{year_text}"
     elif intent == "comparison":

@@ -334,6 +334,9 @@ class CacheService:
             populate memory cache
         5. Return result
         """
+        if os.getenv("CACHE_ENABLED", "true").lower() == "false":
+            return None
+            
         key = self._generate_cache_key(question, intent)
         
         if self.level in [CacheLevel.MEMORY, CacheLevel.HYBRID]:
@@ -373,6 +376,9 @@ class CacheService:
         Returns:
             True if successful
         """
+        if os.getenv("CACHE_ENABLED", "true").lower() == "false":
+            return False
+            
         key = self._generate_cache_key(question, intent)
         
         success = True

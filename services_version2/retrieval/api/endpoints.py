@@ -1219,7 +1219,7 @@ async def hs_code_candidates_endpoint(
             "final_answer": answer_payload.get("final_answer"),
             "answer_source": answer_payload.get("answer_source"),
             "session_id": request.session_id,
-            "api_called": "/v1/hs-code-candidates",
+            "api_called": "/hs-code-candidates",
             "collection_used": "gdce_hs_code",
             "language": None,
             "required_parameters": ["query"],
@@ -1294,7 +1294,7 @@ async def retrieve(
             result=result,
             transformed_docs=transformed_docs,
             answer_payload=answer_payload,
-            api_called="/v1/retrieval/retrieve",
+            api_called="/retrieval/retrieve",
         )
         
         return QueryResponse(**response_data)
@@ -1335,13 +1335,10 @@ def root():
         "version": "2.0.0",
         "port": 8003,
         "endpoints": {
-            "health": "GET /v1/health",
-            "retrieve": "POST /v1/retrieval/retrieve",
-            "answer_lookup": "POST /v1/retrieval/answer-lookup",
-            "hs_code_lookup": "POST /v1/hs-code-lookup (Intent.HS_CODE_LOOKUP)",
-            "definition": "POST /v1/definition (Intent.DEFINITION)",
-            "policy_inquiry": "POST /v1/policy-inquiry (Intent.POLICY_INQUIRY)",
-            "general": "POST /v1/general (Intent.GENERAL)",
+            "health": "GET /health",
+            "retrieve": "POST /retrieval/retrieve",
+            "hs_code_candidates": "POST /hs-code-candidates",
+            "hs_code_ranked": "POST /hs-code-ranked",
             "swagger": "/docs",
             "openapi": "/openapi.json"
         },
