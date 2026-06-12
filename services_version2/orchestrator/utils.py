@@ -170,3 +170,70 @@ def truncate_text(text: str, max_length: int = 100, suffix: str = "...") -> str:
     if len(text) <= max_length:
         return text
     return text[:max_length - len(suffix)] + suffix
+
+
+def standardize_hs_codes_in_text(text: str) -> str:
+    """
+    Finds potential HS codes in text (8-digit or 6-digit variants)
+    and formats them to their formal dotted representation:
+    - 8 digits: BBBB.SS.SS (e.g., 0101.21.00)
+    - 6 digits: BBBB.SS (e.g., 0101.21)
+    
+    Avoids formatting numbers that are likely monetary amounts or years.
+    """
+    import re
+
+    if not text:
+        return text
+
+    # Matches:
+    # 1. 8-digit formats (01012100, 0101.2100, 010121.00, 0101 21 00, 0101-21-00, 0101.21.00)
+    # 2. 6-digit formats (010121, 0101.21, 0101 21, 0101-21)
+    pattern = r'\b(?:\d{4}[.\s-]\d{2}[.\s-]\d{2}|\d{4}[.\s-]\d{4}|\d{6}[.\s-]\d{2}|\d{8}|\d{4}[.\s-]\d{2}|\d{6})\b'
+    
+    last_idx = 0
+    parts = []
+    
+    for match in re.finditer(pattern, text):
+        start, end = match.span()
+        matched_text = match.group(0)
+        
+        parts.append(text[last_idx:start])
+        
+        digits = re.sub(r'[^\d]', '', matched_text)
+        preceding_text = text[max(0, start - 20):start].lower()
+        
+        # Determine if matches look like currency/prices/quantities
+        is_currency_or_val = False
+        if any(marker in preceding_text for marker in ['$', 'cif', 'fob', 'usd', 'khr', 'riel', 'riels', 'worth', 'value', 'price', 'cost', 'amount', 'total']):
+            is_currency_or_val = True
+            if any(marker in preceding_text for marker in ['hs', 'code', 'tariff', 'classify', 'classification']):
+                is_currency_or_val = False
+                
+        is_hs_code = False
+        if len(digits) == 8:
+            if not is_currency_or_val:
+                is_hs_code = True
+        elif len(digits) == 6:
+            has_separator = any(sep in matched_text for sep in ['.', ' ', '-'])
+            starts_with_zero = digits.startswith('0')
+            has_hs_marker = any(marker in preceding_text for marker in ['hs', 'code', 'tariff', 'classify', 'classification'])
+            
+            if not is_currency_or_val:
+                if has_separator or starts_with_zero or has_hs_marker:
+                    is_hs_code = True
+                    
+        if is_hs_code:
+            if len(digits) == 8:
+                formatted = f"{digits[:4]}.{digits[4:6]}.{digits[6:]}"
+            else:
+                formatted = f"{digits[:4]}.{digits[4:]}"
+            parts.append(formatted)
+        else:
+            parts.append(matched_text)
+            
+        last_idx = end
+        
+    parts.append(text[last_idx:])
+    return "".join(parts)
+

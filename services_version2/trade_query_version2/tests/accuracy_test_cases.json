@@ -1045,7 +1045,7 @@
       "end_period": "2025"
     },
     "expected_url_params": {
-      "dimensions": "PERIOD,FLOW",
+      "dimensions": "FLOW",
       "start-period": "2020",
       "end-period": "2025",
       "filter": [
@@ -1068,7 +1068,7 @@
       "end_period": "2026"
     },
     "expected_url_params": {
-      "dimensions": "PERIOD,FLOW",
+      "dimensions": "FLOW",
       "start-period": "2022",
       "end-period": "2026",
       "filter": [
@@ -1092,7 +1092,7 @@
       "end_period": "2026"
     },
     "expected_url_params": {
-      "dimensions": "PERIOD,FLOW",
+      "dimensions": "FLOW",
       "start-period": "2024",
       "end-period": "2026",
       "filter": [
@@ -1117,7 +1117,7 @@
       "frequency": "M"
     },
     "expected_url_params": {
-      "dimensions": "PERIOD,FLOW",
+      "dimensions": "FLOW",
       "period": "2025",
       "frequency": "M",
       "filter": [
@@ -1140,7 +1140,7 @@
       "frequency": "Q"
     },
     "expected_url_params": {
-      "dimensions": "PERIOD,FLOW",
+      "dimensions": "FLOW",
       "period": "2024",
       "frequency": "Q"
     },
@@ -1161,7 +1161,7 @@
       "frequency": "M"
     },
     "expected_url_params": {
-      "dimensions": "PERIOD,FLOW",
+      "dimensions": "FLOW",
       "period": "2025",
       "frequency": "M",
       "filter": [
@@ -1185,7 +1185,7 @@
       "frequency": "M"
     },
     "expected_url_params": {
-      "dimensions": "PERIOD,FLOW",
+      "dimensions": "FLOW",
       "frequency": "M",
       "filter": [
         "PARTNER_COUNTRY:eq:JP",
@@ -1208,7 +1208,7 @@
       "end_period": "2025"
     },
     "expected_url_params": {
-      "dimensions": "PERIOD,FLOW",
+      "dimensions": "FLOW",
       "start-period": "2021",
       "end-period": "2025",
       "filter": [
@@ -1230,7 +1230,7 @@
       "frequency": "M"
     },
     "expected_url_params": {
-      "dimensions": "PERIOD,FLOW",
+      "dimensions": "FLOW",
       "period": "2025",
       "frequency": "M"
     },
@@ -1251,7 +1251,7 @@
       "start_period": "2023"
     },
     "expected_url_params": {
-      "dimensions": "PERIOD,FLOW",
+      "dimensions": "FLOW",
       "start-period": "2023",
       "filter": [
         "FLOW:eq:EX",
@@ -1275,7 +1275,7 @@
       "frequency": "Q"
     },
     "expected_url_params": {
-      "dimensions": "PERIOD,FLOW",
+      "dimensions": "FLOW",
       "frequency": "Q",
       "filter": [
         "FLOW:eq:IM",
@@ -1297,7 +1297,7 @@
       "frequency": "M"
     },
     "expected_url_params": {
-      "dimensions": "PERIOD,FLOW",
+      "dimensions": "FLOW",
       "frequency": "M",
       "filter": [
         "FLOW:eq:EX"
@@ -1318,7 +1318,7 @@
       "end_period": "2026"
     },
     "expected_url_params": {
-      "dimensions": "PERIOD,FLOW",
+      "dimensions": "FLOW",
       "start-period": "2024",
       "end-period": "2026"
     },
@@ -1338,7 +1338,7 @@
       "end_period": "2026"
     },
     "expected_url_params": {
-      "dimensions": "PERIOD,FLOW",
+      "dimensions": "FLOW",
       "start-period": "2022",
       "end-period": "2026",
       "filter": [
@@ -1362,7 +1362,7 @@
       "end_period": "2026"
     },
     "expected_url_params": {
-      "dimensions": "PERIOD,FLOW",
+      "dimensions": "FLOW",
       "start-period": "2024",
       "end-period": "2026",
       "filter": [
@@ -1387,7 +1387,7 @@
       "frequency": "M"
     },
     "expected_url_params": {
-      "dimensions": "PERIOD,FLOW",
+      "dimensions": "FLOW",
       "period": "2025",
       "frequency": "M",
       "filter": [
@@ -1412,7 +1412,7 @@
       "frequency": "M"
     },
     "expected_url_params": {
-      "dimensions": "PERIOD,FLOW",
+      "dimensions": "FLOW",
       "period": "2024",
       "frequency": "M",
       "filter": [
@@ -1435,7 +1435,7 @@
       "frequency": "Q"
     },
     "expected_url_params": {
-      "dimensions": "PERIOD,FLOW",
+      "dimensions": "FLOW",
       "period": "2024",
       "frequency": "Q"
     },
@@ -1454,7 +1454,7 @@
       "frequency": "M"
     },
     "expected_url_params": {
-      "dimensions": "PERIOD,FLOW",
+      "dimensions": "FLOW",
       "period": "2025",
       "frequency": "M"
     },
@@ -1472,7 +1472,7 @@
       "trade_direction": "EX"
     },
     "expected_url_params": {
-      "dimensions": "PERIOD,FLOW",
+      "dimensions": "FLOW",
       "filter": [
         "FLOW:eq:EX"
       ]
@@ -1494,7 +1494,7 @@
       "end_period": "2026"
     },
     "expected_url_params": {
-      "dimensions": "PERIOD,FLOW",
+      "dimensions": "FLOW",
       "start-period": "2024",
       "end-period": "2026",
       "filter": [
@@ -1523,7 +1523,7 @@
       "frequency": "M"
     },
     "expected_url_params": {
-      "dimensions": "PERIOD,FLOW",
+      "dimensions": "FLOW",
       "period": "2025",
       "frequency": "M",
       "filter": [

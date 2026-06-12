@@ -16,8 +16,13 @@ Environment variables (see config.yaml for full documentation):
     CALCULATOR_VERSION          - Service version (default: 2.0.0)
     
     RETRIEVAL_SERVICE_URL       - URL of Retrieval microservice
-    ORCHESTRATOR_SERVICE_URL    - URL of Orchestrator microservice
-    
+    ORCHESTRATOR_SERVICE_URL    - URL of Orchestrator microservice (optional)
+
+    CALCULATOR_LLM_HOST         - LLM host for response formatting (default: 127.0.0.1)
+    CALCULATOR_LLM_PORT         - LLM port (default: 11434)
+    CALCULATOR_LLM_MODEL        - LLM model name (default: kimi-k2.6:cloud)
+    CALCULATOR_LLM_ENABLED      - Enable LLM formatting (default: true)
+
     RATE_LIMIT_REQUESTS         - Requests per minute (default: 60)
     MAX_PAYLOAD_SIZE_MB         - Max request size (default: 5)
     ALLOWED_ORIGINS             - CORS origins comma-separated (default: *)
@@ -58,6 +63,14 @@ class Settings:
     calculator_port: int = 8002
     calculator_reload: bool = False
     calculator_version: str = "2.0.0"
+
+    # ================================================================
+    # LLM FORMATTER (Standalone — no orchestrator required)
+    # ================================================================
+    llm_host: str = "127.0.0.1"
+    llm_port: int = 11434
+    llm_model: str = "kimi-k2.6:cloud"
+    llm_enabled: bool = True
 
     # ================================================================
     # EXTERNAL SERVICE ENDPOINTS
@@ -129,6 +142,12 @@ def get_settings() -> Settings:
         calculator_reload=os.getenv("CALCULATOR_RELOAD", "false").lower() == "true",
         calculator_version=os.getenv("CALCULATOR_VERSION", "2.0.0"),
         
+        # LLM
+        llm_host=os.getenv("CALCULATOR_LLM_HOST", "127.0.0.1"),
+        llm_port=int(os.getenv("CALCULATOR_LLM_PORT", "11434")),
+        llm_model=os.getenv("CALCULATOR_LLM_MODEL", "kimi-k2.6:cloud"),
+        llm_enabled=os.getenv("CALCULATOR_LLM_ENABLED", "true").lower() == "true",
+
         # Services
         retrieval_service_url=os.getenv("RETRIEVAL_SERVICE_URL", ""),
         orchestrator_service_url=os.getenv("ORCHESTRATOR_SERVICE_URL", ""),

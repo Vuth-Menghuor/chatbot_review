@@ -13,7 +13,7 @@ from .countries import COUNTRY_TO_CODE_MAP, VALID_COUNTRY_CODES
 logger = logging.getLogger(__name__)
 
 # Default configurations
-DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
+DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite"
 DEFAULT_TIMEOUT_SEC = 10
 
 SYSTEM_INSTRUCTION = """You are an expert at parsing natural language trade query questions into structured search parameters for the trade data service.

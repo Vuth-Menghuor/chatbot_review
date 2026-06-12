@@ -66,7 +66,7 @@ def create_app() -> FastAPI:
     # ------------------------------------------------------------------
     # Routers
     # ------------------------------------------------------------------
-    app.include_router(calculator_router)
+    app.include_router(calculator_router, prefix="/v1")
 
     # ------------------------------------------------------------------
     # Dynamic Rules Engine — Admin Router
@@ -85,11 +85,6 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def on_startup() -> None:
         logger.info("Calculator Service starting up — version %s", settings.calculator_version)
-        # Skip database pre-warm during tests
-        import sys
-        if "pytest" in sys.modules or os.getenv("TESTING") == "true":
-            logger.info("Skipping database pre-warm during test execution")
-            return
         # Pre-warm database so the first request doesn't pay the cold-start cost
         try:
             from .api.deps import get_db
@@ -163,7 +158,7 @@ def _register_middleware(app: FastAPI, settings: Any) -> None:
         request_counts[client_ip].append(now)
         return await call_next(request)
 
-    logger.info("✅ Middleware registered (CORS + rate limiting: %d req/min)", max_rpm)
+    logger.info(" Middleware registered (CORS + rate limiting: %d req/min)", max_rpm)
 
 
 def _init_rules_engine(app: FastAPI, settings: Any) -> None:
@@ -183,9 +178,9 @@ def _init_rules_engine(app: FastAPI, settings: Any) -> None:
         try:
             from .infrastructure.rules_database import RulesDatabaseAdapter
             rules_db = RulesDatabaseAdapter()
-            logger.info("✅ Rules database adapter initialized")
+            logger.info(" Rules database adapter initialized")
         except Exception as e:
-            logger.warning(f"⚠️  Rules DB unavailable (will use JSON fallback): {e}")
+            logger.warning(f"  Rules DB unavailable (will use JSON fallback): {e}")
 
     # Always create provider (falls back to JSON configs if no DB)
     formula_engine = FormulaEngine()
@@ -196,13 +191,13 @@ def _init_rules_engine(app: FastAPI, settings: Any) -> None:
 
     # Wire up admin endpoints
     init_admin(rules_db, rules_provider, formula_engine)
-    app.include_router(admin_router)
+    app.include_router(admin_router, prefix="/v1")
 
     # Store on app state for access from other endpoints
     app.state.rules_provider = rules_provider
     app.state.formula_engine = formula_engine
 
-    logger.info("✅ Dynamic rules engine initialized (DB=%s)", "enabled" if rules_db else "JSON-only")
+    logger.info(" Dynamic rules engine initialized (DB=%s)", "enabled" if rules_db else "JSON-only")
 
 
 # ================================================================

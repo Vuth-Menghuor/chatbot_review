@@ -72,14 +72,15 @@ class PostgreSQLExchangeRateAdapter:
                 port=self.port,
                 database=self.database,
                 user=self.user,
-                password=self.password
+                password=self.password,
+                connect_timeout=5,
             )
-            logger.info(f"✅ Connected to PostgreSQL at {self.host}:{self.port} database {self.database}")
+            logger.info(f" Connected to PostgreSQL at {self.host}:{self.port} database {self.database}")
         except ImportError:
-            logger.error("❌ psycopg2 not installed. Run: pip install psycopg2-binary")
+            logger.error(" psycopg2 not installed. Run: pip install psycopg2-binary")
             raise
         except Exception as e:
-            logger.error(f"❌ Failed to connect to PostgreSQL: {e}")
+            logger.error(f" Failed to connect to PostgreSQL: {e}")
             raise
 
     def get_exchange_rate(self, currency_code: str, effective_date: str = None) -> Optional[Decimal]:

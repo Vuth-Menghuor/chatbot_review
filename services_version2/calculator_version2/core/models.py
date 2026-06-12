@@ -231,8 +231,6 @@ class CalculationResult:
         cop = self.breakdown.get("cop_amount", Decimal("0"))
         sop = self.breakdown.get("sop_amount", Decimal("0"))
         vop = self.breakdown.get("vop_amount", Decimal("0"))
-        bur = self.breakdown.get("bur_amount", Decimal("0"))
-        vvf = self.breakdown.get("vvf_amount", self.breakdown.get("fees", Decimal("0")))
         total = self.total
 
         lines.append("## Customs Tax Calculation (Step-by-Step)")
@@ -274,25 +272,8 @@ class CalculationResult:
             lines.append(f"   = **{float(vop):,.2f} KHR**")
             lines.append("")
 
-        if bur > 0:
-            before_dq_total = cop + sop + vop
-            bur_rate = bur / before_dq_total * 100 if before_dq_total > 0 else 0
-            lines.append("4. **BUR (Build-Up Rebate / DQ Portion)**")
-            lines.append(f"   = ({float(before_dq_total):,.2f} KHR) × {float(bur_rate):,.2f}%")
-            lines.append(f"   = **{float(bur):,.2f} KHR**")
-            lines.append("")
-
-        if vvf > 0:
-            lines.append("5. **Vehicle Valuation Fee (VVF)**")
-            lines.append("   = 1 × 60,000.00 KHR")
-            lines.append(f"   = **{float(vvf):,.2f} KHR**")
-            lines.append("")
-
         lines.append("### **Total Taxes and Duties**")
-        total_components = [f"{float(cop):,.2f}", f"{float(sop):,.2f}", f"{float(vop):,.2f}"]
-        if vvf > 0:
-            total_components.append(f"{float(vvf):,.2f}")
-        lines.append(f"= {' + '.join(total_components)}")
+        lines.append(f"= {float(cop):,.2f} + {float(sop):,.2f} + {float(vop):,.2f}")
         lines.append(f"= **{float(total):,.2f} KHR**")
 
         return "\n".join(lines)

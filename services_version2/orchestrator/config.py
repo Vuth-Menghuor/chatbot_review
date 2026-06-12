@@ -28,9 +28,14 @@ class OrchestratorConfig:
         Args:
             env_file: Optional path to .env file. If None, uses default search.
         """
-        # Load environment variables
+        # Load environment variables (prefer explicit file, then service-local .env, then default search)
+        service_root = Path(__file__).resolve().parent
+        default_env = service_root / ".env"
+
         if env_file and env_file.exists():
             load_dotenv(env_file)
+        elif default_env.exists():
+            load_dotenv(default_env)
         else:
             load_dotenv()
         

@@ -39,47 +39,9 @@ def check_service() -> bool:
 
 def run_case(name: str, payload: dict) -> dict:
     """Send one calculation request and return the JSON response."""
-    # Convert nested CalculateImportTaxesRequest payload to flat QueryRequest payload
-    flat_payload = {
-        "calculation_date": payload.get("calculation_date"),
-        "regime": payload.get("regime"),
-        "hs_code": payload.get("goods", {}).get("hs_code"),
-        "cif_value": payload.get("valuation", {}).get("customs_value"),
-        "currency": payload.get("valuation", {}).get("currency"),
-        "origin_country": payload.get("goods", {}).get("origin_country"),
-        "quantity": payload.get("goods", {}).get("quantity"),
-        "unit": payload.get("goods", {}).get("unit"),
-        "declared_value": payload.get("valuation", {}).get("declared_value"),
-        "net_mass": payload.get("goods", {}).get("net_mass_kg"),
-        "volume": payload.get("goods", {}).get("volume_liter"),
-        "exchange_rate_to_khr": payload.get("valuation", {}).get("exchange_rate_to_khr"),
-    }
-    
-    # Add flags
-    flags = payload.get("flags", {}) or {}
-    flat_payload.update({
-        "fta_applicable": flags.get("fta_applicable"),
-        "fta_certificate_type": flags.get("fta_certificate_type"),
-        "preferential_cd_rate": flags.get("preferential_cd_rate"),
-        "dq_applicable": flags.get("dq_applicable") or flags.get("duty_quota_applicable"),
-        "dq_factor": flags.get("dq_factor"),
-        "petroleum_case": flags.get("petroleum_case"),
-        "rubber_case": flags.get("rubber_case"),
-        "qip_exemption": flags.get("qip_exemption"),
-        "sez_applicable": flags.get("sez_applicable"),
-        "diplomatic_exemption": flags.get("diplomatic_exemption"),
-        "ngo_humanitarian": flags.get("ngo_humanitarian"),
-        "educational_exemption": flags.get("educational_exemption"),
-        "medical_exemption": flags.get("medical_exemption"),
-        "passenger_allowance": flags.get("passenger_allowance"),
-    })
-    
-    # Filter out None values
-    flat_payload = {k: v for k, v in flat_payload.items() if v is not None}
-    
-    url = f"{CALCULATOR_URL}/query"
+    url = f"{CALCULATOR_URL}/v1/calculate_import_taxes"
     try:
-        r = client.post(url, json=flat_payload)
+        r = client.post(url, json=payload)
         if r.status_code != 200:
             return {"_error": True, "status": r.status_code, "detail": r.text}
         return r.json()
@@ -514,6 +476,149 @@ CASES = [
             },
             "flags": {
                 "passenger_allowance": True,
+            },
+        },
+    ),
+
+    # --- USER REQUESTED TEST CASES (2026-05-29) ---
+    # FTA DV DQ - ACFTA with 0% CD + DQ adjustment
+    (
+        "FTA DV DQ - 8703.22.29 from China (DV=0, DQ=50%)",
+        {
+            "calculation_date": datetime.now().strftime("%Y-%m-%d"),
+            "regime": "import",
+            "goods": {
+                "description": "Motor cars, spark-ignition, 1500cc-3000cc",
+                "hs_code": "8703.22.29",
+                "origin_country": "CN",
+                "quantity": 1,
+                "unit": "units",
+            },
+            "valuation": {
+                "customs_value": 13869,
+                "currency": "USD",
+                "dq_factor": 0.50,
+            },
+            "flags": {
+                "fta_applicable": True,
+                "fta_certificate_type": "ACFTA",
+                "dq_applicable": True,
+                "preferential_cd_rate": 0.0,
+            },
+        },
+    ),
+    (
+        "FTA DV DQ - 8703.80.99 from China (DV=0, DQ=40%)",
+        {
+            "calculation_date": datetime.now().strftime("%Y-%m-%d"),
+            "regime": "import",
+            "goods": {
+                "description": "Motor cars, other, >3000cc",
+                "hs_code": "8703.80.99",
+                "origin_country": "CN",
+                "quantity": 1,
+                "unit": "units",
+            },
+            "valuation": {
+                "customs_value": 40000,
+                "currency": "USD",
+                "dq_factor": 0.40,
+            },
+            "flags": {
+                "fta_applicable": True,
+                "fta_certificate_type": "ACFTA",
+                "dq_applicable": True,
+                "preferential_cd_rate": 0.0,
+            },
+        },
+    ),
+    (
+        "FTA DV DQ - 8703.80.98 from China (DV=0, DQ=40%, ACFTA)",
+        {
+            "calculation_date": datetime.now().strftime("%Y-%m-%d"),
+            "regime": "import",
+            "goods": {
+                "description": "Motor cars, other, 1500cc-3000cc",
+                "hs_code": "8703.80.98",
+                "origin_country": "CN",
+                "quantity": 1,
+                "unit": "units",
+            },
+            "valuation": {
+                "customs_value": 9300,
+                "currency": "USD",
+                "dq_factor": 0.40,
+            },
+            "flags": {
+                "fta_applicable": True,
+                "fta_certificate_type": "ACFTA",
+                "dq_applicable": True,
+                "preferential_cd_rate": 0.0,
+            },
+        },
+    ),
+
+    # Normal - no FTA
+    (
+        "Normal - 2101.11.90 from Malaysia (no FTA)",
+        {
+            "calculation_date": datetime.now().strftime("%Y-%m-%d"),
+            "regime": "import",
+            "goods": {
+                "description": "Coffee, not roasted, not decaffeinated",
+                "hs_code": "2101.11.90",
+                "origin_country": "MY",
+                "quantity": 100,
+                "unit": "kg",
+            },
+            "valuation": {
+                "customs_value": 86.98,
+                "currency": "USD",
+            },
+            "flags": {},
+        },
+    ),
+    (
+        "Normal - 7326.90.99 from Thailand (no FTA)",
+        {
+            "calculation_date": datetime.now().strftime("%Y-%m-%d"),
+            "regime": "import",
+            "goods": {
+                "description": "Other articles of iron or steel",
+                "hs_code": "7326.90.99",
+                "origin_country": "TH",
+                "quantity": 500,
+                "unit": "kg",
+            },
+            "valuation": {
+                "customs_value": 2884.91,
+                "currency": "USD",
+            },
+            "flags": {},
+        },
+    ),
+
+    # FTA DV - ACFTA with 0% CD only
+    (
+        "FTA DV - 8703.22.59 from China (DV=0, ACFTA)",
+        {
+            "calculation_date": datetime.now().strftime("%Y-%m-%d"),
+            "regime": "import",
+            "goods": {
+                "description": "Motor cars, spark-ignition, <=1500cc",
+                "hs_code": "8703.22.59",
+                "origin_country": "CN",
+                "quantity": 1,
+                "unit": "units",
+            },
+            "valuation": {
+                "customs_value": 10500,
+                "currency": "USD",
+            },
+            "flags": {
+                "fta_applicable": True,
+                "fta_certificate_type": "ACFTA",
+                "preferential_cd_rate": 0.0,
             },
         },
     ),

@@ -102,15 +102,16 @@ def transform_params_for_dal(raw_params: dict[str, Any]) -> dict[str, Any]:
                 params["destination_country"] = "KH"
 
     # For comparison intent: both countries become partner_countries list
-    if intent == "comparison" and (origin or dest):
-        countries = []
-        if origin:
-            countries.append(origin)
-        if dest and dest not in countries:
-            countries.append(dest)
-        if countries:
-            params["partner_countries"] = countries
-
+    if intent == "comparison":
+        if not params.get("partner_countries") and (origin or dest):
+            countries = []
+            if origin:
+                countries.append(origin)
+            if dest and dest not in countries:
+                countries.append(dest)
+            if countries:
+                params["partner_countries"] = countries
+ 
         # Align origin_country and destination_country to reflect the Cambodia-centric flow
         if direction == "EX":
             params["origin_country"] = "KH"

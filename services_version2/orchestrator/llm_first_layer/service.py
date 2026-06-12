@@ -29,14 +29,124 @@ class LLMFirstLayerService:
     All operations happen in one coordinated pipeline with minimal LLM calls.
     """
 
-    def __init__(self, config: Optional[LLMFirstLayerConfig] = None):
-        self.config = config or LLMFirstLayerConfig()
+    def __init__(self, config: Optional[Any] = None):
+        from .config import LLMFirstLayerConfig
+        
+        if config is None:
+            self.config = LLMFirstLayerConfig()
+        elif isinstance(config, LLMFirstLayerConfig):
+            self.config = config
+        else:
+            # Convert legacy configuration to LLMFirstLayerConfig
+            self.config = LLMFirstLayerConfig()
+            if hasattr(config, "provider"):
+                self.config.intent_provider = config.provider
+            if hasattr(config, "timeout"):
+                self.config.intent_timeout = config.timeout
+                self.config.rewrite_timeout = config.timeout
+                self.config.currency_timeout = config.timeout
+            # Copy other matching attributes
+            for key in self.config.__dict__.keys():
+                if hasattr(config, key):
+                    setattr(self.config, key, getattr(config, key))
+                    
         self.pipeline = FirstLayerPipeline(self.config)
+        self._in_detect_intent = False
+        self._in_detect_currency = False
+        self._in_rewrite_input = False
         logger.info("LLM First Layer Service initialized")
+
+    def _get_llm_service(self):
+        """Helper to get/create LLM service with first layer config."""
+        from ..llm_service.service import get_llm_service, LLMServiceConfig
+        import services_version2.orchestrator.llm_service.service as llm_service_mod
+        
+        # Build LLM service config based on first layer config
+        llm_config = LLMServiceConfig(
+            intent_provider=self.config.intent_provider,
+            currency_provider=self.config.currency_provider,
+            rewrite_provider=self.config.rewrite_provider,
+            gemini_api_key=self.config.gemini_api_key,
+            gemini_model=self.config.gemini_model,
+            gemini_timeout=self.config.intent_timeout,
+        )
+        
+        if llm_service_mod._llm_service_instance is not None:
+            existing = llm_service_mod._llm_service_instance
+            if not getattr(existing.config, "gemini_api_key", None) and self.config.gemini_api_key:
+                llm_service_mod._llm_service_instance = None
+            elif getattr(existing.config, "intent_provider", "") == "ollama" and self.config.intent_provider == "gemini":
+                llm_service_mod._llm_service_instance = None
+
+        return get_llm_service(llm_config)
 
     def is_available(self) -> bool:
         """Check if the service is operational."""
-        return self.pipeline.intent_service.is_available()
+        try:
+            return self._get_llm_service().is_available()
+        except Exception:
+            return False
+
+    def detect_intent(self, question: str) -> tuple:
+        """Compatibility wrapper for legacy detect_intent callers."""
+        from ..core.workflow import WorkflowIntent
+        
+        if self._in_detect_intent:
+            logger.warning("Recursion detected in detect_intent, falling back to keyword matching")
+            from ..core.workflow import WorkflowExecutor
+            executor = WorkflowExecutor(use_llm_intent=False)
+            return executor._keyword_based_intent_detection(question), 1.0, "Recursion fallback"
+            
+        self._in_detect_intent = True
+        try:
+            llm_service = self._get_llm_service()
+            intent_str, confidence, reasoning = llm_service.classify_intent(question)
+            
+            try:
+                intent = WorkflowIntent(intent_str)
+            except ValueError:
+                intent = WorkflowIntent.UNCLASSIFIED
+                
+            return intent, confidence, reasoning
+        finally:
+            self._in_detect_intent = False
+
+    def detect_currency(self, question: str) -> tuple:
+        """Compatibility wrapper for legacy detect_currency callers."""
+        if self._in_detect_currency:
+            logger.warning("Recursion detected in detect_currency, falling back to pattern matching")
+            from ..core.workflow import WorkflowExecutor
+            executor = WorkflowExecutor(use_llm_intent=False)
+            return executor._pattern_based_currency_detection(question)
+
+        self._in_detect_currency = True
+        try:
+            llm_service = self._get_llm_service()
+            return llm_service.detect_currency(question)
+        finally:
+            self._in_detect_currency = False
+
+    async def rewrite_input(
+        self,
+        user_input: str,
+        context: Optional[Any] = None,
+        intent_hint: Optional[str] = None,
+    ) -> tuple:
+        """Compatibility wrapper for legacy rewrite_input callers."""
+        if self._in_rewrite_input:
+            logger.warning("Recursion detected in rewrite_input, skipping rewrite")
+            return user_input, {"rewrite_reason": "recursion_fallback", "confidence": 1.0, "was_rewritten": False}
+
+        self._in_rewrite_input = True
+        try:
+            llm_service = self._get_llm_service()
+            return await llm_service.rewrite_input(
+                user_input=user_input,
+                context=context,
+                intent_hint=intent_hint,
+            )
+        finally:
+            self._in_rewrite_input = False
 
     async def process(
         self,

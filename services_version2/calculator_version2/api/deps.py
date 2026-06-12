@@ -49,10 +49,10 @@ def load_calculator_config() -> dict:
             "rounding_rules": _load_json(config_dir / "rounding_rules.json"),
             "calculator_rules": _load_json(config_dir / "calculator_config.json"),
         }
-        logger.info("✅ Loaded all 5 calculator configuration files (self-contained)")
+        logger.info(" Loaded all 5 calculator configuration files (self-contained)")
         return _calculator_config
     except Exception as e:
-        logger.warning(f"⚠️  Failed to load config files: {e}")
+        logger.warning(f"  Failed to load config files: {e}")
         return {}
 
 

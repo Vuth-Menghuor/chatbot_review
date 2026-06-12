@@ -1,27 +1,4 @@
 
-"""
-API Endpoints - Retrieval service
-FastAPI routes for retrieval operations aligned with Orchestrator v2 architecture
-
-Port: 8003 (as per GDCE services architecture)
-Base Path: /v1
-
-Service Role: Handles retrieval-based intents from the Orchestrator:
-- Intent.HS_CODE_LOOKUP      → POST /hs-code-lookup
-- Intent.DEFINITION          → POST /definition
-- Intent.POLICY_INQUIRY      → POST /policy-inquiry
-- Intent.GENERAL             → POST /general
-
-Internal endpoints (still supported):
-- POST /retrieval/retrieve   → General document retrieval
-- POST /retrieval/answer-lookup → HS code lookup from Qdrant
-
-Orchestrator Routing Reference (from ORCHESTRATOR_V2_ARCHITECTURE.md):
-- Calculator (8002)   → Intent.CALCULATION
-- Retrieval  (8003)   → Intent.{HS_CODE_LOOKUP, DEFINITION, POLICY_INQUIRY, GENERAL}
-- Trade Data (8004)   → Intent.TRADE_QUERY
-- Orchestrator (8001) → Main entry point, routes to above services
-"""
 
 import logging
 import re
@@ -117,6 +94,8 @@ async def build_final_answer(
         "final_answer": "I could not find relevant information for your question. Please try rephrasing it.",
         "answer_source": "no_results",
     }
+
+
 async def build_ranked_hs_answer(
     query: str,
     transformed_docs: List[Dict[str, Any]],
@@ -133,19 +112,19 @@ async def build_ranked_hs_answer(
             "final_answer": "No HS code candidates found for your query.",
             "answer_source": "no_results",
         }
-    # new added
+
     q_lower = query.lower()
     query_signals = [w for w in q_lower.split() if len(w) > 3]
 
     def _is_relevant(doc):
         content = str(doc.get("content", "")).lower()
         return sum(1 for signal in query_signals if signal in content) >= 1
-    
 
     filtered_docs = [d for d in transformed_docs if _is_relevant(d)]
     # Fall back to all docs if filter is too aggressive
     if len(filtered_docs) < 3:
         filtered_docs = transformed_docs
+
     # Build context blocks for Gemini (allow larger candidate sets from prefix scans)
     context_blocks = []
     max_context_docs = min(len(transformed_docs), 40)
@@ -187,18 +166,25 @@ async def build_ranked_hs_answer(
             "- Use this format: 1. XXXX.XX.XX - short description\n"
             "- Keep each description short and human-readable.\n"
             "- Use only the candidate codes provided above; do not invent or add codes.\n"
-            "- If the user does not explicitly mention 'CKD' or 'completely knocked down', assume imports are CBU (completely built unit) and prefer assembled/CBU wording.\n"
-            "- If a candidate contains explicit CKD wording and the user did not request CKD, deprioritize it.\n"
-            "- Exclude special-purpose vehicles (ambulance, hearse, prison van, motor-home, go-kart, ATV, minibus, coach, bus) unless the user explicitly requests them.\n"
-            "- Focus on the key differentiator such as engine type, drive type, body type, CKD/CBU, or special purpose.\n"
+
+            # --- GLOBAL TERMINOLOGY & SEMANTIC ALIGNMENT ---
+            "- **Global Synonyms & Regional Terminology**: Account for global linguistic variations, regional naming conventions, and local synonyms across international customs frameworks. Intelligently map commercial or casual terms in the query to formal tariff language used worldwide (e.g., recognize that 'pickup', 'ute', and 'bakkie' may map to 'goods transport vehicles').\n"
+            "- **Framework Agnostic Matching**: Do not penalize a candidate code if its description uses localized legal phrasing from a specific regional tariff schedule (e.g., US HTS, EU CN, or ASEAN AHTN). Evaluate candidates based on underlying product intent, mechanical functionality, and material composition.\n"
+
+            # --- GRANULAR USER QUERY ALIGNMENT ---
+            "- **Granular Parameter Alignment**: Extract and prioritize the exact technical specifications present in the user query (e.g., fuel type, engine cc, cylinder count, hybrid/EV status, GVW, drive train, seating capacity). Select the candidate code whose legal tariff parameters align most precisely with these variables. Deprioritize candidates with explicit parameter conflicts.\n"
+
+            # --- COMPREHENSIVE ASSEMBLY STATE LOGIC (CBU/CKD/SKD/IKD) ---
+            "- **Strict Assembly State Matching**: Distinguish carefully between CBU (Completely Built Unit), CKD (Completely Knocked Down), SKD (Semi-Knocked Down), and IKD (Incompletely Knocked Down). If the user query specifies a knocked-down state (CKD, SKD, or IKD), strictly prioritize candidates matching that exact state. If the user query does not mention any assembly state, assume CBU and deprioritize all CKD/SKD/IKD candidates.\n"
+
+            # "- Exclude special-purpose vehicles (ambulance, hearse, prison van, motor-home, go-kart, ATV, minibus, coach, bus) unless the user explicitly requests them.\n"
+            "- Focus on the key differentiator such as engine type, drive type, body type, assembly state, or special purpose.\n"
             "- Review carefully: this selection is FINAL and will be used for classification; an incorrect choice may cause downstream errors. Only select codes you are confident about.\n"
             "- Ensure all selected codes share the same 6-digit HS prefix that was used to fetch these candidates.\n"
             "- Return up to 5 codes. Do not include irrelevant results.\n"
             "- Do not invent HS codes not present in the candidates."
         )
         try:
-            # Pass the actual candidate documents and use the HS-candidate intent
-            # so Gemini receives both the context blocks and the correct instruction set.
             raw = await gemini_client.generate_answer(
                 query=prompt,
                 documents=transformed_docs,
@@ -206,7 +192,6 @@ async def build_ranked_hs_answer(
             )
             if raw and raw.strip():
                 # Validate that Gemini's selections are a subset of provided candidates
-                # and that they share the same 6-digit prefix used to fetch these docs.
                 candidate_codes = set()
                 for d in transformed_docs:
                     hc = d.get("metadata", {}).get("hs_code") or ""
@@ -227,7 +212,6 @@ async def build_ranked_hs_answer(
                 def _valid_selection(found_digits):
                     if not found_digits:
                         return False
-                    # Normalise candidate codes to raw digits for comparison
                     norm_candidates = {re.sub(r"\D", "", c) for c in candidate_codes}
                     for fd in found_digits:
                         fd_norm = re.sub(r"\D", "", fd)
@@ -341,13 +325,7 @@ def _slim_hs_candidate_docs_for_llm(docs: List[Dict[str, Any]]) -> List[Dict[str
 
 
 def _is_query_ambiguous(query: str) -> bool:
-    """Return True when the query is too generic to select specific subheadings.
-
-    Heuristics:
-    - Very short queries (<=2 tokens)
-    - No presence of typical spec keywords (cc, engine, fuel, assembly, body, drive)
-    - If tokens present but none longer than 3 chars and no spec words
-    """
+    """Return True when the query is too generic to select specific subheadings."""
     q = _normalize_text(query)
     if not q:
         return True
@@ -355,51 +333,22 @@ def _is_query_ambiguous(query: str) -> bool:
     if len(tokens) <= 2:
         return True
 
-    # Named product/model queries like "lexus lx 600" should not be treated as
-    # ambiguous just because they do not mention engine or drive specs.
     has_model_token = bool(re.search(r"\b[a-z]{1,4}\s*\d{2,4}\b", q))
     has_brand_like_token = bool(re.search(r"\b[a-z]+\s+[a-z]{1,4}\s*\d{2,4}\b", q))
     if has_model_token or has_brand_like_token:
         return False
 
     SPEC_KEYWORDS = {
-        "cc",
-        "engine",
-        "diesel",
-        "petrol",
-        "gasoline",
-        "electric",
-        "ev",
-        "hybrid",
-        "phev",
-        "hev",
-        "plug",
-        "ckd",
-        "cbu",
-        "completely",
-        "assembled",
-        "sedan",
-        "hatchback",
-        "suv",
-        "van",
-        "truck",
-        "pickup",
-        "ambulance",
-        "hearse",
-        "motorhome",
-        "motor-home",
-        "prison",
-        "wheelchair",
-        "gvw",
-        "gvm",
+        "cc", "engine", "diesel", "petrol", "gasoline", "electric", "ev",
+        "hybrid", "phev", "hev", "plug", "ckd", "cbu", "completely", "assembled",
+        "sedan", "hatchback", "suv", "van", "truck", "pickup", "ambulance",
+        "hearse", "motorhome", "motor-home", "prison", "wheelchair", "gvw", "gvm",
     }
 
-    # If any spec keyword appears, treat as specific
     for kw in SPEC_KEYWORDS:
         if re.search(r"\b" + re.escape(kw) + r"\b", q):
             return False
 
-    # If there are several reasonably long tokens, it's probably specific
     long_tokens = [t for t in tokens if len(t) > 3]
     if len(long_tokens) >= 2:
         return False
@@ -424,11 +373,7 @@ def _doc_text_for_filter(doc: Dict[str, Any]) -> str:
 
 
 def _candidate_support_score(query: str, doc: Dict[str, Any]) -> float:
-    """Estimate how well a candidate doc matches the user's query.
-
-    This is a lightweight guardrail used to stop the LLM from finalizing a code
-    when the candidate set is semantically weak or off-target.
-    """
+    """Estimate how well a candidate doc matches the user's query."""
     q = _normalize_text(query)
     text = _doc_text_for_filter(doc)
     if not q or not text:
@@ -498,8 +443,6 @@ def _candidate_support_score(query: str, doc: Dict[str, Any]) -> float:
         if any(term in text for term in ("vehicle", "car", "suv", "truck", "van")):
             score += 0.05
 
-    # Penalize candidates that are clearly special-purpose when the query
-    # appears to target a passenger SUV (helps avoid enumerating ambulances, etc.)
     inferred = _derive_vehicle_constraints(query)
     if inferred.get("body") == "suv":
         if re.search(r"\b(ambulance|hearse|prison van|prison|motor-home|motorhome|go[- ]?kart|atv|all[- ]terrain vehicle|sedan)\b", text):
@@ -687,15 +630,9 @@ def _derive_vehicle_constraints(query: str) -> Dict[str, Any]:
         except Exception:
             constraints["cc"] = None
 
-    # Heuristic: brand+model tokens (e.g., "lexus lx 600") usually indicate a
-    # specific passenger model. Treat these as likely passenger SUVs unless the
-    # user explicitly mentions other body types (ambulance, van, etc.). This
-    # helps prefer passenger-car subheadings (e.g., 4WD variants) over utility
-    # /special-purpose entries.
     has_model_token = bool(re.search(r"\b[a-z]{1,4}\s*\d{2,4}\b", q))
     has_brand_like_token = bool(re.search(r"\b[a-z]+\s+[a-z]{1,4}\s*\d{2,4}\b", q))
     if has_model_token or has_brand_like_token:
-        # only set body/drive if user hasn't explicitly provided a conflicting hint
         if constraints.get("body") is None and not re.search(r"\b(ambulance|hearse|prison|motorhome|motor-home|go-kart|atv|van)\b", q):
             constraints["body"] = "suv"
         if constraints.get("drive") is None:
@@ -705,12 +642,7 @@ def _derive_vehicle_constraints(query: str) -> Dict[str, Any]:
 
 
 def _infer_vehicle_constraints_from_model(query: str) -> Dict[str, Any]:
-    """Infer likely vehicle constraints from brand/model tokens when present.
-
-    This is a lightweight heuristic: for queries like "lexus lx 600" we infer
-    passenger SUV and 4WD as a strong prior so the pipeline can exclude
-    obviously incompatible subheadings (ambulance, hearse, go-kart, etc.).
-    """
+    """Infer likely vehicle constraints from brand/model tokens when present."""
     q = _normalize_text(query)
     inferred: Dict[str, Any] = {
         "assembly": None,
@@ -720,15 +652,12 @@ def _infer_vehicle_constraints_from_model(query: str) -> Dict[str, Any]:
         "cc": None,
     }
 
-    # Detect brand+model patterns (e.g., "lexus lx 600")
     has_model_token = bool(re.search(r"\b[a-z]{1,4}\s*\d{2,4}\b", q))
-    # Specific heuristic for Lexus LX patterns which are SUVs and typically 4WD
     if re.search(r"\blexus\b.*\blx\b|\blx\s*\d{1,3}\b", q):
         inferred["body"] = "suv"
         inferred["drive"] = "4wd"
         inferred["fuel"] = "spark"
 
-    # Generic model token heuristic: assume passenger vehicle unless keywords indicate goods
     if has_model_token and inferred["body"] is None:
         inferred["body"] = "suv"
         inferred["drive"] = "4wd"
@@ -780,12 +709,12 @@ def _matches_cc(cc: int, text: str) -> bool:
     return False
 
 
-def _apply_hard_vehicle_filters(query: str, docs: List[Dict[str, Any]], constraints: Optional[Dict[str, Any]] = None) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """Apply strict filters derived from vehicle constraints.
-
-    If `constraints` is provided it will be used instead of deriving from query.
-    Returns filtered docs and metadata about filtering.
-    """
+def _apply_hard_vehicle_filters(
+    query: str,
+    docs: List[Dict[str, Any]],
+    constraints: Optional[Dict[str, Any]] = None,
+) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Apply strict filters derived from vehicle constraints."""
     if constraints is None:
         constraints = _derive_vehicle_constraints(query)
     filtered: List[Dict[str, Any]] = []
@@ -837,8 +766,6 @@ def _apply_hard_vehicle_filters(query: str, docs: List[Dict[str, Any]], constrai
         if isinstance(cc, int) and not _matches_cc(cc, text):
             continue
 
-        # Exclusion rules: when the inferred body is `suv`, exclude special-purpose
-        # vehicle descriptions that are mutually exclusive with passenger SUVs.
         if body == "suv":
             if re.search(r"\b(ambulance|hearse|prison van|prison|motor-home|motorhome|go[- ]?kart|atv|all[- ]terrain vehicle)\b", text):
                 continue
@@ -882,8 +809,6 @@ async def _extract_hs_prefix_with_gemini(gemini_client, query: str) -> Optional[
         if prefix is None:
             return None
 
-        # Guardrail: if Gemini emits something malformed, keep only the first
-        # 6 digits and reject very noisy outputs.
         if not re.fullmatch(r"\d{6}", prefix):
             return None
 
@@ -910,17 +835,14 @@ async def _build_hs_candidate_documents(
     import asyncio
 
     collection_name = getattr(service.config, "qdrant_hs_code_collection", "gdce_hs_code")
+    raw_limit = min(max(int(top_k or 27) * 2, 60), 100)
 
-    # Cap fetch limit — prefix families have at most ~40 8-digit codes
-    raw_limit = min(max(int(top_k or 10) * 2, 60), 100)
-
-    # ── Run prefix extraction and semantic search IN PARALLEL ──────────────
     prefix_task = asyncio.create_task(
         _extract_hs_prefix_with_gemini(gemini_client, query)
     )
     semantic_task = asyncio.create_task(
         service.orchestrator.retrieve_semantic(
-            query, top_k=20, collection_name=collection_name
+            query, top_k=27, collection_name=collection_name
         )
     )
 
@@ -928,7 +850,6 @@ async def _build_hs_candidate_documents(
         prefix_task, semantic_task, return_exceptions=True
     )
 
-    # Handle exceptions from gather
     if isinstance(prefix, Exception):
         logger.warning(f"Prefix extraction failed: {prefix}")
         prefix = None
@@ -946,7 +867,6 @@ async def _build_hs_candidate_documents(
 
     # ── Use prefix scan if we got a valid prefix ───────────────────────────
     if prefix:
-        # Use the new async version so it doesn't block the event loop
         raw_docs = await service.fetch_hs_documents_by_prefix_async(
             prefix, collection_name=collection_name, limit=raw_limit
         )
@@ -958,7 +878,39 @@ async def _build_hs_candidate_documents(
                 documents=raw_docs,
                 target_heading=prefix[:4],
             )
-            
+
+            # FIX #3: Apply hard vehicle filters after prefix scan, not just in semantic fallback
+            constraints = _derive_vehicle_constraints(query)
+            if any(v is not None for v in constraints.values()):
+                filtered_docs, filter_meta = _apply_hard_vehicle_filters(
+                    query, raw_docs, constraints
+                )
+                if filter_meta.get("filter_output_count", 0) > 0:
+                    raw_docs = filtered_docs
+                    logger.info(
+                        f"Hard filters applied after prefix scan: "
+                        f"{filter_meta['filter_input_count']} → {filter_meta['filter_output_count']} docs"
+                    )
+                else:
+                    # Relax body/cc/drive and retry to avoid empty result
+                    relaxed = {**constraints, "body": None, "cc": None, "drive": None}
+                    relaxed_docs, relaxed_meta = _apply_hard_vehicle_filters(
+                        query, raw_docs, relaxed
+                    )
+                    if relaxed_meta.get("filter_output_count", 0) > 0:
+                        raw_docs = relaxed_docs
+                        filter_meta = {
+                            **relaxed_meta,
+                            "filters_relaxed": [
+                                k for k in ("body", "cc", "drive")
+                                if constraints.get(k) is not None
+                            ],
+                        }
+                        logger.info(
+                            f"Relaxed filters applied after prefix scan: "
+                            f"{relaxed_meta['filter_input_count']} → {relaxed_meta['filter_output_count']} docs"
+                        )
+
             # Supplement with semantic results if there are fewer than 3 prefix matches
             if len(raw_docs) < 3 and semantic_results:
                 existing_codes = {str(get_code(d)).strip() for d in raw_docs if get_code(d)}
@@ -1006,7 +958,6 @@ async def _build_hs_candidate_documents(
                 if filter_meta.get("filter_output_count", 0) > 0:
                     raw_docs = filtered_docs
                 else:
-                    # Relax body/cc/drive filters and retry
                     relaxed = {**constraints, "body": None, "cc": None, "drive": None}
                     relaxed_docs, relaxed_meta = _apply_hard_vehicle_filters(
                         query, raw_docs, relaxed
@@ -1045,37 +996,21 @@ async def _build_hs_candidate_documents(
     metadata = {k: v for k, v in metadata.items() if v is not None}
     return transformed_docs, metadata
 
+
 def transform_document(doc: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Transform Qdrant/raw document to DocumentResult schema.
-    
-    Args:
-        doc: Raw document from Qdrant or database
-            Note: Qdrant payload fields are unpacked directly (not nested)
-        
-    Returns:
-        Transformed document matching DocumentResult schema
-    """
-    # Try to find content in various possible field names
-    # (Qdrant payload fields are already unpacked at top level)
+    """Transform Qdrant/raw document to DocumentResult schema."""
     content = (
-        doc.get("text") or 
-        doc.get("content") or 
-        doc.get("description") or 
-        doc.get("title") or 
+        doc.get("text") or
+        doc.get("content") or
+        doc.get("description") or
+        doc.get("title") or
         ""
     )
-    
-    # Determine the ID (string format)  
+
     doc_id = str(doc.get("id") or doc.get("doc_id") or "unknown")
-    
-    # Get score if available
     score = doc.get("score", 0.5)
-    
-    # Determine source
     source = doc.get("retrieval_source", "semantic")
-    
-    # Collect metadata from all extra fields
+
     metadata = {
         "doc_id": doc.get("doc_id"),
         "title": doc.get("title"),
@@ -1083,18 +1018,16 @@ def transform_document(doc: Dict[str, Any]) -> Dict[str, Any]:
         "source_url": doc.get("source_url"),
         "description": doc.get("description"),
     }
-    # Add any other fields that might be useful from Qdrant payload
     for key, value in doc.items():
         if key not in ["id", "score", "content", "text", "retrieval_source"] and not key.startswith("_"):
             metadata[key] = value
-    
-    # Build transformed document
+
     return {
         "id": doc_id,
-        "content": str(content)[:1000] if content else "",  # Limit content length
+        "content": str(content)[:1000] if content else "",
         "score": float(score) if score else 0.5,
         "source": source,
-        "metadata": {k: v for k, v in metadata.items() if v is not None}  # Only include non-null metadata
+        "metadata": {k: v for k, v in metadata.items() if v is not None}
     }
 
 
@@ -1137,9 +1070,6 @@ def _build_response_data(
     }
 
 
-
-# Place the /v1/hs-code-candidates endpoint after router is defined
-
 @router.post("/hs-code-candidates", tags=["Intent: HS Code Candidates"], response_model=QueryResponse)
 async def hs_code_candidates_endpoint(
     request: QueryRequest,
@@ -1147,12 +1077,14 @@ async def hs_code_candidates_endpoint(
 ) -> QueryResponse:
     """
     HS Code Candidates - LLM-powered candidate selection and explanation.
-    Retrieves candidate HS codes for a product description, then uses Gemini LLM to select and explain the best candidates.
+    Retrieves candidate HS codes for a product description, then uses Gemini LLM
+    to select and explain the best candidates.
     """
     try:
         logger.info(f"HS Code Candidates request: {request.query[:100]}")
         gemini_client = getattr(service, "gemini_client", None)
         fetch_limit = request.top_k if request.top_k and request.top_k > 0 else 50
+
         transformed_docs, hs_metadata = await _build_hs_candidate_documents(
             service=service,
             query=request.query,
@@ -1163,14 +1095,10 @@ async def hs_code_candidates_endpoint(
         confidence_ok = _hs_result_confident(request.query, transformed_docs)
         llm_docs = _slim_hs_candidate_docs_for_llm(transformed_docs)
 
-        # Step 2: LLM-driven review — pass the user query and ALL prefix-derived
-        # candidates to the LLM. The LLM should remove unrelated candidates,
-        # rank the remaining ones and provide brief explanations. The LLM is
-        # the main decider for this flow.
         intent_value = "HS_CODE_CANDIDATES_EXPLAIN_ALL"
 
         if request.generate_answer and transformed_docs:
-            # Build explicit candidate list text for the LLM to review
+            # FIX #1: Build candidate list text and inject it into the prompt
             candidate_lines = []
             for idx, doc in enumerate(llm_docs[:50], start=1):
                 metadata = doc.get("metadata", {}) if isinstance(doc.get("metadata"), dict) else {}
@@ -1178,7 +1106,9 @@ async def hs_code_candidates_endpoint(
                 hs_prefix = metadata.get("hs_prefix") or "N/A"
                 desc = (metadata.get("description") or doc.get("content") or "").strip()
                 desc = desc.replace("\n", " ")
-                candidate_lines.append(f"[{idx}] HS {hs_code} | Prefix {hs_prefix} | Description: {desc[:400]}")
+                candidate_lines.append(
+                    f"[{idx}] HS {hs_code} | Prefix {hs_prefix} | Description: {desc[:400]}"
+                )
 
             candidates_text = "Candidates:\n" + "\n".join(candidate_lines) + "\n\n"
 
@@ -1186,29 +1116,72 @@ async def hs_code_candidates_endpoint(
                 "You are an HS code decision assistant. You are given a set of candidate "
                 "HS codes (below) with short descriptions. Review all candidates, remove any "
                 "that are not related to the product in the user's query, and rank the "
-                "remaining candidates from best to worst. Return a numbered list only, "
-                "with each line in the format: 1. HS XXXX.XX.XX - short reason. Return up to 10 codes. "
-                "Use only codes from the provided candidate list; do not invent or add codes.\n\n"
-                f"User query: {request.query}\n\n"
-                "Assembly rule: if the user did not explicitly state 'CKD' or 'completely knocked down', assume imports are CBU (completely built units) and prefer candidates with CBU/assembled wording. If a candidate explicitly contains CKD wording and the user did not request CKD, deprioritize it.\n\n"
-                "Exclusions: exclude special-purpose vehicles (ambulance, hearse, prison van, motor-home, go-kart, ATV, minibus, coach, bus) unless the user query explicitly mentions those.\n\n"
+                "remaining candidates from best to worst.\n\n"
+                f"Product query: {request.query}\n\n"
+                # FIX #1: candidates_text is now actually injected here
                 + candidates_text
+                + "Instructions:\n"
+                "- Rank the most relevant HS codes from best to worst.\n"
+                "- Output a simple numbered list only.\n"
+                "- Use this format: 1. XXXX.XX.XX - short description\n"
+                "- Keep each description short and human-readable.\n"
+                "- Use only the candidate codes provided above; do not invent or add codes.\n"
+
+                # --- GLOBAL TERMINOLOGY & SEMANTIC ALIGNMENT ---
+                "- **Global Synonyms & Regional Terminology**: Account for global linguistic "
+                "variations, regional naming conventions, and local synonyms across international "
+                "customs frameworks. Intelligently map commercial or casual terms in the query to "
+                "formal tariff language used worldwide (e.g., recognize that 'pickup', 'ute', and "
+                "'bakkie' may map to 'goods transport vehicles'; 'estate' maps to 'station wagon').\n"
+                "- **Framework Agnostic Matching**: Do not penalize a candidate code if its "
+                "description uses localized legal phrasing from a specific regional tariff schedule "
+                "(e.g., US HTS, EU CN, or ASEAN AHTN). Evaluate candidates based on underlying "
+                "product intent, mechanical functionality, and material composition rather than "
+                "strict literal word matching.\n"
+
+                # --- GRANULAR USER QUERY ALIGNMENT ---
+                "- **Granular Parameter Alignment**: Extract and prioritize the exact technical "
+                "specifications present in the user query (e.g., fuel type, engine cc, cylinder "
+                "count, hybrid/EV status, GVW, drive train like 4WD/AWD, or seating capacity). "
+                "Select the candidate code whose legal tariff parameters align most precisely with "
+                "these variables. Deprioritize or exclude candidates with explicit parameter conflicts.\n"
+
+                # --- COMPREHENSIVE ASSEMBLY STATE LOGIC (CBU/CKD/SKD/IKD) ---
+                "- **Strict Assembly State Matching**: Distinguish carefully between CBU "
+                "(Completely Built Unit), CKD (Completely Knocked Down), SKD (Semi-Knocked Down), "
+                "and IKD (Incompletely Knocked Down). If the user query specifies a knocked-down "
+                "state (CKD, SKD, or IKD), strictly prioritize candidates matching that exact "
+                "state. If the user query does not mention any assembly state, assume CBU, prefer "
+                "candidates with CBU/assembled wording, and deprioritize all CKD/SKD/IKD candidates.\n"
+
+                # --- EXCLUSIONS & CONTROLS ---
+                # "- Exclude special-purpose vehicles (ambulance, hearse, prison van, motor-home, "
+                # "go-kart, ATV, minibus, coach, bus) unless the user explicitly requests them.\n"
+                "- Focus on the key differentiator such as engine type, drive type, body type, "
+                "assembly state, or special purpose.\n"
+                "- Review carefully: this selection is FINAL and will be used for classification; "
+                "an incorrect choice may cause downstream errors. Only select codes you are "
+                "confident about.\n"
+                "- Ensure all selected codes share the same 6-digit HS prefix that was used to "
+                "fetch these candidates.\n"
+                "- Return up to 5 codes. Do not include irrelevant results.\n"
+                "- Do not invent HS codes not present in the candidates.\n"
             )
 
-            answer_payload = await build_final_answer(
+            # FIX #2: Route to build_ranked_hs_answer (uses gemini_client directly)
+            # instead of build_final_answer (which bypasses the prompt via AnswerGenerator)
+            answer_payload = await build_ranked_hs_answer(
                 query=llm_prompt,
                 transformed_docs=llm_docs,
                 generate_answer=True,
-                intent=intent_value,
-                status=None,
-                clarification=None,
+                gemini_client=gemini_client,
             )
         else:
             answer_payload = {"final_answer": None, "answer_source": None}
 
-        # Step 3: Build response
         metadata = dict(hs_metadata)
         metadata["candidate_confidence"] = "high" if confidence_ok else "low"
+
         response_data = {
             "query": request.query,
             "status": "success",
@@ -1219,7 +1192,7 @@ async def hs_code_candidates_endpoint(
             "final_answer": answer_payload.get("final_answer"),
             "answer_source": answer_payload.get("answer_source"),
             "session_id": request.session_id,
-            "api_called": "/hs-code-candidates",
+            "api_called": "/v1/hs-code-candidates",
             "collection_used": "gdce_hs_code",
             "language": None,
             "required_parameters": ["query"],
@@ -1228,30 +1201,24 @@ async def hs_code_candidates_endpoint(
             "error": None,
         }
         return QueryResponse(**response_data)
+
     except Exception as e:
         logger.error(f"HS Code Candidates error: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"HS Code Candidates failed: {str(e)}"
         )
+
+
 @router.post("/retrieval/retrieve", tags=["Intent: General"], response_model=QueryResponse)
 async def retrieve(
     request: QueryRequest,
     service: RetrievalService = Depends(get_service)
 ) -> QueryResponse:
-    """
-    Retrieve documents matching the query.
-    
-    Args:
-        request: Query request with search parameters and optional collection
-        service: Injected retrieval service
-        
-    Returns:
-        QueryResponse with retrieved documents
-    """
+    """Retrieve documents matching the query."""
     try:
         logger.info(f"Retrieve request: {request.query[:100]}... (collection: {request.collection})")
-        
+
         result = await service.retrieve(
             query=request.query,
             top_k=request.top_k,
@@ -1262,8 +1229,7 @@ async def retrieve(
             compare_codes=request.compare_codes,
             require_period_for_trade=request.require_period_for_trade,
         )
-        
-        # Transform documents to match schema
+
         transformed_docs = []
         logger.info(f"Starting document transformation: {len(result.get('documents', []))} documents to transform")
         for i, doc in enumerate(result.get("documents", []), 1):
@@ -1275,11 +1241,10 @@ async def retrieve(
             except Exception as e:
                 logger.error(f"Failed to transform document {i}: {e}", exc_info=True)
                 continue
-        
+
         logger.info(f"Transformation complete: {len(transformed_docs)} documents transformed")
-        
-        # Build response
-        intent_value = request.intent or "general"  # Use orchestrator's intent or default
+
+        intent_value = request.intent or "general"
         answer_payload = await build_final_answer(
             query=request.query,
             transformed_docs=transformed_docs,
@@ -1294,11 +1259,11 @@ async def retrieve(
             result=result,
             transformed_docs=transformed_docs,
             answer_payload=answer_payload,
-            api_called="/retrieval/retrieve",
+            api_called="/v1/retrieval/retrieve",
         )
-        
+
         return QueryResponse(**response_data)
-        
+
     except Exception as e:
         logger.error(f"Retrieve error: {e}")
         raise HTTPException(
@@ -1311,12 +1276,7 @@ async def retrieve(
 async def health_check(
     service: RetrievalService = Depends(get_service)
 ) -> HealthCheckResponse:
-    """
-    Check health of retrieval service.
-    
-    Returns:
-        Health status of all components
-    """
+    """Check health of retrieval service."""
     try:
         status = await service.health_check()
         return HealthCheckResponse(**status)
@@ -1327,6 +1287,7 @@ async def health_check(
             components={"error": {"message": str(e)}}
         )
 
+
 @router.get("/", tags=["Health"], response_model=dict)
 def root():
     """Root endpoint showing available endpoints."""
@@ -1335,16 +1296,18 @@ def root():
         "version": "2.0.0",
         "port": 8003,
         "endpoints": {
-            "health": "GET /health",
-            "retrieve": "POST /retrieval/retrieve",
-            "hs_code_candidates": "POST /hs-code-candidates",
-            "hs_code_ranked": "POST /hs-code-ranked",
+            "health": "GET /v1/health",
+            "retrieve": "POST /v1/retrieval/retrieve",
+            "answer_lookup": "POST /v1/retrieval/answer-lookup",
+            "hs_code_lookup": "POST /v1/hs-code-lookup (Intent.HS_CODE_LOOKUP)",
+            "definition": "POST /v1/definition (Intent.DEFINITION)",
+            "policy_inquiry": "POST /v1/policy-inquiry (Intent.POLICY_INQUIRY)",
+            "general": "POST /v1/general (Intent.GENERAL)",
             "swagger": "/docs",
             "openapi": "/openapi.json"
         },
         "description": "Routes queries to appropriate retrieval endpoints based on intent. Called by Orchestrator Service (8001)."
     }
-
 
 
 @router.post("/hs-code-ranked", tags=["Intent: HS Code Ranked"], response_model=RankedHSResponse)
@@ -1360,6 +1323,7 @@ async def hs_code_ranked_endpoint(
         logger.info(f"HS Code Ranked request: {request.query[:100]}")
         gemini_client = getattr(service, "gemini_client", None)
         fetch_limit = request.top_k if request.top_k and request.top_k > 0 else 50
+
         transformed_docs, hs_metadata = await _build_hs_candidate_documents(
             service=service,
             query=request.query,
@@ -1368,13 +1332,10 @@ async def hs_code_ranked_endpoint(
         )
         llm_docs = _slim_hs_candidate_docs_for_llm(transformed_docs)
 
-        # Keep only the exact 6-digit family that Gemini extracted, if available.
         hs_prefix = hs_metadata.get("hs_prefix") if isinstance(hs_metadata, dict) else None
         transformed_docs = _filter_docs_to_hs_prefix_family(transformed_docs, hs_prefix)
         llm_docs = _slim_hs_candidate_docs_for_llm(transformed_docs)
 
-        # Step 2: Build simple ranked answer
-        # Prefer inferred constraints from metadata (if present)
         inferred_constraints = hs_metadata.get("inferred_constraints") if isinstance(hs_metadata, dict) else None
         if not inferred_constraints:
             inferred_constraints = _derive_vehicle_constraints(request.query)
@@ -1396,7 +1357,6 @@ async def hs_code_ranked_endpoint(
             gemini_client=gemini_client,
         )
 
-        # Step 3: Return slim response
         return RankedHSResponse(
             status="success",
             final_answer=answer_payload.get("final_answer"),

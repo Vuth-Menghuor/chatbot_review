@@ -72,7 +72,7 @@ def detect_simple_product_category(query: str) -> str:
     if any(x in q for x in vehicle_keywords):
         return "vehicle"
     
-    if any(x in q for x in ["prepared", "preserved", "frozen", "fresh", "salted", "fish", "tuna", "salmon"]):
+    if any(x in q for x in ["prepared", "preserved", "frozen", "fresh", "salted", "fish", "tuna", "salmon", "chicken", "meat", "rice", "food", "agricultural", "livestock"]):
         return "food"
     
     if any(x in q for x in ["womens", "mens", "girls", "boys", "trousers", "dress", "textile", "fabric"]):

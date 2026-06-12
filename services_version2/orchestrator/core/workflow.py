@@ -10,7 +10,6 @@ from typing import Optional, Dict, Any, List, Tuple
 from enum import Enum
 from dataclasses import dataclass
 import time
-import re
 
 logger = logging.getLogger(__name__)
 
@@ -23,14 +22,9 @@ except ImportError:
     logger.warning("LLM intent detector not available, will use keyword-based detection")
     LLM_INTENT_DETECTION_AVAILABLE = False
 
-# Import currency detector
-try:
-    from ..currency_service import OrchestratorCurrencyService, CurrencyServiceConfig
-    from ..llm_first_layer import get_llm_first_layer_service as get_currency_service
-    LLM_CURRENCY_DETECTION_AVAILABLE = True
-except ImportError:
-    logger.warning("Currency detector not available")
-    LLM_CURRENCY_DETECTION_AVAILABLE = False
+# Currency detector: no standalone currency_service module exists;
+# currency detection is handled by pattern matching and llm_service fallback.
+LLM_CURRENCY_DETECTION_AVAILABLE = False
 
 class WorkflowIntent(str, Enum):
     """Supported workflow intents."""
@@ -449,8 +443,8 @@ class WorkflowExecutor:
         # Define currency patterns with confidence scores
         # Vehicka-branch improved patterns use negative lookbehind/lookahead for better matching
         patterns = {
-            "USD": [r'\$\s*\d', r'\d\s*\$', r'(?<![a-z])usd\b', r'(?<![a-z])dollar', r'(?<![a-z])greenback'],
-            "KHR": [r'៛', r'(?<![a-z])khm\b', r'(?<![a-z])riel\b', r'(?<![a-z])khmerian\b'],
+            "USD": [r'\$\s*\d', r'\d\s*\$', r'(?<![a-z])usd\b', r'(?<![a-z])dollar', r'(?<![a-z])greenback', r'(?<![a-z])bucks?\b'],
+            "KHR": [r'៛', r'(?<![a-z])khr\b', r'(?<![a-z])khm\b', r'(?<![a-z])riel\b', r'(?<![a-z])khmerian\b'],
             "EUR": [r'€\s*\d', r'\d\s*€', r'(?<![a-z])eur\b', r'(?<![a-z])euro\b'],
             "THB": [r'(?<![a-z])thb\b', r'(?<![a-z])baht\b'],
             "CNY": [r'¥\s*\d', r'\d\s*¥', r'(?<![a-z])cny\b', r'(?<![a-z])yuan\b', r'(?<![a-z])rmb\b'],
@@ -526,209 +520,57 @@ class WorkflowExecutor:
         return None, 0.0
     
     def cleanup_query(self, user_input: str) -> str:
-        """
-        Remove filler phrases from user query.
-        Ported from gemini_orchestrator_e2e.py test harness.
-        
-        Examples:
-        - "What is the HS code for smartphones?" → "smartphones"
-        - "Please tell me the HS code for textiles" → "textiles"
-        
-        Args:
-            user_input: Original user query
-            
-        Returns:
-            Cleaned query with filler patterns removed
-        """
-        import re
-        
-        filler_patterns = [
-            r"^what is the hs code for\s*",
-            r"^what hs code do i use for\s*",
-            r"^what hs code\s+(?:is|applies to|should i use)\s+for\s*",
-            r"^please tell me the hs code for\s*",
-            r"^i need the hs code for\s*",
-            r"^hs code for\s*",
-            r"\s*hs code\s*$",
-        ]
-        
-        result = user_input.strip()
-        for pattern in filler_patterns:
-            result = re.sub(pattern, "", result, flags=re.IGNORECASE).strip()
-        
-        return result
-    
+        """Remove filler phrases from user query. Delegates to hs_classifier."""
+        from .hs_classifier import cleanup_query as _cleanup_query
+        return _cleanup_query(user_input)
+
     def detect_simple_product_category(self, query: str) -> str:
-        """
-        Quickly categorize product into vehicle, food, textile, or other.
-        Ported from gemini_orchestrator_e2e.py test harness.
-        
-        Used to determine what critical discriminators to validate.
-        
-        Args:
-            query: Cleaned query text
-            
-        Returns:
-            Category: "vehicle" | "food" | "textile" | "other"
-        """
-        q = query.lower()
-        
-        if any(x in q for x in ["car", "truck", "van", "bus", "hearse", "vehicle", "motorcycle", "auto"]):
-            return "vehicle"
-        
-        if any(x in q for x in ["prepared", "preserved", "frozen", "fresh", "salted", "fish", "tuna", "salmon", "meat"]):
-            return "food"
-        
-        if any(x in q for x in ["womens", "mens", "girls", "boys", "trousers", "dress", "textile", "fabric", "clothing"]):
-            return "textile"
-        
-        return "other"
-    
+        """Categorize product into vehicle, food, textile, or other. Delegates to hs_classifier."""
+        from .hs_classifier import detect_simple_product_category as _detect_category
+        return _detect_category(query)
+
     def has_critical_discriminators(self, query: str, product_category: str) -> Tuple[bool, Optional[str]]:
-        """
-        Validate if query has critical discriminating information for HS classification.
-        Ported from gemini_orchestrator_e2e.py test harness.
-        
-        For vehicles: needs engine type + engine size
-        For food: needs preservation method (fresh/frozen/preserved)
-        For textile: needs construction + fiber type
-        
-        Args:
-            query: Cleaned query
-            product_category: Category from detect_simple_product_category()
-            
-        Returns:
-            (has_required_info, missing_field_name)
-        """
-        q = query.lower()
-        
-        if product_category == "vehicle":
-            has_engine_type = any(x in q for x in ["petrol", "diesel", "electric", "hybrid", "gasoline"])
-            has_engine_size = any(x in q for x in ["engine", "cc", "kw", "power", "gvwr", "ton", "displacement"])
-            
-            if not has_engine_type:
-                return False, "vehicle_engine"
-            if not has_engine_size:
-                return False, "vehicle_size"
-        
-        if product_category == "food" and ("prepared" in q or "preserved" in q):
-            has_preservation = any(x in q for x in ["fresh", "frozen", "airtight", "salted", "dried", "smoked", "cooked"])
-            if not has_preservation:
-                return False, "food_preservation"
-        
-        if product_category == "textile":
-            has_construction = any(x in q for x in ["knitted", "woven", "crocheted", "plain"])
-            has_fiber = any(x in q for x in ["wool", "synthetic", "cotton", "artificial", "animal hair", "polyester", "nylon"])
-            
-            if not has_construction:
-                return False, "textile_construction"
-            if not has_fiber:
-                return False, "textile_fiber"
-        
-        return True, None
-    
+        """Validate critical discriminating info for HS classification. Delegates to hs_classifier."""
+        from .hs_classifier import has_critical_discriminators as _has_discriminators
+        return _has_discriminators(query, product_category)
+
     def extract_hs_code_from_doc(self, doc: Dict[str, Any]) -> Optional[str]:
-        """
-        Extract HS code from a retrieval document.
-        Handles various metadata field names.
-        
-        Args:
-            doc: Document from retrieval service
-            
-        Returns:
-            HS code string or None
-        """
-        metadata = doc.get("metadata") if isinstance(doc.get("metadata"), dict) else {}
-        return (
-            doc.get("hs_code") 
-            or metadata.get("hs_code") 
-            or metadata.get("hscode") 
-            or metadata.get("tariff_code")
-        )
-    
+        """Extract HS code from a retrieval document. Delegates to hs_classifier."""
+        from .hs_classifier import extract_hs_code
+        return extract_hs_code(doc)
+
     def detect_hs_semantic_conflict(
-        self, 
-        query: str, 
+        self,
+        query: str,
         hs_code: Optional[str],
         description: str
     ) -> Optional[str]:
-        """
-        Detect semantic conflicts between query and HS classification.
-        Ported from gemini_orchestrator_e2e.py test harness.
-        
-        Checks for:
-        - Gendered textile mismatch (query says "women's" but candidate is "men's")
-        - Chemical name mismatch
-        
-        Args:
-            query: Original user query
-            hs_code: Selected HS code
-            description: HS code description from retrieval
-            
-        Returns:
-            Conflict message or None if no conflict
-        """
+        """Detect semantic conflicts between query and HS classification. Delegates to hs_classifier."""
+        from .hs_classifier import detect_hs_semantic_conflict as _detect_conflict
+        # hs_classifier version takes (query, retrieval_payload, hs_code) but
+        # the workflow API takes (query, hs_code, description) directly.
+        # Use inline logic for the simplified signature.
         if not hs_code or not description:
             return None
-        
         desc = str(description).lower()
         q = (query or "").lower()
-        
-        # Gendered textile mismatch guardrail
         if any(t in q for t in ["women", "girls", "female"]) and any(t in desc for t in ["men", "boys", "male"]):
             return "Selected candidate conflicts with gender qualifier in query (looking for women's but candidate is men's)."
-        
-        # Chemical-name mismatch guardrail
         chem_tokens = ["acetic", "nitric", "sulphuric", "sulfuric", "hydrochloric", "phosphoric", "sodium", "calcium"]
         q_chems = [t for t in chem_tokens if t in q]
         d_chems = [t for t in chem_tokens if t in desc]
         if q_chems and d_chems and not any(t in desc for t in q_chems):
             return f"Selected candidate conflicts with requested chemical name in query (looking for {q_chems[0]} but candidate mentions {d_chems[0]})."
-        
         return None
-    
+
     def validate_hs_response(
-        self, 
-        query: str, 
+        self,
+        query: str,
         retrieval_response: Dict[str, Any]
     ) -> Tuple[str, Optional[str], List[str], str]:
-        """
-        Validate HS lookup response from retrieval service.
-        Ported from gemini_orchestrator_e2e.py test harness.
-        
-        Returns status: "success" | "not_found" | "ambiguous" | "inconsistent"
-        
-        Args:
-            query: User query
-            retrieval_response: Response from /v1/hs-code-lookup
-            
-        Returns:
-            (status, primary_code, candidates_list, validation_message)
-        """
-        docs = retrieval_response.get("documents", []) if isinstance(retrieval_response, dict) else []
-        
-        if not docs:
-            return "not_found", None, [], "No HS candidates returned from retrieval service."
-        
-        # Extract primary code from first document
-        primary = self.extract_hs_code_from_doc(docs[0])
-        candidates = [self.extract_hs_code_from_doc(d) for d in docs[:5]]
-        candidates = [c for c in candidates if c]
-        
-        if not primary:
-            return "not_found", None, candidates, "Top document does not include a parsable HS code."
-        
-        # Check for ambiguity: too many chapter prefixes
-        chapter_set = {c[:2] for c in candidates if len(c) >= 2}
-        if len(chapter_set) > 2:
-            return "ambiguous", primary, candidates, f"Top candidates span multiple chapters: {sorted(chapter_set)}"
-        
-        # Check for inconsistency: vehicle query but non-87xx code
-        q = query.lower()
-        if any(x in q for x in ["car", "truck", "bus", "van", "vehicle", "motorcycle"]) and not primary.startswith("87"):
-            return "inconsistent", primary, candidates, f"Expected vehicle chapter 87xx, but got {primary}."
-        
-        return "success", primary, candidates, "Validated retrieval result."
+        """Validate HS lookup response from retrieval service. Delegates to hs_classifier."""
+        from .hs_classifier import validate_hs_response as _validate_hs
+        return _validate_hs(query, retrieval_response)
     
     def _keyword_based_intent_detection(self, question: str) -> WorkflowIntent:
         """
@@ -787,7 +629,10 @@ class WorkflowExecutor:
             "diesel", "fuel", "medical", "supplies", "material", "microscope",
             "machinery", "electronics", "device", "machine",
         ]
-        has_calc_marker = any(kw in q_lower for kw in combined_calc_markers)
+        has_calc_marker = any(
+            (bool(re.search(kw, q_lower)) if ".*" in kw else kw in q_lower)
+            for kw in combined_calc_markers
+        )
         has_product = any(p in q_lower for p in product_markers)
         has_hs_code = bool(re.search(r"(?<!\d)\d{4}(?:[\.\-/\s]?\d{2}){0,2}(?!\d)", q_lower))
         has_cif_value = bool(re.search(r'\d{1,3}(?:,\d{3})*(?:\.\d+)?', q_lower)) and any(k in q_lower for k in ["cif", "value", "worth", "cost", "price"])
@@ -816,6 +661,11 @@ class WorkflowExecutor:
             return WorkflowIntent.CALCULATION
 
         # PRIORITY 3: Explicit HS classification markers
+        # But first, check if they are asking to define "HS code" itself
+        if any(pat in q_lower for pat in ["what is an hs code", "what is hs code", "what is hscode", "define hs code", "define hscode", "explain hs code", "explain hscode", "what are hs codes"]):
+            logger.debug(f"Intent detection: DEFINITION (defining HS code itself)")
+            return WorkflowIntent.DEFINITION
+
         hs_markers = [
             "hs code", "hs-code", "hscode",
             "ahtn", "ahtn code",
@@ -852,9 +702,24 @@ class WorkflowExecutor:
             logger.debug(f"Intent detection: POLICY_QUERY (policy keyword)")
             return WorkflowIntent.POLICY_QUERY
 
-        # PRIORITY 5: Definition keywords — only reached when no policy signal matched above
+        # PRIORITY 4.5: Trade query keywords (moved before Definition/Calculation to handle overlaps like "what is trade data")
+        trade_keywords = [
+            "trade data", "trade statistics", "trade statistic",
+            "trade volume", "trade flow", "trade flows", "trade trend",
+            "bilateral trade", "trade between",
+            "export data", "export statistics", "export statistic",
+            "export volume", "top export",
+            "import data", "import statistics", "import statistic",
+            "import volume", "import trend",
+            "shipping data", "cargo data", "freight data",
+        ]
+        if any(kw in q_lower for kw in trade_keywords):
+            logger.debug(f"Intent detection: TRADE_QUERY (trade keyword)")
+            return WorkflowIntent.TRADE_QUERY
+
+        # PRIORITY 5: Definition keywords — only reached when no policy/trade signal matched above
         definition_keywords = [
-            "define", "definition of", "what is", "meaning of", "what does",
+            "define", "definition of", "what is", "meaning of", "what does", "explain",
         ]
         if any(kw in q_lower for kw in definition_keywords):
             # Override definition if calc signal is present (e.g., "what is the duty for...")
@@ -893,33 +758,11 @@ class WorkflowExecutor:
         if any(kw in q_lower for kw in calculation_keywords):
             logger.debug(f"Intent detection: CALCULATION (calculation keyword)")
             return WorkflowIntent.CALCULATION
-
-        # PRIORITY 7: Trade query keywords
-        # Use explicit data/statistics phrases only — avoids false-positives on
-        # "I am importing" or "export this product" which belong to CALCULATION/HS.
-        trade_keywords = [
-            "trade data", "trade statistics", "trade statistic",
-            "trade volume", "trade flow", "trade flows", "trade trend",
-            "bilateral trade", "trade between",
-            "export data", "export statistics", "export statistic",
-            "export volume", "top export",
-            "import data", "import statistics", "import statistic",
-            "import volume", "import trend",
-            "shipping data", "cargo data", "freight data",
-        ]
-        if any(kw in q_lower for kw in trade_keywords):
-            logger.debug(f"Intent detection: TRADE_QUERY (trade keyword)")
-            return WorkflowIntent.TRADE_QUERY
         
         # PRIORITY 8: Product phrase heuristic (short noun phrase → HS lookup)
-        # Import HS classification helper
-        from .hs_classifier import detect_simple_product_category
-        question_starters = ["what", "how", "why", "when", "where", "who", "tell me", "explain"]
-        looks_like_phrase = bool(question) and len(question.split()) <= 12 and not any(q_lower.startswith(s) for s in question_starters)
-        
-        product_category = detect_simple_product_category(question)
-        if (looks_like_phrase and product_category != "other") or (len(question.split()) <= 3 and product_category != "other"):
-            logger.debug(f"Intent detection: HS_CODE_LOOKUP (product phrase heuristic - category: {product_category})")
+        from .hs_classifier import is_hs_lookup_eligible, cleanup_query
+        if is_hs_lookup_eligible(question, cleanup_query(question)):
+            logger.debug("Intent detection: HS_CODE_LOOKUP (product phrase heuristic via hs_lookup_eligible)")
             return WorkflowIntent.HS_CODE_LOOKUP
         
         # PRIORITY 9: Use policy engine if available

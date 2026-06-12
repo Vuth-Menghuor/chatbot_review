@@ -150,9 +150,72 @@ class TestRuleBasedValidatorProvider:
         assert result.decision in {ValidationDecision.IN_SCOPE, ValidationDecision.AMBIGUOUS}
         assert result.decision not in {ValidationDecision.INJECTION, ValidationDecision.OUT_OF_SCOPE}
 
+    def test_accepts_specific_user_products_and_cargo_descriptions(self):
+        # Commercial Descriptions
+        desc1 = self.provider.validate("TV DENSE BRISTLE TOOTHBRUSH FOR REMOVING PLAQUE  REGULAR  MEDIUM  SPIRAL EDGE (114)")
+        assert desc1.decision == ValidationDecision.IN_SCOPE
+        assert desc1.is_valid is True
+
+        desc2 = self.provider.validate("ELECTRIC TRACTOR(NEW BYD Q50TPS-VII 2025 1070KG)")
+        assert desc2.decision == ValidationDecision.IN_SCOPE
+        assert desc2.is_valid is True
+
+        # Product Descriptions
+        p1 = self.provider.validate("suden car")
+        assert p1.decision == ValidationDecision.IN_SCOPE
+        assert p1.is_valid is True
+
+        p2 = self.provider.validate("living horse")
+        assert p2.decision == ValidationDecision.IN_SCOPE
+        assert p2.is_valid is True
+
+        p3 = self.provider.validate("oxen")
+        assert p3.decision == ValidationDecision.IN_SCOPE
+        assert p3.is_valid is True
+
+        # Food & Grocery Spreadsheet Descriptions
+        f1 = self.provider.validate("TVBP BROKEN PEELED ROASTED CHESTNUTS (19)")
+        assert f1.decision == ValidationDecision.IN_SCOPE
+
+        f2 = self.provider.validate("TVBP GREEN TEA BAGS WITH MATCHA (20)")
+        assert f2.decision == ValidationDecision.IN_SCOPE
+
+        f3 = self.provider.validate("TVBP WHOLE RICE TEA BAG WITH POWDERED GREEN TEA 2 G X 20 (21)")
+        assert f3.decision == ValidationDecision.IN_SCOPE
+
+        f4 = self.provider.validate("TV Okinawa-grown Raw Mozuku Seaweed with Sanbaizu")
+        assert f4.decision == ValidationDecision.IN_SCOPE
+
+        f5 = self.provider.validate("TV Special Grade Coarsely Ground Pork Wieners")
+        assert f5.decision == ValidationDecision.IN_SCOPE
+
+        f6 = self.provider.validate("SABA NOODLES (3)")
+        assert f6.decision == ValidationDecision.IN_SCOPE
+
+        f7 = self.provider.validate("TONKOTSU RAMEN<5-MEAL PACK> (17)")
+        assert f7.decision == ValidationDecision.IN_SCOPE
+
     def test_accepts_small_talk(self):
-        result = self.provider.validate("hello")
-        assert result.decision != ValidationDecision.INJECTION
+        greetings = ["hello", "hi", "hey", "hii", "heyy", "helloo", "yoo", "yo"]
+        for g in greetings:
+            result = self.provider.validate(g)
+            assert result.decision == ValidationDecision.IN_SCOPE, f"Failed for greeting: {g}"
+
+    def test_accepts_bot_identity_queries(self):
+        # Bot identity questions should be IN_SCOPE
+        queries = [
+            "what are you?",
+            "who are you",
+            "what can you do",
+            "what is your name?",
+            "are you a chatbot",
+            "tell me about yourself",
+            "what are your capabilities",
+            "how can you help"
+        ]
+        for q in queries:
+            result = self.provider.validate(q)
+            assert result.decision == ValidationDecision.IN_SCOPE, f"Failed on query: {q}"
 
     # --- Scope rejection ---
 

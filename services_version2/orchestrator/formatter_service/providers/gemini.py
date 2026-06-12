@@ -30,14 +30,13 @@ class GeminiFormatterProvider(BaseFormatterProvider):
         self.model_name = config.gemini_model or "gemini-3.1-flash-lite"
         self.timeout = config.timeout
         self.enabled = bool(self.api_key)
-        self.gen_model = None
+        self.client = None
 
         if self.enabled:
             try:
-                import google.generativeai as genai
+                from google import genai
 
-                genai.configure(api_key=self.api_key)
-                self.gen_model = genai.GenerativeModel(self.model_name)
+                self.client = genai.Client(api_key=self.api_key)
                 logger.info(f"Gemini Formatter Provider initialized: {self.model_name}")
             except Exception as e:
                 logger.warning(f"Gemini Formatter Provider initialization failed: {e}")
@@ -45,7 +44,7 @@ class GeminiFormatterProvider(BaseFormatterProvider):
 
     def is_available(self) -> bool:
         """Check if Gemini provider is available."""
-        return bool(self.enabled and self.gen_model)
+        return bool(self.enabled and self.client)
 
     async def format_response(
         self,
@@ -85,7 +84,10 @@ class GeminiFormatterProvider(BaseFormatterProvider):
 
         try:
             logger.debug(f"Formatting response for intent: {intent.value}")
-            response = self.gen_model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+            )
             formatted = (response.text or "").strip()
 
             if not formatted:

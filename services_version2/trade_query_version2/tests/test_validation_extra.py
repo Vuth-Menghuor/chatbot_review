@@ -45,3 +45,59 @@ def test_handler_merge_strategy_defaults_respects_sort_order():
     merged = handler._merge_strategy_defaults(params, strategy)
     
     assert merged["sort"] == "VALUE_USD:asc"
+
+def test_generate_visualizations_trade_balance_aggregation():
+    from services_version2.trade_query_version2.visualization.chart_mapper import generate_visualizations
+    rows = [
+        {"PERIOD": "2025-01", "FLOW": "EX", "VALUE_USD": 1000.0},
+        {"PERIOD": "2025-01", "FLOW": "IM", "VALUE_USD": 400.0},
+        {"PERIOD": "2025-02", "FLOW": "EX", "VALUE_USD": 2000.0},
+        {"PERIOD": "2025-02", "FLOW": "IM", "VALUE_USD": 2500.0},
+    ]
+    query_params = {"group_by": ["period"]}
+    result = generate_visualizations(rows, intent="trade_balance", query_params=query_params)
+    
+    # Check table is not aggregated (remains details)
+    assert len(result["table"]["rows"]) == 4
+    
+    # Check visualization is aggregated to 2 points
+    vis = result["visualization"]
+    assert vis["type"] == "bar"
+    assert vis["labels"] == ["2025-01", "2025-02"]
+    assert vis["datasets"][0]["data"] == [600.0, -500.0]
+    assert vis["datasets"][0]["label"] == "Net Trade Balance (USD)"
+
+def test_transform_params_preserves_partner_countries():
+    from services_version2.trade_query_version2.core.transformers import transform_params_for_dal
+    raw_params = {
+        "intent": "comparison",
+        "origin_country": "KH",
+        "partner_countries": ["US", "CN"],
+        "trade_direction": "EX",
+    }
+    params = transform_params_for_dal(raw_params)
+    assert params["partner_countries"] == ["US", "CN"]
+    assert params["origin_country"] == "KH"
+    assert params["destination_country"] is None
+
+def test_transform_params_comparison_no_countries():
+    from services_version2.trade_query_version2.core.transformers import transform_params_for_dal
+    raw_params = {
+        "intent": "comparison",
+        "destination_country": "KH",
+        "trade_direction": "IM",
+    }
+    params = transform_params_for_dal(raw_params)
+    assert params["partner_countries"] is None
+    assert params["destination_country"] == "KH"
+    assert params["origin_country"] is None
+
+def test_transform_params_comparison_filters_out_cambodia():
+    from services_version2.trade_query_version2.core.transformers import transform_params_for_dal
+    raw_params = {
+        "intent": "comparison",
+        "partner_countries": ["KH", "Cambodia", "US", "CN"],
+        "trade_direction": "IM",
+    }
+    params = transform_params_for_dal(raw_params)
+    assert params["partner_countries"] == ["US", "CN"]

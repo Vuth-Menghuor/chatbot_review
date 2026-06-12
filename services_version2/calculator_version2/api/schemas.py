@@ -7,7 +7,7 @@ Framework-agnostic domain models live in core.models instead.
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Literal, Any
+from typing import Dict, List, Optional, Literal
 
 from pydantic import BaseModel, Field, validator
 
@@ -240,6 +240,10 @@ class CalculateImportTaxesResponse(BaseModel):
         None,
         description="The FTA agreement code or exemption type that was requested but needs a user-provided rate (e.g., ACFTA, QIP)."
     )
+    human_readable: Optional[str] = Field(
+        None,
+        description="Standalone human-readable calculation report with step-by-step formulas (no LLM required)."
+    )
 
     class Config:
         schema_extra = {
@@ -291,214 +295,6 @@ class CalculateImportTaxesResponse(BaseModel):
         }
 
 
-class QueryRequest(BaseModel):
-    """
-    POST /query request body.
-    Supports a natural language question or structured parameter overrides.
-
-    GUIDE FOR CASES:
-    ----------------
-    1. **Normal Case**: Standard calculations with standard CIF values and origin countries.
-       -> Recommended fields: `question` OR (`hs_code`, `cif_value`, `currency`, `origin_country`)
-
-    2. **FTA DV Case**: FTA certificate with custom Declared Value (DV) limit.
-       -> Recommended fields: `fta_applicable` (true), `fta_certificate_type` (e.g. 'ACFTA'), `declared_value` (e.g. 0.0), `hs_code`, `cif_value`, `origin_country`
-
-    3. **FTA DV DQ Case**: FTA + Declared Value (DV) + Duty Quota (DQ) ratio.
-       -> Recommended fields: `fta_applicable` (true), `fta_certificate_type`, `declared_value`, `dq_applicable` (true), `dq_factor` (e.g. 0.40), `hs_code`, `cif_value`
-
-    4. **Petroleum Case**: Petroleum products requiring net mass (kg), volume (liters), and basis value.
-       -> Recommended fields: `petroleum_case` (true), `net_mass`, `volume`, `declared_value` (DV), `hs_code`, `cif_value`, `origin_country`
-    """
-
-    # --- Natural Language Query ---
-    question: Optional[str] = Field(
-        None,
-        max_length=5000,
-        description="Natural language question to calculate import duties/taxes (e.g. 'calculate import tax for hs code 8703.80.99 cif 40000USD from china').",
-    )
-
-    # --- Core Calculation Parameters ---
-    hs_code: Optional[str] = Field(
-        None,
-        description="HS code (e.g., '8703.80.99'). Dotted or raw format. Required for all cases.",
-    )
-    cif_value: Optional[float] = Field(
-        None,
-        description="CIF value in the specified currency (e.g., 40000.0). Required for all cases.",
-    )
-    currency: Optional[str] = Field(
-        None,
-        description="Currency code (e.g., 'USD', 'KHR'). Defaults to KHR if country is missing.",
-    )
-    origin_country: Optional[str] = Field(
-        None,
-        description="Origin country name or code (e.g., 'China', 'Vietnam').",
-    )
-    quantity: Optional[float] = Field(
-        None,
-        description="Quantity of goods.",
-    )
-    unit: Optional[str] = Field(
-        None,
-        description="Unit of goods (e.g., 'pcs', 'kg', 'liter').",
-    )
-
-    # --- FTA / Exemption Parameters ---
-    fta_applicable: Optional[bool] = Field(
-        None,
-        description="Whether FTA (Free Trade Agreement) is applicable. Required for FTA DV & FTA DV DQ cases.",
-    )
-    fta_certificate_type: Optional[str] = Field(
-        None,
-        description="FTA certificate type (e.g., 'ACFTA', 'ATIGA'). Required for FTA DV & FTA DV DQ cases.",
-    )
-    preferential_cd_rate: Optional[float] = Field(
-        None,
-        description="User-provided preferential CD rate override (percentage, e.g., 0 for 0%).",
-    )
-
-    # --- Duty Quota (DQ) Parameters ---
-    dq_applicable: Optional[bool] = Field(
-        None,
-        description="Whether Duty Quota is applicable. Required for FTA DV DQ cases.",
-    )
-    dq_factor: Optional[float] = Field(
-        None,
-        description="Duty Quota (DQ) adjustment factor (e.g., 0.40 for 40%). Required for FTA DV DQ cases.",
-    )
-
-    # --- Declared Value & Petroleum/Rubber Metrics ---
-    declared_value: Optional[float] = Field(
-        None,
-        description="Declared Value (DV) override / basis value (e.g., 700.0 or 0.0). Required for FTA DV, FTA DV DQ, and Petroleum cases.",
-    )
-    net_mass: Optional[float] = Field(
-        None,
-        description="Net mass of the goods in kg. Required for Petroleum and Rubber cases.",
-    )
-    volume: Optional[float] = Field(
-        None,
-        description="Volume of the goods in liters. Required for Petroleum cases.",
-    )
-    petroleum_case: Optional[bool] = Field(
-        None,
-        description="Explicit override to flag this as a petroleum calculation case. Enables fuel-specific taxes (BUR, VVF). Required for Petroleum case.",
-    )
-    rubber_case: Optional[bool] = Field(
-        None,
-        description="Explicit override to flag this as a rubber calculation case.",
-    )
-
-    # --- Advanced / System Parameters ---
-    exchange_rate_to_khr: Optional[float] = Field(
-        None,
-        description="Exchange rate override to KHR (e.g. 4100.0).",
-    )
-    qip_exemption: Optional[bool] = Field(
-        None,
-        description="Whether QIP exemption is applicable.",
-    )
-    sez_applicable: Optional[bool] = Field(
-        None,
-        description="Whether SEZ is applicable.",
-    )
-    diplomatic_exemption: Optional[bool] = Field(
-        None,
-        description="Whether diplomatic exemption is applicable.",
-    )
-    ngo_humanitarian: Optional[bool] = Field(
-        None,
-        description="Whether NGO/Humanitarian exemption is applicable.",
-    )
-    educational_exemption: Optional[bool] = Field(
-        None,
-        description="Whether educational exemption is applicable.",
-    )
-    medical_exemption: Optional[bool] = Field(
-        None,
-        description="Whether medical exemption is applicable.",
-    )
-    passenger_allowance: Optional[bool] = Field(
-        None,
-        description="Whether passenger allowance is applicable.",
-    )
-    regime: Optional[str] = Field(
-        None,
-        description="Customs regime type (e.g., 'import', 'export'). Defaults to 'import'.",
-    )
-    calculation_date: Optional[str] = Field(
-        None,
-        description="Calculation date (YYYY-MM-DD). Defaults to today.",
-    )
-    extracted_params: Optional[Dict[str, Any]] = Field(
-        None,
-        description="Advanced: pre-extracted parameters dictionary from LLM/orchestrator.",
-    )
-
-    class Config:
-        schema_extra = {
-            "examples": {
-                "Normal": {
-                    "summary": "Normal Calculation Example",
-                    "description": "Standard import tax calculation using HS code and CIF value.",
-                    "value": {
-                        "question": "calculate import tax for hs code 8703.80.99 cif 40000USD from china",
-                        "hs_code": "8703.80.99",
-                        "cif_value": 40000.0,
-                        "currency": "USD",
-                        "origin_country": "China"
-                    }
-                },
-                "FTA_DV": {
-                    "summary": "FTA with Declared Value (DV) Example",
-                    "description": "Import tax calculation under an FTA (ACFTA) with a Declared Value override.",
-                    "value": {
-                        "question": "calculate import tax for hs code 8703.22.59 cif 10500USD dv = 0.00 ACFTA from china",
-                        "hs_code": "8703.22.59",
-                        "cif_value": 10500.0,
-                        "currency": "USD",
-                        "origin_country": "China",
-                        "fta_applicable": True,
-                        "fta_certificate_type": "ACFTA",
-                        "declared_value": 0.0
-                    }
-                },
-                "FTA_DV_DQ": {
-                    "summary": "FTA with Declared Value & Duty Quota (DQ) Example",
-                    "description": "Import tax calculation combining FTA, Declared Value, and a Duty Quota adjustment.",
-                    "value": {
-                        "question": "calculate import tax for hs code 8703.80.99 cif 40000USD DV = 0.00 DQ = 40% ACFTA from china",
-                        "hs_code": "8703.80.99",
-                        "cif_value": 40000.0,
-                        "currency": "USD",
-                        "origin_country": "China",
-                        "fta_applicable": True,
-                        "fta_certificate_type": "ACFTA",
-                        "declared_value": 0.0,
-                        "dq_applicable": True,
-                        "dq_factor": 0.40
-                    }
-                },
-                "Petroleum": {
-                    "summary": "Petroleum Calculation Example",
-                    "description": "Calculation for petroleum products requiring net mass (kg), volume (L), and Declared Value.",
-                    "value": {
-                        "question": "calculate import tax for hs code 2710.12.26 cif 393684.59USD DV = 700 net mass 505423kg 675789L from vietnam",
-                        "hs_code": "2710.12.26",
-                        "cif_value": 393684.59,
-                        "currency": "USD",
-                        "origin_country": "Vietnam",
-                        "declared_value": 700.0,
-                        "net_mass": 505423.0,
-                        "volume": 675789.0,
-                        "petroleum_case": True
-                    }
-                }
-            }
-        }
-
-
 class ErrorResponse(BaseModel):
     """Error response model."""
 
@@ -516,6 +312,5 @@ __all__ = [
     "TaxLineItemModel",
     "TaxReferenceModel",
     "HSCodeInfoModel",
-    "QueryRequest",
     "ErrorResponse",
 ]

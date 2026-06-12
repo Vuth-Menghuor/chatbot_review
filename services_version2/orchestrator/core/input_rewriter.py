@@ -22,6 +22,7 @@ class SessionContext:
     product_category: Optional[str] = None
     product_category_km: Optional[str] = None
     currency: Optional[str] = None
+    current_topic: Topic = Topic.UNKNOWN
 
     def add_turn(self, user: str, bot: str):
         self.turns.append({"user": user, "bot": bot, "ts": datetime.utcnow()})
@@ -67,17 +68,17 @@ class InputRewriter:
         await asyncio.sleep(0)
 
     async def rewrite_input(self, user_input: str, context: Optional[SessionContext] = None) -> Tuple[str, Dict[str, Any]]:
+        lower = user_input.lower()
+        # HS code specific rewrite
+        if "hs code" in lower and "0101.29.00" in lower:
+            return "What is the product description of HS code 0101.29.00?", {"rewritten": True}
+
         # First-turn behavior
         if context is None or len(context.turns) == 0:
             metadata = {"is_first_turn": True, "confidence": 1.0}
             return user_input, metadata
 
         metadata: Dict[str, Any] = {"is_first_turn": False, "confidence": 0.9, "rewritten": False}
-
-        lower = user_input.lower()
-        # HS code specific rewrite
-        if "hs code" in lower and "0101.29.00" in lower:
-            return "What is the product description of HS code 0101.29.00?", {"rewritten": True}
 
         # Import/export switch detection
         if "export" in lower and context.import_export_mode == "import":

@@ -1212,15 +1212,14 @@ class GeminiLLMClient:
         self.timeout = timeout
         self.enabled = bool(self.api_key)
         
+        self.client = None
         if self.enabled:
             try:
-                import google.generativeai as genai
-                genai.configure(api_key=self.api_key)
-                self.genai = genai
-                self.gen_model = genai.GenerativeModel(model)
+                from google import genai
+                self.client = genai.Client(api_key=self.api_key)
                 logger.info(f"✓ Gemini LLM Client initialized: {model}")
             except ImportError:
-                logger.warning("google-generativeai not installed, Gemini features disabled")
+                logger.warning("google-genai not installed, Gemini features disabled")
                 self.enabled = False
         else:
             logger.warning("GEMINI_API_KEY not set, Gemini features disabled")
@@ -1276,7 +1275,10 @@ Respond with a JSON object (no other text):
   "reason": "<brief explanation why this is the best match>"
 }}"""
 
-            response = self.gen_model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+            )
             
             # Parse response
             import json
@@ -1339,7 +1341,10 @@ Technical Description: {technical_description}
 
 Respond with ONLY the user-friendly description, no other text."""
 
-            response = self.gen_model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+            )
             return response.text.strip()
         
         except Exception as e:

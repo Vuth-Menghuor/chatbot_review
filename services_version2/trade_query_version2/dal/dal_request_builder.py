@@ -30,11 +30,19 @@ class DALRequestBuilder:
         else:
             raw_dimensions = list(dict.fromkeys(raw_group_by or ["PARTNER_COUNTRY", "FLOW"]))
 
-        # Filter out PERIOD, FREQ, and FREQUENCY which are returned automatically
-        # by the DAL but not allowed as concept query dimensions
+        # Filter out PERIOD, FREQ, FREQUENCY, and any time-based names which are
+        # returned automatically by the DAL but are NOT valid concept dimensions.
+        # Valid DAL dimensions: FLOW, HS_CHAPTER, HS_HEADING, MODE_OF_TRANSPORT,
+        #   PARTNER_COUNTRY, SITC_DIVISION, SITC_SECTION
         invalid_concept_dims = {"PERIOD", "FREQ", "FREQUENCY"}
         dimensions = [d for d in raw_dimensions if d.upper() not in invalid_concept_dims]
         group_by = [g for g in raw_group_by if g.upper() not in invalid_concept_dims]
+
+        # Ensure at least one valid dimension is always present (DAL requires it)
+        if not dimensions:
+            dimensions = ["FLOW"] if intent in ("trend", "summary", "trade_balance") else ["PARTNER_COUNTRY"]
+        if not group_by:
+            group_by = ["FLOW"] if intent in ("trend", "summary", "trade_balance") else ["PARTNER_COUNTRY"]
 
         known_keys = {
             "origin_country",
@@ -124,8 +132,15 @@ class DALRequestBuilder:
             filters["FLOW"] = trade_direction
 
         hs_chapter = params.get("hs_chapter")
-        if hs_chapter is not None and str(hs_chapter).strip():
-            filters["HS_CHAPTER"] = hs_chapter
+        if hs_chapter is not None:
+            if isinstance(hs_chapter, list):
+                # Multi-chapter comparison — pass list directly
+                chapters = [str(c).strip() for c in hs_chapter if str(c).strip()]
+                if chapters:
+                    filters["HS_CHAPTER"] = chapters if len(chapters) > 1 else chapters[0]
+            elif str(hs_chapter).strip():
+                filters["HS_CHAPTER"] = str(hs_chapter).strip()
+
 
         hs_code = params.get("hs_code")
         if hs_code is not None and str(hs_code).strip():
@@ -161,17 +176,33 @@ class DALRequestBuilder:
         return inferred
 
     def _map_group_dimension(self, value: str) -> str:
+        # NOTE: "period" / "PERIOD" is intentionally mapped to empty string so it
+        # is stripped by the invalid_concept_dims filter. The DAL does NOT accept
+        # PERIOD as a concept dimension; time window is controlled via the
+        # period/start-period/end-period/frequency query params.
         mapping = {
             "origin_country": "PARTNER_COUNTRY",
             "destination_country": "PARTNER_COUNTRY",
             "mode_of_transport": "MODE_OF_TRANSPORT",
             "hs_code": "HS_CHAPTER",
             "HS_CODE": "HS_CHAPTER",
+            "hs_chapter": "HS_CHAPTER",
+            "HS_CHAPTER": "HS_CHAPTER",
+            "hs_heading": "HS_HEADING",
+            "HS_HEADING": "HS_HEADING",
             "trade_direction": "FLOW",
             "partner_country": "PARTNER_COUNTRY",
             "flow": "FLOW",
+            # Time-based values — map to PERIOD so they are caught by the filter
+            "period": "PERIOD",
+            "month": "PERIOD",
+            "year": "PERIOD",
+            "quarter": "PERIOD",
         }
-        return mapping.get(value, value)
+        return mapping.get(value, value.upper() if value.upper() in {
+            "HS_CHAPTER", "HS_HEADING", "HS_CODE", "PARTNER_COUNTRY",
+            "FLOW", "MODE_OF_TRANSPORT",
+        } else value)
 
     def _build_time_window(self, params: Mapping[str, Any]) -> tuple[str | None, str | None, str | None, str | None]:
         """Translate year/quarter/month inputs into DAL time parameters."""

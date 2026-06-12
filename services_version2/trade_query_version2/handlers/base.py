@@ -44,10 +44,15 @@ class BaseHandler:
             merged["metrics"] = strategy.default_metrics
 
         # Group by / dimensions
-        if not merged.get("group_by"):
-            merged["group_by"] = strategy.default_group_by
-        if not merged.get("dimensions"):
-            merged["dimensions"] = strategy.default_dimensions
+        if not merged.get("group_by") and merged.get("dimensions"):
+            merged["group_by"] = merged["dimensions"]
+        elif not merged.get("dimensions") and merged.get("group_by"):
+            merged["dimensions"] = merged["group_by"]
+        else:
+            if not merged.get("group_by"):
+                merged["group_by"] = strategy.default_group_by
+            if not merged.get("dimensions"):
+                merged["dimensions"] = strategy.default_dimensions
 
         # Sort
         if not merged.get("sort") and not merged.get("sort_metric") and strategy.default_sort:

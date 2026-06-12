@@ -1,5 +1,5 @@
 """
-Configuration Management for Retrieval Service v2
+Configuration Management for Retrieval Service 
 Provides centralized, environment-independent configuration
 """
 
@@ -95,6 +95,7 @@ class RetrievalConfig:
         self.gemini_api_key = (os.environ.get("GEMINI_API_KEY") or "").strip()
         self.gemini_model = os.environ.get("GEMINI_MODEL")
         self.gemini_enabled = (os.environ.get("GEMINI_ENABLED") or "true").lower() == "true"
+
         
         # Security Configuration
         self.rate_limit_requests = int(os.environ.get("RATE_LIMIT_REQUESTS") or 100)
@@ -147,8 +148,10 @@ class RetrievalConfig:
             "opensearch_port": self.opensearch_port,
             "top_k_default": self.top_k_default,
             "similarity_threshold": self.similarity_threshold,
-            "gemini_enabled": self.gemini_enabled,
-            "gemini_configured": bool(self.gemini_api_key),
+            # "gemini_enabled": self.gemini_enabled,
+            # "gemini_configured": bool(self.gemini_api_key),
+            "deepseek_enabled": self.gemini_enabled,
+            "deepseek_configured": bool(self.gemini_api_key),
             "rate_limit_requests": self.rate_limit_requests,
             "log_level": self.log_level,
         }

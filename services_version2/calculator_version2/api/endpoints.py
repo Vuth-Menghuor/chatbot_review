@@ -7,7 +7,7 @@ business logic (ImportTaxCalculator) and CSV-backed infrastructure.
 Integrated with:
 - CurrencyHandler: For flexible currency input/output
 - HSCodeHandler: For HS code lookup and candidates
-- LLMFormatter: For user-friendly response formatting
+- LLMFormatter: For user-friendly response formatting (calculator-native, no orchestrator required)
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from typing import Any, Dict
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import PlainTextResponse
 
 from .deps import get_db
 from .schemas import (
@@ -24,15 +25,10 @@ from .schemas import (
     CalculateImportTaxesResponse,
     HSCodeInfoModel,
     ErrorResponse,
-    QueryRequest,
-    GoodsModel,
-    ValuationModel,
-    FlagsModel,
 )
 from ..core.calculator import CalculationRequest, ImportTaxCalculator
+from ..core.llm_formatter import format_human_readable
 from ..core.models import TaxReference
-from ..infrastructure.retrieval_client import RetrievalClient
-from ..core.parser import parse_question_for_calculation
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +43,8 @@ async def root() -> Dict[str, Any]:
         "version": "2.0.0",
         "status": "ready",
         "endpoints": {
-            "health": "/health",
-            "query": "/query",
+            "health": "/v1/health",
+            "calculate": "/v1/calculate_import_taxes",
             "docs": "/docs",
         },
     }
@@ -201,25 +197,85 @@ async def get_hs_code_candidates(
         }
 
 
+def _build_calc_request(
+    request: CalculateImportTaxesRequest,
+    calculator: ImportTaxCalculator
+) -> tuple[CalculationRequest, str | None]:
+    """Build core CalculationRequest with currency resolution."""
+    resolved_currency = request.valuation.currency
+    currency_assumption = None
+
+    if not resolved_currency:
+        origin = request.goods.origin_country
+        if origin:
+            inferred = calculator.currency_handler.infer_currency_from_country(origin)
+            if inferred:
+                resolved_currency = inferred
+                currency_assumption = (
+                    f"Currency not specified - inferred as {inferred} "
+                    f"from origin country '{origin}'"
+                )
+                logger.info(f" {currency_assumption}")
+        if not resolved_currency:
+            resolved_currency = "KHR"
+            currency_assumption = (
+                "Currency not specified and no origin country provided - "
+                "defaulting to KHR (Cambodian Riel)"
+            )
+            logger.info(f" {currency_assumption}")
+
+    valuation_dict = request.valuation.dict(exclude_none=True)
+    valuation_dict["currency"] = resolved_currency
+
+    calc_request = CalculationRequest(
+        calculation_date=request.calculation_date,
+        regime=request.regime,
+        goods=request.goods.dict(exclude_none=True),
+        valuation=valuation_dict,
+        flags=request.flags.dict(exclude_none=True) if request.flags else {},
+        requested_breakdown=request.requested_breakdown,
+    )
+
+    # Normalize HS code
+    if calc_request.hs_code:
+        try:
+            normalized_hs = calculator.hs_code_handler.normalize_code(calc_request.hs_code)
+            calc_request.goods["hs_code"] = normalized_hs
+            logger.debug(f"HS code normalized: {calc_request.hs_code} -> {normalized_hs}")
+        except Exception as e:
+            logger.warning(f"Failed to normalize HS code '{calc_request.hs_code}': {e}")
+
+    return calc_request, currency_assumption
+
+
+@router.post(
+    "/calculate_import_taxes",
+    tags=["Calculation"],
+    response_model=CalculateImportTaxesResponse,
+    responses={
+        400: {"model": ErrorResponse, "description": "Validation error"},
+        500: {"model": ErrorResponse, "description": "Internal error"},
+    },
+)
 async def calculate_import_taxes(
     request: CalculateImportTaxesRequest,
-    format_with_llm: bool = False,
     db=Depends(get_db),
     fastapi_request: Request = None,
 ) -> CalculateImportTaxesResponse:
     """
-    Main calculation endpoint.
-    
+    Main calculation endpoint (JSON response).
+
+    Automatically generates a human-readable report via LLM if available,
+    otherwise uses the fast programmatic formatter.
+
     Args:
         request: Calculation request with goods, valuation, and flags
-        format_with_llm: If true, uses LLM to format calculation steps (experimental)
         db: Database connection dependency
-        
+
     Returns:
-        CalculateImportTaxesResponse with calculation results and optional LLM formatting
+        CalculateImportTaxesResponse with calculation results and human-readable report
     """
     try:
-        # Wire up dynamic rules engine from app state (initialized in app.py)
         rules_provider = (
             getattr(fastapi_request.app.state, "rules_provider", None)
             if fastapi_request else None
@@ -228,405 +284,400 @@ async def calculate_import_taxes(
             getattr(fastapi_request.app.state, "formula_engine", None)
             if fastapi_request else None
         )
-        calculator = ImportTaxCalculator(
-            db,
-            rules_provider=rules_provider,
-            formula_engine=formula_engine,
-        )
+        calculator = ImportTaxCalculator(db, rules_provider=rules_provider, formula_engine=formula_engine)
 
-        # =====================================================================
-        # CURRENCY FALLBACK CHAIN
-        # =====================================================================
-        # Priority: explicit currency → origin country inference → KHR default
-        resolved_currency = request.valuation.currency  # Already normalized by schema validator
-        currency_assumption = None
-
-        if not resolved_currency:
-            # Try to infer from origin country
-            origin = request.goods.origin_country
-            if origin:
-                inferred = calculator.currency_handler.infer_currency_from_country(origin)
-                if inferred:
-                    resolved_currency = inferred
-                    currency_assumption = (
-                        f"Currency not specified — inferred as {inferred} "
-                        f"from origin country '{origin}'"
-                    )
-                    logger.info(f"💱 {currency_assumption}")
-
-            # Final fallback: KHR
-            if not resolved_currency:
-                resolved_currency = "KHR"
-                currency_assumption = (
-                    "Currency not specified and no origin country provided — "
-                    "defaulting to KHR (Cambodian Riel)"
-                )
-                logger.info(f"💱 {currency_assumption}")
-
-        # Build valuation/goods dicts with resolved values
-        valuation_dict = request.valuation.dict(exclude_none=True)
-        valuation_dict["currency"] = resolved_currency
-
-        goods_dict = request.goods.dict(exclude_none=True)
-        hs_code_assumption = None
-
-        if not goods_dict.get("hs_code") and goods_dict.get("description"):
-            try:
-                retrieval_client = RetrievalClient()
-                resolved_hs = await retrieval_client.lookup_hs_code(goods_dict["description"])
-                if resolved_hs:
-                    goods_dict["hs_code"] = resolved_hs
-                    hs_code_assumption = (
-                        f"HS code not specified — resolved as {resolved_hs} "
-                        f"via retrieval from product description '{goods_dict['description']}'"
-                    )
-                    logger.info(f"🔍 {hs_code_assumption}")
-                else:
-                    # Try local DB search fallback
-                    local_match = db.search_by_description(goods_dict["description"])
-                    if local_match:
-                        local_hs = local_match[0]
-                        goods_dict["hs_code"] = local_hs
-                        hs_code_assumption = (
-                            f"HS code not specified — resolved as {local_hs} "
-                            f"via local search from product description '{goods_dict['description']}'"
-                        )
-                        logger.info(f"🔍 {hs_code_assumption}")
-            except Exception as e:
-                logger.warning(f"Error during HS code lookup from product description: {e}")
-                try:
-                    local_match = db.search_by_description(goods_dict["description"])
-                    if local_match:
-                        local_hs = local_match[0]
-                        goods_dict["hs_code"] = local_hs
-                        hs_code_assumption = (
-                            f"HS code not specified — resolved as {local_hs} "
-                            f"via local search fallback from product description '{goods_dict['description']}'"
-                        )
-                        logger.info(f"🔍 {hs_code_assumption}")
-                except Exception as inner_e:
-                    logger.warning(f"Local fallback search failed: {inner_e}")
-
-        calc_request = CalculationRequest(
-            calculation_date=request.calculation_date,
-            regime=request.regime,
-            goods=goods_dict,
-            valuation=valuation_dict,
-            flags=request.flags.dict(exclude_none=True) if request.flags else {},
-            requested_breakdown=request.requested_breakdown,
-        )
-
-        # Normalize HS code in the request if provided
-        if calc_request.hs_code:
-            try:
-                normalized_hs = calculator.hs_code_handler.normalize_code(calc_request.hs_code)
-                calc_request.goods['hs_code'] = normalized_hs
-                logger.debug(f"HS code normalized: {calc_request.hs_code} → {normalized_hs}")
-            except Exception as e:
-                logger.warning(f"Failed to normalize HS code '{calc_request.hs_code}': {e}")
-        
+        calc_request, currency_assumption = _build_calc_request(request, calculator)
         result = calculator.calculate(calc_request)
-        
-        # Convert to response dict
-        result_dict = result.to_dict()
+        result_dict = _enrich_result(result.to_dict(), calc_request, request, calculator, currency_assumption)
 
-        # Add assumptions if applicable
-        if "assumptions" in result_dict and isinstance(result_dict["assumptions"], list):
-            if hs_code_assumption:
-                result_dict["assumptions"].insert(0, hs_code_assumption)
-            if currency_assumption:
-                result_dict["assumptions"].insert(0, currency_assumption)
-        
-        # Populate new fields: currency_note and hs_code_info
-        # Currency note — only when input currency differs from output
-        input_currency = resolved_currency
-        output_currency = result_dict.get("currency", "KHR")
-        if input_currency and input_currency != output_currency:
-            result_dict["currency_note"] = calculator.currency_handler.get_currency_note(
-                input_currency,
-                output_currency,
-                exchange_rate=result_dict.get("exchange_rate_usd_to_khr"),
-                calculation_date=request.calculation_date
-            )
-        
-        # HS code info - use normalized code from calc_request
-        hs_code_to_lookup = calc_request.hs_code
-        if hs_code_to_lookup:
+        # Generate human-readable report (LLM first, then programmatic fallback)
+        llm_text = await _try_llm_human_readable(calc_request, result_dict, calculator)
+        if llm_text:
+            result_dict["human_readable"] = llm_text
+        else:
             try:
-                hs_code_info = calculator.hs_code_handler.get_code_info(hs_code_to_lookup)
-                if hs_code_info:
-                    result_dict["hs_code_info"] = HSCodeInfoModel(
-                        hs_code=hs_code_info["hs_code"],
-                        description=hs_code_info.get("description"),
-                        unit=hs_code_info.get("unit"),
-                        level=calculator.hs_code_handler.get_child_level(hs_code_to_lookup)
-                    ).dict(exclude_none=True)
+                result_dict["human_readable"] = format_human_readable(calc_request, result_dict)
             except Exception as e:
-                # Log but don't fail if HS info lookup fails
-                logger.debug(f"Failed to get HS code info for '{hs_code_to_lookup}': {e}")
-        
-        # Try to format with LLM if requested
-        if format_with_llm:
-            try:
-                result_dict = await _format_calculation_with_llm(
-                    result_dict,
-                    request,
-                    calculator
-                )
-            except Exception as e:
-                logger.warning(f"LLM formatting failed, using default format: {e}")
-                # Continue with unformatted response on LLM error
-        
+                logger.debug(f"Programmatic human-readable formatting failed: {e}")
+
         return CalculateImportTaxesResponse(**result_dict)
 
     except ValueError as exc:  # validation errors from core
         error_msg = f"Validation error: {str(exc)}"
-        logger.error(f"❌ {error_msg}")
+        logger.error(f" {error_msg}")
         raise HTTPException(status_code=400, detail=error_msg) from exc
     except KeyError as exc:  # missing required fields
         error_msg = f"Missing required field: {str(exc)}"
-        logger.error(f"❌ {error_msg}")
+        logger.error(f" {error_msg}")
         raise HTTPException(status_code=400, detail=error_msg) from exc
     except Exception as exc:  # catch-all
         error_msg = f"Internal server error: {str(exc)}"
-        logger.exception(f"❌ {error_msg}")
+        logger.exception(f" {error_msg}")
         raise HTTPException(status_code=500, detail="Internal server error during calculation") from exc
 
 
-async def _format_calculation_with_llm(
-    result_dict: Dict[str, Any],
-    request: CalculateImportTaxesRequest,
-    calculator: ImportTaxCalculator
-) -> Dict[str, Any]:
-    """
-    Format calculation response using LLM for educational step-by-step breakdown.
-    
-    Integrates with existing LLM formatter in orchestrator.
-    """
-    try:
-        # Try to import LLM formatter from orchestrator
-        try:
-            from ...orchestrator.core.llm_formatter import (
-                LLMFormatter, FormatterIntent, HSCodeInfo
-            )
-        except ImportError:
-            # Fallback: try importing from relative orchestrator path
-            try:
-                import sys
-                from pathlib import Path
-                orchestrator_path = Path(__file__).parent.parent.parent / "orchestrator"
-                if orchestrator_path.exists():
-                    sys.path.insert(0, str(orchestrator_path.parent))
-                    from orchestrator.core.llm_formatter import (
-                        LLMFormatter, FormatterIntent, HSCodeInfo
-                    )
-                else:
-                    raise ImportError("Orchestrator path not found")
-            except Exception as e:
-                logger.debug(f"LLM formatter not available: {e}")
-                return result_dict
-        
-        formatter = LLMFormatter()
-        
-        # Prepare context for LLM
-        context = {
-            'exchange_rate': result_dict.get('exchange_rate_usd_to_khr', 4022),
-            'cif_value': request.valuation.customs_value,
-            'cif_currency': request.valuation.currency,
-            'origin_country': request.goods.origin_country or 'Unknown',
-            'rates': {
-                # Try to extract rates from assumptions
-                'cd_rate': 0,
-                'st_rate': 0,
-                'vat_rate': 0.10,
-                'et_rate': 0
-            }
-        }
-        
-        # Add HS code info if available
-        if request.goods.hs_code:
-            try:
-                hs_info = calculator.hs_code_handler.get_code_info(request.goods.hs_code)
-                if hs_info:
-                    context['hs_code_info'] = HSCodeInfo(
-                        hs_code=hs_info['hs_code'],
-                        description=hs_info.get('description', ''),
-                        category=''
-                    )
-            except Exception as e:
-                logger.debug(f"Failed to get HS code info for LLM context: {e}")
-        
-        # Format breakdown
-        breakdown_text = f"Total: {result_dict.get('total')} KHR. Breakdown: " \
-                        f"CD={result_dict.get('breakdown', {}).get('cop_amount', 0)}, " \
-                        f"ST={result_dict.get('breakdown', {}).get('sop_amount', 0)}, " \
-                        f"VAT={result_dict.get('breakdown', {}).get('vop_amount', 0)}, " \
-                        f"BUR={result_dict.get('breakdown', {}).get('bur_amount', 0)}, " \
-                        f"VVF={result_dict.get('breakdown', {}).get('vvf_amount', result_dict.get('breakdown', {}).get('fees', 0))}, " \
-                        f"ET={result_dict.get('breakdown', {}).get('fees', 0)}"
-        
-        original_question = f"Calculate {request.regime} customs tax for HS {request.goods.hs_code} " \
-                           f"value {request.valuation.customs_value} {request.valuation.currency} " \
-                           f"from {request.goods.origin_country or 'Unknown'}"
-        
-        # Call LLM formatter (may be sync or async)
-        try:
-            formatted_text = await formatter.format_response(
-                response_text=breakdown_text,
-                intent=FormatterIntent.CALCULATION,
-                original_question=original_question,
-                context=context
-            )
-            
-            # Add LLM formatted breakdown to assumptions
-            if formatted_text and formatted_text != breakdown_text:
-                result_dict['assumptions'].insert(0, "=== LLM-FORMATTED BREAKDOWN ===")
-                result_dict['assumptions'].insert(1, formatted_text)
-                logger.info(f"✅ Calculation formatted with LLM")
-        except Exception as e:
-            logger.debug(f"LLM formatting async call failed: {e}")
-            # Try sync fallback if available
-            if hasattr(formatter, 'format_response_sync'):
-                try:
-                    formatted_text = formatter.format_response_sync(
-                        response_text=breakdown_text,
-                        intent=FormatterIntent.CALCULATION,
-                        original_question=original_question,
-                        context=context
-                    )
-                    if formatted_text and formatted_text != breakdown_text:
-                        result_dict['assumptions'].insert(0, "=== LLM-FORMATTED BREAKDOWN ===")
-                        result_dict['assumptions'].insert(1, formatted_text)
-                        logger.info(f"✅ Calculation formatted with LLM (sync)")
-                except Exception as e2:
-                    logger.debug(f"LLM sync formatting also failed: {e2}")
-        
-        return result_dict
-        
-    except Exception as e:
-        logger.warning(f"⚠️  Error in LLM formatting: {e}. Continuing with unformatted response.")
-        return result_dict
+# ============================================================================
+# Shared enrichment helper
+# ============================================================================
 
+def _enrich_result(
+    result_dict: Dict[str, Any],
+    calc_request: CalculationRequest,
+    request: CalculateImportTaxesRequest,
+    calculator: ImportTaxCalculator,
+    currency_assumption: str | None,
+) -> Dict[str, Any]:
+    """Add currency notes, HS code info, and human-readable text to result."""
+    if currency_assumption:
+        if "assumptions" in result_dict and isinstance(result_dict["assumptions"], list):
+            result_dict["assumptions"].insert(0, currency_assumption)
+
+    # Currency note
+    input_currency = calc_request.currency
+    output_currency = result_dict.get("currency", "KHR")
+    if input_currency and input_currency != output_currency:
+        result_dict["currency_note"] = calculator.currency_handler.get_currency_note(
+            input_currency, output_currency,
+            exchange_rate=result_dict.get("exchange_rate_usd_to_khr"),
+            calculation_date=request.calculation_date,
+        )
+
+    # HS code info
+    hs_code_to_lookup = calc_request.hs_code
+    if hs_code_to_lookup:
+        try:
+            hs_code_info = calculator.hs_code_handler.get_code_info(hs_code_to_lookup)
+            if hs_code_info:
+                result_dict["hs_code_info"] = HSCodeInfoModel(
+                    hs_code=hs_code_info["hs_code"],
+                    description=hs_code_info.get("description"),
+                    unit=hs_code_info.get("unit"),
+                    level=calculator.hs_code_handler.get_child_level(hs_code_to_lookup),
+                ).dict(exclude_none=True)
+        except Exception as e:
+            logger.debug(f"Failed to get HS code info for '{hs_code_to_lookup}': {e}")
+
+    return result_dict
+
+
+# ============================================================================
+# Text-only endpoint
+# ============================================================================
 
 @router.post(
-    "/query",
+    "/calculate_import_taxes/text",
     tags=["Calculation"],
-    response_model=CalculateImportTaxesResponse,
+    response_class=PlainTextResponse,
     responses={
         400: {"model": ErrorResponse, "description": "Validation error"},
         500: {"model": ErrorResponse, "description": "Internal error"},
     },
 )
-async def query_import_taxes(
-    query_request: QueryRequest,
-    format_with_llm: bool = False,
+async def calculate_import_taxes_text(
+    request: CalculateImportTaxesRequest,
     db=Depends(get_db),
     fastapi_request: Request = None,
-) -> CalculateImportTaxesResponse:
+) -> PlainTextResponse:
     """
-    Calculate import taxes from a natural language question.
+    Same calculation as /calculate_import_taxes but returns plain text.
+
+    Useful for CLI tools, chat bots, or any client that just wants
+    the human-readable report without parsing JSON.
     """
     try:
-        question = query_request.question.strip() if query_request.question else None
-        parsed_params = {}
-        if question:
-            parsed_params = parse_question_for_calculation(question)
-
-        # Merge direct attributes from query_request if they are not None
-        direct_overrides = {
-            "hs_code": query_request.hs_code,
-            "cif_value": query_request.cif_value,
-            "currency": query_request.currency,
-            "origin_country": query_request.origin_country,
-            "quantity": query_request.quantity,
-            "unit": query_request.unit,
-            "fta_applicable": query_request.fta_applicable,
-            "fta_certificate_type": query_request.fta_certificate_type,
-            "preferential_cd_rate": query_request.preferential_cd_rate,
-            "dq_applicable": query_request.dq_applicable,
-            "dq_factor": query_request.dq_factor,
-            "petroleum_case": query_request.petroleum_case,
-            "rubber_case": query_request.rubber_case,
-            "regime": query_request.regime,
-            "calculation_date": query_request.calculation_date,
-            "declared_value": query_request.declared_value,
-            "net_mass": query_request.net_mass,
-            "volume": query_request.volume,
-            "exchange_rate_to_khr": query_request.exchange_rate_to_khr,
-            "qip_exemption": query_request.qip_exemption,
-            "sez_applicable": query_request.sez_applicable,
-            "diplomatic_exemption": query_request.diplomatic_exemption,
-            "ngo_humanitarian": query_request.ngo_humanitarian,
-            "educational_exemption": query_request.educational_exemption,
-            "medical_exemption": query_request.medical_exemption,
-            "passenger_allowance": query_request.passenger_allowance,
-        }
-        for k, v in direct_overrides.items():
-            if v is not None:
-                parsed_params[k] = v
-
-        # Override with extracted_params if explicitly provided
-        if query_request.extracted_params:
-            for k, v in query_request.extracted_params.items():
-                if v is not None:
-                    parsed_params[k] = v
-
-        # Build the CalculateImportTaxesRequest payload
-        calculation_date = parsed_params.get("calculation_date") or datetime.utcnow().strftime("%Y-%m-%d")
-
-        goods = GoodsModel(
-            description=parsed_params.get("description") or question or "Direct input calculation",
-            hs_code=parsed_params.get("hs_code"),
-            origin_country=parsed_params.get("origin_country"),
-            quantity=parsed_params.get("quantity"),
-            unit=parsed_params.get("unit"),
-            net_mass_kg=parsed_params.get("net_mass"),
-            volume_liter=parsed_params.get("volume"),
+        rules_provider = (
+            getattr(fastapi_request.app.state, "rules_provider", None)
+            if fastapi_request else None
         )
-
-        valuation = ValuationModel(
-            customs_value=parsed_params.get("cif_value") or 0.0,
-            currency=parsed_params.get("currency"),
-            exchange_rate_to_khr=parsed_params.get("exchange_rate_to_khr"),
-            declared_value=parsed_params.get("declared_value"),
-            declared_value_basis="per_ton" if parsed_params.get("petroleum_case") else "total",
-            dq_factor=parsed_params.get("dq_factor"),
+        formula_engine = (
+            getattr(fastapi_request.app.state, "formula_engine", None)
+            if fastapi_request else None
         )
+        calculator = ImportTaxCalculator(db, rules_provider=rules_provider, formula_engine=formula_engine)
 
-        flags = FlagsModel(
-            fta_applicable=parsed_params.get("fta_applicable", False),
-            fta_certificate_type=parsed_params.get("fta_certificate_type"),
-            preferential_cd_rate=parsed_params.get("preferential_cd_rate"),
-            dq_applicable=parsed_params.get("dq_applicable", False),
-            dq_factor=parsed_params.get("dq_factor"),
-            petroleum_case=parsed_params.get("petroleum_case", False),
-            rubber_case=parsed_params.get("rubber_case", False),
-            qip_exemption=parsed_params.get("qip_exemption", False),
-            sez_applicable=parsed_params.get("sez_applicable", False),
-            diplomatic_exemption=parsed_params.get("diplomatic_exemption", False),
-            ngo_humanitarian=parsed_params.get("ngo_humanitarian", False),
-            educational_exemption=parsed_params.get("educational_exemption", False),
-            medical_exemption=parsed_params.get("medical_exemption", False),
-            passenger_allowance=parsed_params.get("passenger_allowance", False),
-        )
+        calc_request, currency_assumption = _build_calc_request(request, calculator)
+        result = calculator.calculate(calc_request)
+        result_dict = _enrich_result(result.to_dict(), calc_request, request, calculator, currency_assumption)
 
-        calc_request = CalculateImportTaxesRequest(
-            calculation_date=calculation_date,
-            regime=parsed_params.get("regime", "import"),
-            goods=goods,
-            valuation=valuation,
-            flags=flags,
-        )
+        # Generate human-readable report (LLM first, then programmatic fallback)
+        llm_text = await _try_llm_human_readable(calc_request, result_dict, calculator)
+        if llm_text:
+            text = llm_text
+        else:
+            try:
+                text = format_human_readable(calc_request, result_dict)
+            except Exception as e:
+                logger.debug(f"Programmatic human-readable formatting failed: {e}")
+                # Fallback: return raw JSON as pretty-printed text
+                import json
+                text = json.dumps(result_dict, indent=2, default=str)
 
-        # Invoke the existing calculate_import_taxes function
-        return await calculate_import_taxes(
-            request=calc_request,
-            format_with_llm=format_with_llm,
-            db=db,
-            fastapi_request=fastapi_request,
-        )
+        return PlainTextResponse(content=text, media_type="text/plain; charset=utf-8")
+
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=f"Validation error: {exc}") from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail=f"Missing required field: {exc}") from exc
     except Exception as exc:
-        logger.exception("Error during query calculation")
-        raise HTTPException(status_code=500, detail="Internal server error during query calculation")
+        logger.exception(f"Internal server error: {exc}")
+        raise HTTPException(status_code=500, detail="Internal server error during calculation") from exc
+
+
+# ============================================================================
+# Rich LLM prompt builder + human-readable generator
+# ============================================================================
+
+def _build_llm_prompt(calc_request: CalculationRequest, result_dict: Dict[str, Any]) -> str:
+    """Build a rich prompt for the LLM with exact step-by-step values."""
+    bd = result_dict.get("breakdown", {})
+    li = result_dict.get("line_items", [])
+    exchange_rate = float(result_dict.get("exchange_rate_usd_to_khr", 4022) or 4022)
+    total = float(result_dict.get("total", 0) or 0)
+    cif_usd = float(result_dict.get("cif_value_usd", 0) or 0)
+    cif_khr = float(bd.get("cif_value", 0) or 0)
+
+    hs_code = calc_request.hs_code or "N/A"
+    origin = calc_request.origin_country or "Unknown"
+    description = calc_request.goods.get("description", "N/A")
+    regime = calc_request.regime or "import"
+    is_petroleum = (calc_request.flags or {}).get("petroleum_case", False)
+    is_rubber = (calc_request.flags or {}).get("rubber_case", False)
+    is_fta = (calc_request.flags or {}).get("fta_applicable", False)
+    is_export = str(regime).lower() == "export"
+    calc_date = calc_request.calculation_date or "N/A"
+
+    def _find_item(name_substring: str) -> Dict[str, Any]:
+        for item in li:
+            if name_substring.lower() in str(item.get("name", "")).lower():
+                return item
+        return {}
+
+    def _fmt(n) -> str:
+        try:
+            return f"{float(n):,.2f}"
+        except Exception:
+            return str(n)
+
+    def _fmt_whole(n) -> str:
+        try:
+            return f"{int(float(n)):,}"
+        except Exception:
+            return str(n)
+
+    case_label = "Normal import"
+    if is_petroleum:
+        case_label = "Petroleum (two-phase)"
+    elif is_rubber and is_export:
+        case_label = "Rubber export"
+    elif is_fta:
+        case_label = "Preferential (FTA)"
+    elif is_export:
+        case_label = "Export"
+
+    lines = [
+        "You are a Cambodian customs expert. Format the following import tax calculation into a clean, professional, human-readable report.",
+        "",
+        "Formatting rules:",
+        "- Use dashed-line separators (like -----).",
+        "- Show step-by-step calculations with exact formulas and numbers.",
+        "- Use comma-separated thousands (e.g., 1,234,567).",
+        "- Do NOT use markdown code blocks.",
+        "- Do NOT abbreviate tax terms on first mention.",
+        "- Display the ATP rate explicitly as $/L (e.g., 0.02 $/L).",
+        "",
+        "=== RAW DATA ===",
+        f"HS Code: {hs_code}",
+        f"Product: {description}",
+        f"Origin: {origin}",
+        f"CIF Value: {_fmt(cif_usd)} USD",
+        f"Exchange Rate: 1 USD = {_fmt(exchange_rate)} KHR",
+        f"CIF in KHR: {_fmt_whole(cif_khr)} KHR",
+        f"Calculation Date: {calc_date}",
+        f"Regime: {case_label}",
+        "",
+    ]
+
+    if is_petroleum:
+        cpp_base_p1 = float(bd.get("cpp_base", 0) or 0)
+        cpp_p1 = float(bd.get("cpp_amount", 0) or 0)
+        atp = float(bd.get("atp_amount", 0) or 0)
+        spp_p1 = float(bd.get("spp_amount", 0) or 0)
+        vpp_p1 = float(bd.get("vpp_amount", 0) or 0)
+        dpp = float(bd.get("dpp_amount", 0) or 0)
+        p2_cpp = float(bd.get("phase2_cpp_amount", 0) or 0)
+        p2_atp = float(bd.get("phase2_atp_amount", 0) or 0)
+        p2_spp = float(bd.get("phase2_spp_amount", 0) or 0)
+        p2_vpp = float(bd.get("phase2_vpp_amount", 0) or 0)
+        p2_total = float(bd.get("phase2_total", 0) or 0)
+        vol = float(calc_request.volume_liter or 0)
+        net_mass = float(calc_request.net_mass_kg_normalized or 0)
+        dv = float(calc_request.declared_value or 0)
+
+        # Extract exact rates from line items
+        cpp_item = _find_item("CPP")
+        atp_item = _find_item("ATP")
+        spp_item = _find_item("SPP")
+        vpp_item = _find_item("VPP")
+        cd_rate = float(cpp_item.get("rate", 0) or 0)
+        atp_rate_khr = float(atp_item.get("rate", 0) or 0)
+        atp_rate_usd = atp_rate_khr / exchange_rate if exchange_rate else 0
+        st_rate = float(spp_item.get("rate", 0) or 0)
+        vat_rate = float(vpp_item.get("rate", 0) or 0)
+
+        lines.extend([
+            "=== PETROLEUM TWO-PHASE CALCULATION ===",
+            "",
+            "STEP 1: CURRENCY CONVERSION (USD -> KHR)",
+            f"Formula: CIF Value (USD) x Exchange Rate",
+            f"= {_fmt(cif_usd)} x {_fmt(exchange_rate)}",
+            f"= {_fmt_whole(cif_khr)} KHR",
+            "",
+            "STEP 2: PHASE 1 -- PETROLEUM TAX (Declared Value Basis)",
+            f"DV = {dv} USD per metric ton",
+            f"Net mass = {net_mass} kg",
+            f"CPP base = DV/ton x exchange_rate x net_mass_kg / 1000 = {_fmt_whole(cpp_base_p1)} KHR",
+            f"CPP = CPP base x CD rate ({cd_rate}%) = {_fmt_whole(cpp_p1)} KHR",
+            f"ATP = volume_liter x {atp_rate_usd:.2f} $/L x exchange_rate = {_fmt_whole(atp)} KHR",
+            f"SPP = (CPP base + CPP + ATP) x ST rate ({st_rate}%) = {_fmt_whole(spp_p1)} KHR",
+            f"VPP = (CPP base + CPP + ATP + SPP) x VAT rate ({vat_rate}%) = {_fmt_whole(vpp_p1)} KHR",
+            f"Phase 1 Total = {_fmt_whole(cpp_p1 + atp + spp_p1 + vpp_p1)} KHR",
+            "",
+            "STEP 3: PHASE 2 -- PETROLEUM TAX (Customs Value / CIF Basis)",
+            f"CPP base = CIF value = {_fmt_whole(cif_khr)} KHR",
+            f"CPP = CPP base x CD rate ({cd_rate}%) = {_fmt_whole(p2_cpp)} KHR",
+            f"ATP = same as Phase 1 = {_fmt_whole(p2_atp)} KHR",
+            f"SPP = (CPP base + CPP + ATP) x ST rate ({st_rate}%) = {_fmt_whole(p2_spp)} KHR",
+            f"VPP = (CPP base + CPP + ATP + SPP) x VAT rate ({vat_rate}%) = {_fmt_whole(p2_vpp)} KHR",
+            f"Phase 2 Total = {_fmt_whole(p2_total)} KHR",
+            "",
+            "STEP 4: DIFFERENCE / PARTIAL SUBSIDY (DPP)",
+            f"DPP = Phase 1 Total - Phase 2 Total",
+            f"= {_fmt_whole(cpp_p1 + atp + spp_p1 + vpp_p1)} - {_fmt_whole(p2_total)}",
+            f"= {_fmt_whole(dpp)} KHR",
+            "",
+        ])
+    elif is_rubber and is_export:
+        etr = float(bd.get("etr_amount", 0) or 0)
+        net_mass = float(calc_request.net_mass_kg_normalized or 0)
+        et_item = _find_item("ETR")
+        et_rate = float(et_item.get("rate", 0) or 0)
+        lines.extend([
+            "=== RUBBER EXPORT CALCULATION ===",
+            "",
+            "STEP 1: CURRENCY CONVERSION (USD -> KHR)",
+            f"= {_fmt_whole(cif_khr)} KHR",
+            "",
+            "STEP 2: EXPORT TAX ON RUBBER (ETR)",
+            f"ETR = (CIF_KHR / net_mass_kg) x ET rate ({et_rate}%)",
+            f"= {_fmt_whole(etr)} KHR",
+            "",
+        ])
+    else:
+        cop = float(bd.get("cop_amount", 0) or 0)
+        sop = float(bd.get("sop_amount", 0) or 0)
+        vop = float(bd.get("vop_amount", 0) or 0)
+        vvf = float(bd.get("vvf_amount", 0) or 0)
+
+        cd_item = _find_item("COP")
+        st_item = _find_item("SOP")
+        vat_item = _find_item("VOP")
+        cd_rate = float(cd_item.get("rate", 0) or 0)
+        st_rate = float(st_item.get("rate", 0) or 0)
+        vat_rate = float(vat_item.get("rate", 0) or 0)
+
+        lines.extend([
+            "=== NORMAL IMPORT CALCULATION ===",
+            "",
+            "STEP 1: CURRENCY CONVERSION (USD -> KHR)",
+            f"= {_fmt_whole(cif_khr)} KHR",
+            "",
+            "STEP 2: IMPORT TAXES (COP)",
+            f"Formula: CIF Value x CD rate ({cd_rate}%)",
+            f"= {_fmt_whole(cop)} KHR",
+            "",
+            "STEP 3: SPECIAL TARIFF (SOP)",
+            f"Formula: (CIF Value + COP) x ST rate ({st_rate}%)",
+            f"= {_fmt_whole(sop)} KHR",
+            "",
+            "STEP 4: VALUE ADDED TAX (VOP)",
+        ])
+        if sop == 0:
+            lines.append(f"Formula: (CIF Value + COP) x VAT rate ({vat_rate}%)")
+            lines.append(f"= {_fmt_whole(cif_khr + cop)} x {vat_rate}%")
+        else:
+            lines.append(f"Formula: (CIF Value + COP + SOP) x VAT rate ({vat_rate}%)")
+            lines.append(f"= {_fmt_whole(cif_khr + cop + sop)} x {vat_rate}%")
+        lines.append(f"= {_fmt_whole(vop)} KHR")
+        lines.append("")
+        if vvf > 0:
+            lines.extend([
+                "STEP 5: VEHICLE VALUATION FEE (VVF)",
+                f"Fee = 60,000 KHR per vehicle unit",
+                f"= {_fmt_whole(vvf)} KHR",
+                "",
+            ])
+        if is_fta:
+            lines.append("NOTE: FTA preferential rates applied where available.")
+            lines.append("")
+
+    # Breakdown table
+    lines.extend([
+        "=== FINAL TAX BREAKDOWN TABLE ===",
+        "| Tax Component | Tax base (KHR) | Rate | Amount (KHR) |",
+    ])
+    for item in li:
+        name = str(item.get("name", ""))[:38]
+        base = _fmt_whole(item.get("base", 0))
+        rate = item.get("rate")
+        amount = _fmt_whole(item.get("amount", 0))
+        tax_type = item.get("tax_type", "")
+
+        # ATP: rate is per-liter in KHR; show as USD/L
+        if tax_type == "ATP" and rate is not None and exchange_rate:
+            try:
+                rate_usd = float(rate) / float(exchange_rate)
+                rate_str = f"{rate_usd:.2f} $/L"
+            except Exception:
+                rate_str = str(rate)
+        elif rate is not None:
+            try:
+                rate_str = f"{float(rate):.2f}"
+            except Exception:
+                rate_str = str(rate)
+        else:
+            rate_str = "0.00"
+        lines.append(f"| {name} | {base} | {rate_str} | {amount} |")
+    lines.append(f"| TOTAL | | | {_fmt_whole(total)} |")
+    lines.append("")
+
+    # Summary
+    lines.extend([
+        "=== SUMMARY ===",
+        f"To import {description} ({hs_code}) valued at {_fmt(cif_usd)} USD CIF from {origin},",
+        f"you must pay {_fmt_whole(total)} KHR in import taxes.",
+    ])
+
+    return "\n".join(lines)
+
+
+async def _try_llm_human_readable(
+    calc_request: CalculationRequest,
+    result_dict: Dict[str, Any],
+    calculator: ImportTaxCalculator,
+) -> str | None:
+    """
+    Try to generate human-readable text via LLM. Returns None if unavailable.
+    """
+    try:
+        from ..core.llm_formatter import LLMFormatter
+
+        formatter = LLMFormatter()
+        if not formatter.is_available():
+            return None
+
+        prompt = _build_llm_prompt(calc_request, result_dict)
+        text = await formatter.generate(prompt)
+        return text.strip() if text else None
+    except Exception as e:
+        logger.warning(f"LLM human-readable generation failed: {e}")
+        return None

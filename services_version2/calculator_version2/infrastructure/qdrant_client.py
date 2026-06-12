@@ -53,13 +53,13 @@ class QdrantClientAdapter:
         """Establish connection to Qdrant."""
         try:
             from qdrant_client import QdrantClient
-            self.client = QdrantClient(host=self.host, port=self.port)
-            logger.info(f"✅ Connected to Qdrant at {self.host}:{self.port}")
+            self.client = QdrantClient(host=self.host, port=self.port, timeout=5)
+            logger.info(f" Connected to Qdrant at {self.host}:{self.port}")
         except ImportError:
-            logger.error("❌ qdrant-client not installed. Run: pip install qdrant-client")
+            logger.error(" qdrant-client not installed. Run: pip install qdrant-client")
             raise
         except Exception as e:
-            logger.error(f"❌ Failed to connect to Qdrant: {e}")
+            logger.error(f" Failed to connect to Qdrant: {e}")
             raise
 
     def get_duty_rates(self, hs_code: str) -> Optional[Dict[str, Any]]:

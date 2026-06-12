@@ -158,6 +158,16 @@ def create_app() -> FastAPI:
             first_layer_service = get_llm_first_layer_service(first_layer_config)
             app.state.first_layer_service = first_layer_service
             logger.info("[OK] LLM_first_layer service initialized")
+
+            # Set the Gemini client on input_validator for LLM validation
+            try:
+                llm_service = first_layer_service._get_llm_service()
+                gemini_provider = llm_service.router.providers.get("gemini")
+                if gemini_provider and gemini_provider.client:
+                    input_validator.set_client(gemini_provider.client)
+                    logger.info("[OK] Input validator LLM client bound")
+            except Exception as e:
+                logger.warning(f"Could not bind LLM client to input validator: {e}")
             
             # Initialize service coordinator
             from .infrastructure import get_service_registry
@@ -170,6 +180,7 @@ def create_app() -> FastAPI:
                 policy_engine=policy_engine,
                 formatter_service=formatter,
                 first_layer_service=first_layer_service,
+                gemini_api_key=config.gemini_api_key,
             )
             
             app.state.coordinator = coordinator

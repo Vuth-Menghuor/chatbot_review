@@ -97,5 +97,5 @@ print(f"VOP ({vop_rate * 100}%): {result['vop']:,.2f} KHR")
 print(f"TOTAL PAYABLE: {result['total_payable']:,.2f} KHR")
 
 print("\n" + "=" * 70)
-print("✅ All formula tests completed successfully!")
+print(" All formula tests completed successfully!")
 print("=" * 70)

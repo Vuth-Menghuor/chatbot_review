@@ -438,62 +438,15 @@ class ImportTaxCalculator:
                 f"using DV as COP rate: {float(result['cd_rate'] * 100):.2f}%"
             )
 
-        # Apply known zero-duty FTAs where the duty rate is 0% for eligible goods.
-        # We prefer to validate eligibility from the rates_data (db) rather than
-        # blindly trusting an agreement mention from the user.
-        zero_duty_agreements = {"ACFTA", "ATIGA", "AKFTA", "AJCEP", "AANZFTA"}
-        if agreement_code:
-            agreed = str(agreement_code).upper()
-            # Determine whether the HS code is marked as FTA-eligible in the DB
-            fta_eligible_keys = ["fta_eligible", "eligible_commodity", "fta_eligibility", "eligible"]
-            db_eligible = False
-            for k in fta_eligible_keys:
-                if k in rates_data and rates_data.get(k) is not None:
-                    try:
-                        db_eligible = bool(rates_data.get(k))
-                    except Exception:
-                        db_eligible = False
-                    break
+        # Ask back when FTA/exemption claimed but no rate provided (DV missing, no preferential_cd_rate)
+        elif agreement_code and request.preferential_cd_rate is None:
+            result["preferential_rate_missing"] = True
+            result["requested_agreement"] = agreement_code
+            logger.info(
+                f"FTA {agreement_code} claimed for {request.hs_code}; "
+                f"requesting user to provide the applicable CD rate."
+            )
 
-            # ACFTA special-case: only applies when origin is China
-            origin = (request.origin_country or "").lower()
-
-            if agreed in zero_duty_agreements:
-                if agreed == "ACFTA":
-                    if origin in ("china", "cn") and db_eligible:
-                        result["cd_rate"] = Decimal("0")
-                        result["preferential_rate_missing"] = False
-                        result["fta_applied"] = "ACFTA"
-                        logger.info(f"Applied ACFTA zero CD rate for {request.hs_code} (origin={request.origin_country})")
-                    else:
-                        # If DB does not mark this HS as eligible, ask-back for confirmation
-                        if request.preferential_cd_rate is None:
-                            result["preferential_rate_missing"] = True
-                            result["requested_agreement"] = agreement_code
-                            logger.info(
-                                f"ACFTA claimed but HS {request.hs_code} not flagged eligible in DB; asking user for CD rate or confirm eligibility."
-                            )
-                else:
-                    if db_eligible:
-                        result["cd_rate"] = Decimal("0")
-                        result["preferential_rate_missing"] = False
-                        result["fta_applied"] = agreed
-                        logger.info(f"Applied zero CD rate for agreement {agreement_code} on {request.hs_code}")
-                    else:
-                        if request.preferential_cd_rate is None:
-                            result["preferential_rate_missing"] = True
-                            result["requested_agreement"] = agreement_code
-                            logger.info(
-                                f"FTA {agreement_code} claimed for {request.hs_code} but not marked eligible in DB; requesting user to provide CD rate or eligibility docs."
-                            )
-
-            # If user provided a preferential CD rate, it overrides DB eligibility
-            if request.preferential_cd_rate is not None:
-                result["cd_rate"] = request.preferential_cd_rate / Decimal("100")
-                result["preferential_rate_missing"] = False
-                logger.info(f"User provided preferential CD rate {request.preferential_cd_rate}% — applied for {request.hs_code}")
-
-        # Ask back when exemption claimed but no rate provided (DV missing, no preferential_cd_rate)
         elif active_exemption and request.preferential_cd_rate is None:
             result["preferential_rate_missing"] = True
             result["requested_agreement"] = active_exemption
@@ -923,7 +876,7 @@ class ImportTaxCalculator:
         atp_rate_khr_per_liter = rates["atp_rate"] * exchange_rate_khr
         line_items = [
             TaxLineItem("Customs duty on Petroleum Product (CPP)", "CD", cpp, "KHR", cpp_base_khr, rates["cd_rate"] * Decimal('100')),
-            TaxLineItem("Additional Tax on Petroleum product (ATP)", "ST", atp, "KHR", Decimal(str(request.volume_liter)), atp_rate_khr_per_liter),
+            TaxLineItem("Additional Tax on Petroleum product (ATP)", "ATP", atp, "KHR", Decimal(str(request.volume_liter)), atp_rate_khr_per_liter),
             TaxLineItem("Special tax on Petroleum Product (SPP)", "ST", spp, "KHR", spp_base, rates["st_rate"] * Decimal('100')),
             TaxLineItem("Vat on Petroleum product (VPP)", "VAT", vpp, "KHR", vpp_base, rates["vat_rate"] * Decimal('100'))
         ]

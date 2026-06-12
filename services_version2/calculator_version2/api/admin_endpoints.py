@@ -67,7 +67,7 @@ def verify_admin_key(x_admin_key: str = Header(None, alias="X-Admin-Key")):
     expected = os.getenv("ADMIN_API_KEY", "")
     if not expected:
         # No key configured — allow access (dev mode)
-        logger.warning("⚠️  ADMIN_API_KEY not set — admin endpoints are unprotected!")
+        logger.warning("  ADMIN_API_KEY not set — admin endpoints are unprotected!")
         return True
     if x_admin_key != expected:
         raise HTTPException(status_code=403, detail="Invalid or missing admin API key")

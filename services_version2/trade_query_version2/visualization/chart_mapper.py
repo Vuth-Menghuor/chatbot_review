@@ -135,19 +135,73 @@ def generate_visualizations(
     if "net_weight" in value_col.lower() or "weight" in value_col.lower():
         dataset_label = "Net Weight (KG)"
 
+    # Handle aggregation for trade balance queries to prevent duplicate/double label rendering
+    chart_rows = list(rows)
+    if intent == "trade_balance":
+        flow_key = None
+        for k in first_row.keys():
+            if k.upper() == "FLOW":
+                flow_key = k
+                break
+        
+        labels_list = [str(r.get(label_col)) for r in rows if r.get(label_col) is not None]
+        has_duplicates = len(labels_list) != len(set(labels_list))
+        
+        if flow_key and label_col.upper() != flow_key.upper() and has_duplicates:
+            aggregated_map = {}
+            for r in rows:
+                lbl = r.get(label_col)
+                if lbl is None:
+                    continue
+                lbl_str = str(lbl)
+                val = r.get(value_col, 0.0)
+                try:
+                    val = float(val) if val is not None else 0.0
+                except (ValueError, TypeError):
+                    val = 0.0
+                
+                flow_val = str(r.get(flow_key, "")).upper()
+                
+                if lbl_str not in aggregated_map:
+                    aggregated_map[lbl_str] = dict(r)
+                    aggregated_map[lbl_str][value_col] = 0.0
+                
+                if flow_val == "EX" or "EXPORT" in flow_val:
+                    aggregated_map[lbl_str][value_col] += val
+                elif flow_val == "IM" or "IMPORT" in flow_val:
+                    aggregated_map[lbl_str][value_col] -= val
+                else:
+                    aggregated_map[lbl_str][value_col] += val
+            
+            seen_labels = []
+            new_rows = []
+            for r in rows:
+                lbl = r.get(label_col)
+                if lbl is not None:
+                    lbl_str = str(lbl)
+                    if lbl_str not in seen_labels:
+                        seen_labels.append(lbl_str)
+                        new_rows.append(aggregated_map[lbl_str])
+            chart_rows = new_rows
+            
+            if "net_weight" in value_col.lower() or "weight" in value_col.lower():
+                dataset_label = "Net Trade Balance (KG)"
+            else:
+                dataset_label = "Net Trade Balance (USD)"
+
     # 3. Transform to designated chart visualization structure
     visualization_data = None
     if chart_type == "bar":
         visualization_data = transform_to_bar_chart(
-            rows, label_col, value_col, title, dataset_label
+            chart_rows, label_col, value_col, title, dataset_label
         )
     elif chart_type == "line":
         visualization_data = transform_to_line_chart(
-            rows, label_col, value_col, title
+            chart_rows, label_col, value_col, title
         )
     elif chart_type == "pie":
         visualization_data = transform_to_pie_chart(
-            rows, label_col, value_col, title, dataset_label
+            chart_rows, label_col, value_col, title, dataset_label
         )
 
     return {

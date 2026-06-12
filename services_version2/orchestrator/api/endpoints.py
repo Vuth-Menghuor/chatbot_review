@@ -103,7 +103,7 @@ async def process_query(
             input_validator = app_request.app.state.input_validator
             
             # Check for injection/safety
-            is_safe, reason = input_validator.validate_input(question)
+            is_safe, reason = await input_validator.validate_input_async(question)
             if not is_safe:
                 logger.warning(f"[{request_id}] ⚠️ Security check failed: {reason}")
                 latency = (time.time() - start_time) * 1000

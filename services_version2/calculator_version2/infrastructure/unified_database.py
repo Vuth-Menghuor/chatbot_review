@@ -324,7 +324,7 @@ class UnifiedDatabase(DatabaseInterface):
         self.csv: Optional[CSVDatabase] = None
 
         # TEMPORARY: Load ATP rates from Excel until DB is populated
-        self._atp_rates: Dict[str, Decimal] = {k: Decimal(str(v)) for k, v in _ATP_RATES_DEFAULT.items()}
+        self._atp_rates: Dict[str, Decimal] = {}
         self._atp_excel_path: Optional[Path] = None
         self._atp_mtime: float = 0.0
         self._reload_atp_rates()
@@ -333,27 +333,27 @@ class UnifiedDatabase(DatabaseInterface):
         if enable_qdrant:
             try:
                 self.qdrant = QdrantClientAdapter()
-                logger.info("✅ Qdrant adapter initialized (primary for duty rates)")
+                logger.info(" Qdrant adapter initialized (primary for duty rates)")
             except Exception as e:
-                logger.warning(f"⚠️  Qdrant unavailable: {e}")
+                logger.warning(f"  Qdrant unavailable: {e}")
                 self.qdrant = None
 
         # Try to initialize PostgreSQL (primary for exchange rates)
         if enable_postgres:
             try:
                 self.postgres = PostgreSQLExchangeRateAdapter()
-                logger.info("✅ PostgreSQL adapter initialized (primary for exchange rates)")
+                logger.info(" PostgreSQL adapter initialized (primary for exchange rates)")
             except Exception as e:
-                logger.warning(f"⚠️  PostgreSQL unavailable: {e}")
+                logger.warning(f"  PostgreSQL unavailable: {e}")
                 self.postgres = None
 
         # Initialize CSV fallback
         if enable_csv:
             try:
                 self.csv = CSVDatabase()
-                logger.info("✅ CSV fallback initialized")
+                logger.info(" CSV fallback initialized")
             except Exception as e:
-                logger.warning(f"⚠️  CSV fallback unavailable: {e}")
+                logger.warning(f"  CSV fallback unavailable: {e}")
                 self.csv = None
 
         # Try to initialize Rules DB (customs_ai — for preferential rates)
@@ -361,16 +361,16 @@ class UnifiedDatabase(DatabaseInterface):
         try:
             from .rules_database import RulesDatabaseAdapter
             self.rules_db = RulesDatabaseAdapter()
-            logger.info("✅ Rules DB adapter initialized (customs_ai for preferential rates)")
+            logger.info(" Rules DB adapter initialized (customs_ai for preferential rates)")
         except Exception as e:
-            logger.warning(f"⚠️  Rules DB (customs_ai) unavailable: {e}")
+            logger.warning(f"  Rules DB (customs_ai) unavailable: {e}")
             self.rules_db = None
 
         # Verify at least one source is available
         if not (self.qdrant or self.csv):
-            logger.error("❌ No duty rate source available (need Qdrant or CSV)")
+            logger.error(" No duty rate source available (need Qdrant or CSV)")
         if not (self.postgres or self.csv):
-            logger.error("⚠️  No exchange rate source available (need PostgreSQL or CSV)")
+            logger.error("  No exchange rate source available (need PostgreSQL or CSV)")
 
     @staticmethod
     def _normalize_origin_country(origin: str) -> str:
@@ -488,31 +488,6 @@ class UnifiedDatabase(DatabaseInterface):
             # Fallback to hardcoded ATP table
             rates["atp_rate"] = float(self._atp_rates[hs_code])
             logger.debug(f"Enriched atp_rate={rates['atp_rate']} for {hs_code} from hardcoded table")
-
-        # Enrich with origin-specific preferential flags when available in Postgres
-        try:
-            if self.postgres and getattr(self.postgres, 'conn', None):
-                cur = self.postgres.conn.cursor()
-                # Best-effort: attempt to read a 'fta_eligible' boolean column
-                try:
-                    cur.execute(
-                        "SELECT fta_eligible FROM duty_rates WHERE hs_code = %s AND origin_country = %s LIMIT 1",
-                        (hs_code, self._normalize_origin_country(origin_country))
-                    )
-                    row = cur.fetchone()
-                    if row and row[0] is not None:
-                        rates["fta_eligible"] = bool(row[0])
-                        logger.debug(f"Enriched fta_eligible={rates['fta_eligible']} for {hs_code} origin={origin_country}")
-                except Exception:
-                    # Table may not have the column; ignore and continue
-                    pass
-                finally:
-                    try:
-                        cur.close()
-                    except Exception:
-                        pass
-        except Exception as e:
-            logger.debug(f"Could not enrich fta_eligible from Postgres: {e}")
 
         return rates
 

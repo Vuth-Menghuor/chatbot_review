@@ -7,8 +7,17 @@ import pytest
 import asyncio
 from unittest.mock import Mock, AsyncMock, MagicMock
 from pathlib import Path
+import os
 import sys
 import importlib
+from dotenv import load_dotenv
+
+# Load orchestrator service .env for tests globally
+orchestrator_env = Path(__file__).resolve().parents[1] / ".env"
+if orchestrator_env.exists():
+    load_dotenv(orchestrator_env)
+else:
+    load_dotenv()
 
 # Ensure orchestrator package modules are importable under both their
 # full package names and short names used by some legacy tests (e.g. "core", "infrastructure").
@@ -203,6 +212,29 @@ def mock_calculator_client():
         },
         "total_tax": 225.0
     })
+    client.query = AsyncMock(return_value={
+        "total": 225.0,
+        "currency": "KHR",
+        "breakdown": {
+            "cif_value": 402200.0,
+            "cop_amount": 100.0,
+            "sop_amount": 50.0,
+            "vop_amount": 75.0,
+            "fees": 0.0
+        },
+        "line_items": [
+            {
+                "name": "Import Taxes (COP)",
+                "tax_type": "CD",
+                "amount": 100.0,
+                "currency": "KHR",
+                "base": 402200.0,
+                "rate": 15.0
+            }
+        ],
+        "assumptions": ["Mocked calculation"],
+        "references": []
+    })
     return client
 
 
@@ -222,15 +254,54 @@ def mock_trade_data_client():
     return client
 
 
+class DummyLLMService:
+    def __init__(self, intent="definition", selection=None):
+        self.intent = intent
+        self.selection = selection or {
+            "selected_code": None,
+            "confidence": 0.0,
+            "reason": "No selection",
+            "index": -1,
+        }
+
+    def classify_intent(self, question):
+        return self.intent, 0.95, "test intent"
+
+    async def select_best_hs_code(self, query, candidates):
+        return self.selection
+
+    async def rewrite_descriptions_batch(self, candidates):
+        return candidates
+
+    async def rewrite_input(self, user_input, context=None, intent_hint=None):
+        return user_input, {
+            "rewrite_reason": "not_needed",
+            "confidence": 1.0,
+            "rewritten": False,
+        }
+
+    async def extract_trade_parameters(self, question):
+        return {}
+
+    def is_available(self) -> bool:
+        return True
+
+
 @pytest.fixture
 def coordinator(mock_retrieval_client, mock_calculator_client, mock_trade_data_client):
     """Provide service coordinator with mocked clients."""
     policy_engine = get_policy_engine()
+    formatter_mock = MagicMock()
+    formatter_mock.is_available = MagicMock(return_value=False)
     return ServiceCoordinator(
         retrieval_client=mock_retrieval_client,
         calculator_client=mock_calculator_client,
         trade_data_client=mock_trade_data_client,
-        policy_engine=policy_engine
+        policy_engine=policy_engine,
+        use_llm_intent=False,
+        use_input_rewriter=False,
+        llm_service=None,
+        formatter_service=formatter_mock,
     )
 
 

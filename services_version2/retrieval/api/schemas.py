@@ -30,7 +30,6 @@ class QueryRequest(BaseModel):
         json_schema_extra = {
             "example": {
                 "query": "What is the HS code for cotton fabric?",
-                "top_k": 10,
                 "session_id": "session-123",
                 "collection": "gdce_hs_code",
                 "generate_answer": True

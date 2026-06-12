@@ -4,6 +4,16 @@ Unit tests for workflow module
 
 import pytest
 from ..core import WorkflowIntent, WorkflowStatus, WorkflowContext, WorkflowExecutor
+import services_version2.orchestrator.core.workflow as workflow_mod
+
+# Force offline/local keyword and pattern detection for all unit tests
+import sys
+for name, mod in list(sys.modules.items()):
+    if name.endswith('core.workflow') or name == 'core.workflow':
+        mod.LLM_INTENT_DETECTION_AVAILABLE = False
+        mod.LLM_CURRENCY_DETECTION_AVAILABLE = False
+workflow_mod.LLM_INTENT_DETECTION_AVAILABLE = False
+workflow_mod.LLM_CURRENCY_DETECTION_AVAILABLE = False
 
 
 class TestWorkflowContext:

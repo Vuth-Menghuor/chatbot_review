@@ -77,6 +77,17 @@ class LLMFirstLayerConfig:
     
     def __post_init__(self):
         """Initialize derived values and apply environment overrides."""
+        # Ensure service-local environment variables are loaded
+        from dotenv import load_dotenv
+        from pathlib import Path
+        
+        service_root = Path(__file__).resolve().parent.parent
+        local_env = service_root / ".env"
+        if local_env.exists():
+            load_dotenv(local_env)
+        else:
+            load_dotenv()
+
         # Apply environment variable overrides
         self.gemini_api_key = self.gemini_api_key or os.getenv("GEMINI_API_KEY", "")
         

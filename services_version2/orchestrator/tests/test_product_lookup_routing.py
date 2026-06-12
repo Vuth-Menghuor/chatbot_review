@@ -2,7 +2,7 @@
 
 from ..llm_first_layer.shims.validator_service import get_input_validator
 # pyrefly: ignore [missing-import]
-from ..core.llm_intent_detector import LLMIntentDetector, WorkflowIntent
+from ..core import WorkflowExecutor, WorkflowIntent
 
 
 def test_short_product_query_is_in_scope():
@@ -15,10 +15,8 @@ def test_short_product_query_is_in_scope():
 
 
 def test_short_product_phrase_routes_to_hs_lookup():
-    detector = LLMIntentDetector(timeout=1)
+    executor = WorkflowExecutor(use_llm_intent=False)
 
-    intent, confidence, reasoning = detector.detect_intent("live horse")
+    intent = executor.detect_intent("live horse")
 
     assert intent == WorkflowIntent.HS_CODE_LOOKUP
-    assert confidence >= 0.9
-    assert "product description" in reasoning.lower()

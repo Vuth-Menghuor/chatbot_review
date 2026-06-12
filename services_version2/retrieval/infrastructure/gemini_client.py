@@ -7,7 +7,7 @@ import asyncio
 import logging
 from typing import Optional, List, Dict, Any
 
-import google.generativeai as genai 
+from google import genai 
 
 logger = logging.getLogger(__name__)
 
@@ -15,14 +15,13 @@ logger = logging.getLogger(__name__)
 class GeminiClient:
     """Client for interacting with Gemini API."""
 
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: str, model: str = "gemini-3.5-flash"):
         self.api_key = (api_key or "").strip()
         self.model_name = model
-        self._model = None
+        self.client = None
 
         if self.api_key:
-            genai.configure(api_key=self.api_key)
-            self._model = genai.GenerativeModel(self.model_name)
+            self.client = genai.Client(api_key=self.api_key)
 
     async def generate_answer(
         self,
@@ -32,7 +31,7 @@ class GeminiClient:
         status: Optional[str] = None,
     ) -> Optional[str]:
         """Generate a grounded answer from retrieval documents."""
-        if not self._model:
+        if not self.client:
             return None
 
 
@@ -134,7 +133,10 @@ class GeminiClient:
 
         def _do_generate() -> Optional[str]:
             try:
-                response = self._model.generate_content(prompt)
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                )
             except Exception as exc:
                 logger.warning(f"Gemini answer generation failed: {exc}")
                 return None
@@ -162,7 +164,10 @@ class GeminiClient:
                     f"{retry_section}\n\n"
                     "If you cannot answer confidently, say so."
                 )
-                response2 = self._model.generate_content(retry_prompt)
+                response2 = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=retry_prompt,
+                )
                 text2 = _extract_text(response2)
                 if text2:
                     return text2

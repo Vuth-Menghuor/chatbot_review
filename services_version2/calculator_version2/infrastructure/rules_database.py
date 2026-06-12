@@ -55,9 +55,9 @@ class RulesDatabaseAdapter:
         try:
             conn = self._get_connection()
             conn.close()
-            logger.info("✅ Rules DB adapter connected to PostgreSQL")
+            logger.info(" Rules DB adapter connected to PostgreSQL")
         except Exception as e:
-            logger.warning(f"⚠️  Rules DB adapter connection test failed: {e}")
+            logger.warning(f"  Rules DB adapter connection test failed: {e}")
             raise
 
     def _get_connection(self):

@@ -33,6 +33,9 @@ class DummyLLMService:
             "rewritten": False,
         }
 
+    def is_available(self) -> bool:
+        return True
+
 
 @pytest.mark.asyncio
 class TestServiceCoordinator:
@@ -59,34 +62,15 @@ class TestServiceCoordinator:
         assert response["status"] in ["completed", "clarification_required"]
         assert response["intent"] == "calculation"
 
-    async def test_calculation_query_uses_hs_lookup_for_product_description(self):
-        """Description-based calculation queries should resolve HS code before calculator call."""
+    async def test_calculation_query_routes_directly_to_calculator_query(self):
+        """Calculation queries should bypass local HS lookup and direct parameters, calling query() instead."""
         get_cache_service().invalidate_cache()
 
         retrieval_client = AsyncMock()
-        retrieval_client.hs_code_lookup = AsyncMock(return_value={
-            "documents": [
-                {
-                    "id": "0101.21.00",
-                    "content": "Live horses, asses, mules and hinnies. Horses.",
-                    "score": 0.99,
-                    "metadata": {
-                        "hs_code": "0101.21.00",
-                        "description": "Live horses, asses, mules and hinnies. Horses.",
-                    },
-                }
-            ],
-            "hs_validation": {
-                "status": "valid",
-                "primary_code": "0101.21.00",
-                "candidates": [],
-            },
-            "status": "success",
-            "answer_source": "mock",
-        })
+        retrieval_client.hs_code_lookup = AsyncMock()
 
         calculator_client = AsyncMock()
-        calculator_client.calculate = AsyncMock(return_value={
+        calculator_client.query = AsyncMock(return_value={
             "status": "success",
             "total": 1234,
             "currency": "KHR",
@@ -107,13 +91,7 @@ class TestServiceCoordinator:
             use_llm_intent=False,
             use_input_rewriter=False,
             llm_service=DummyLLMService(
-                intent="calculation",
-                selection={
-                    "selected_code": "0101.21.00",
-                    "confidence": 0.96,
-                    "reason": "Live horses are classified under HS 0101 because the description explicitly matches live horses.",
-                    "index": 0,
-                },
+                intent="calculation"
             ),
         )
 
@@ -122,12 +100,10 @@ class TestServiceCoordinator:
         )
 
         assert response["status"] in {"completed", "failed"}
-        assert "why this hs code" in response["answer"].lower()
-        assert "live horses are classified under hs 0101" in response["answer"].lower()
-        retrieval_client.hs_code_lookup.assert_awaited_once()
-        calculator_client.calculate.assert_awaited_once()
-        _, kwargs = calculator_client.calculate.await_args
-        assert kwargs["hs_code"] == "0101.21.00"
+        retrieval_client.hs_code_lookup.assert_not_awaited()
+        calculator_client.query.assert_awaited_once_with(
+            question="Calculate import duty for living horses CIF 80000 yen from japan"
+        )
 
     async def test_process_trade_query(self, coordinator):
         """Test processing a trade query."""
@@ -507,3 +483,84 @@ class TestServiceCoordinator:
         _, kwargs = retrieval_client.hs_code_lookup.await_args
         assert kwargs["query"] == "bus?"
         retrieval_client.policy_inquiry.assert_not_awaited()
+
+    async def test_hs_code_standardization(self):
+        """Test that non-standard HS codes in the user query are standardized before processing."""
+        from ..utils import standardize_hs_codes_in_text
+        
+        # 8-digit variants
+        assert standardize_hs_codes_in_text("01012100") == "0101.21.00"
+        assert standardize_hs_codes_in_text("0101.2100") == "0101.21.00"
+        assert standardize_hs_codes_in_text("010121.00") == "0101.21.00"
+        assert standardize_hs_codes_in_text("0101 21 00") == "0101.21.00"
+        assert standardize_hs_codes_in_text("0101-21-00") == "0101.21.00"
+        assert standardize_hs_codes_in_text("0101.21.00") == "0101.21.00"
+        
+        # 6-digit variants
+        assert standardize_hs_codes_in_text("010121") == "0101.21"
+        assert standardize_hs_codes_in_text("0101.21") == "0101.21"
+        assert standardize_hs_codes_in_text("0101 21") == "0101.21"
+        
+        # Edge cases & exclusions
+        assert standardize_hs_codes_in_text("CIF 500000") == "CIF 500000"
+        assert standardize_hs_codes_in_text("value is $100000") == "value is $100000"
+        assert standardize_hs_codes_in_text("year 2026") == "year 2026"
+
+    async def test_coordinator_process_query_standardizes_hs_code(self):
+        """Verify the coordinator standardizes the query before routing to downstream clients."""
+        get_cache_service().invalidate_cache()
+        retrieval_client = AsyncMock()
+        retrieval_client.hs_code_lookup = AsyncMock(return_value={
+            "documents": [
+                {
+                    "id": "0101.21.00",
+                    "content": "Live horses, asses, mules and hinnies. Horses.",
+                    "score": 0.99,
+                    "metadata": {
+                        "hs_code": "0101.21.00",
+                        "description": "Live horses, asses, mules and hinnies. Horses.",
+                    },
+                }
+            ],
+            "hs_validation": {
+                "status": "valid",
+                "primary_code": "0101.21.00",
+                "candidates": [],
+            },
+            "status": "success",
+            "answer_source": "mock",
+        })
+        
+        coordinator = ServiceCoordinator(
+            retrieval_client=retrieval_client,
+            calculator_client=None,
+            trade_data_client=None,
+            use_llm_intent=False,
+            use_input_rewriter=False,
+            llm_service=DummyLLMService(
+                intent="hs_code_lookup",
+                selection={
+                    "selected_code": "0101.21.00",
+                    "confidence": 0.96,
+                    "reason": "Test match",
+                    "index": 0,
+                },
+            ),
+        )
+        
+        # Test input 01012100 (unstandardized)
+        response = await coordinator.process_query("What is the duty rate for 01012100?")
+        
+        assert response["status"] == "completed"
+        retrieval_client.hs_code_lookup.assert_awaited_once()
+        _, kwargs = retrieval_client.hs_code_lookup.await_args
+        assert kwargs["query"] == "What is the duty rate for 0101.21.00?"
+
+    async def test_process_small_talk_query(self, coordinator):
+        """Test processing of small-talk greeting queries."""
+        response = await coordinator.process_query(
+            question="Hii"
+        )
+        assert response["status"] == "completed"
+        assert response["intent"] == "small_talk"
+        assert "Hello!" in response["answer"]

@@ -28,7 +28,7 @@ def verify_qdrant_connection():
     try:
         from qdrant_client import QdrantClient
     except ImportError:
-        logger.error("❌ qdrant-client not installed. Run: pip install qdrant-client")
+        logger.error(" qdrant-client not installed. Run: pip install qdrant-client")
         return False
     
     qdrant_host = os.getenv("QDRANT_HOST", "172.25.3.243")
@@ -45,8 +45,8 @@ def verify_qdrant_connection():
         collection_names = [c.name for c in collections.collections]
         
         if collection_name in collection_names:
-            logger.info(f"✅ Connected to Qdrant successfully")
-            logger.info(f"✅ Collection '{collection_name}' exists")
+            logger.info(f" Connected to Qdrant successfully")
+            logger.info(f" Collection '{collection_name}' exists")
             
             # Try to get point count via raw API call (simpler than .get_collection())
             try:
@@ -56,24 +56,24 @@ def verify_qdrant_connection():
                     data = response.json()
                     if 'result' in data and 'count' in data['result']:
                         count = data['result']['count']
-                        logger.info(f"✅ Collection has {count} duty rate records")
+                        logger.info(f" Collection has {count} duty rate records")
             except Exception:
                 # If raw API call fails, just continue - collection exists
-                logger.info(f"✅ Collection is accessible")
+                logger.info(f" Collection is accessible")
             
             return True
         else:
-            logger.error(f"❌ Collection '{collection_name}' not found in Qdrant")
+            logger.error(f" Collection '{collection_name}' not found in Qdrant")
             logger.error(f"   Available collections: {collection_names}")
             return False
             
     except ConnectionError as e:
-        logger.error(f"❌ Cannot connect to Qdrant: {e}")
+        logger.error(f" Cannot connect to Qdrant: {e}")
         logger.error(f"   Please ensure Qdrant is running at {qdrant_host}:{qdrant_port}")
         logger.error(f"   Or update QDRANT_HOST and QDRANT_PORT in .env")
         return False
     except Exception as e:
-        logger.error(f"❌ Error verifying Qdrant: {e}")
+        logger.error(f" Error verifying Qdrant: {e}")
         return False
 
 
@@ -83,7 +83,7 @@ def verify_postgresql_connection():
     try:
         import psycopg2
     except ImportError:
-        logger.error("❌ psycopg2 not installed. Run: pip install psycopg2-binary")
+        logger.error(" psycopg2 not installed. Run: pip install psycopg2-binary")
         return False
     
     pg_host = os.getenv("PG_HOST", "172.25.3.243")
@@ -109,16 +109,16 @@ def verify_postgresql_connection():
         cursor.close()
         conn.close()
         
-        logger.info(f"✅ Connected to PostgreSQL successfully")
-        logger.info(f"✅ Table 'exchange_rates' accessible with {count} rate records")
+        logger.info(f" Connected to PostgreSQL successfully")
+        logger.info(f" Table 'exchange_rates' accessible with {count} rate records")
         return True
         
     except psycopg2.OperationalError as e:
-        logger.error(f"❌ Cannot connect to PostgreSQL: {e}")
+        logger.error(f" Cannot connect to PostgreSQL: {e}")
         logger.error(f"   Please ensure PostgreSQL is running at {pg_host}:{pg_port}")
         return False
     except Exception as e:
-        logger.error(f"❌ Error verifying PostgreSQL: {e}")
+        logger.error(f" Error verifying PostgreSQL: {e}")
         return False
 
 
@@ -140,9 +140,9 @@ def verify_environment_config():
     for var in required_vars:
         value = os.getenv(var)
         if value:
-            logger.info(f"✅ {var} = {value}")
+            logger.info(f" {var} = {value}")
         else:
-            logger.warning(f"⚠️  {var} not set (will use default)")
+            logger.warning(f"  {var} not set (will use default)")
             
 optional_vars = [
     "USD_TO_KHR_RATE_FALLBACK",
@@ -152,10 +152,10 @@ optional_vars = [
 for var in optional_vars:
     value = os.getenv(var)
     if value:
-        logger.info(f"✅ {var} = {value}")
+        logger.info(f" {var} = {value}")
     
     if missing:
-        logger.error(f"❌ Missing environment variables: {', '.join(missing)}")
+        logger.error(f" Missing environment variables: {', '.join(missing)}")
         logger.error("   Update your .env file with:")
         logger.error("   QDRANT_HOST=172.25.3.243")
         logger.error("   QDRANT_PORT=6333")
@@ -173,7 +173,7 @@ def main():
     
     # Verify environment config
     if not verify_environment_config():
-        logger.warning("⚠️  Environment configuration incomplete (using defaults)")
+        logger.warning("  Environment configuration incomplete (using defaults)")
     
     # Verify Qdrant connection (primary for duty rates)
     qdrant_ok = verify_qdrant_connection()
@@ -183,17 +183,17 @@ def main():
     
     # Report status
     if not qdrant_ok:
-        logger.warning("⚠️  Qdrant unavailable - will use CSV fallback for duty rates")
+        logger.warning("  Qdrant unavailable - will use CSV fallback for duty rates")
     
     if not postgres_ok:
-        logger.warning("⚠️  PostgreSQL unavailable - will use fallback for exchange rates")
+        logger.warning("  PostgreSQL unavailable - will use fallback for exchange rates")
     
     if not (qdrant_ok or postgres_ok):
-        logger.error("❌ No primary data sources available")
+        logger.error(" No primary data sources available")
         sys.exit(1)
     
     logger.info("=" * 60)
-    logger.info("✅ Calculator database initialization complete")
+    logger.info(" Calculator database initialization complete")
     logger.info("=" * 60)
 
 

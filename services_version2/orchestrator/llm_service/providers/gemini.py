@@ -21,21 +21,20 @@ class GeminiProvider(BaseLLMProvider):
         self.model_name = model
         self.timeout = timeout
         self.enabled = bool(self.api_key)
-        self.gen_model = None
+        self.client = None
 
         if self.enabled:
             try:
-                import google.generativeai as genai #dynamic gemini import 
+                from google import genai
 
-                genai.configure(api_key=self.api_key)
-                self.gen_model = genai.GenerativeModel(model)
+                self.client = genai.Client(api_key=self.api_key)
                 logger.info(f"Gemini provider initialized: {model}")
             except Exception as exc:
                 logger.warning(f"Gemini provider initialization failed: {exc}")
                 self.enabled = False
 
     def is_available(self) -> bool:
-        return bool(self.enabled and self.gen_model)
+        return bool(self.enabled and self.client)
 
     @staticmethod
     #this ensure confidence score is [0,1].
@@ -52,13 +51,19 @@ class GeminiProvider(BaseLLMProvider):
 
         prompt = (
             "Classify the user's query into one of these intents: "
-            "hs_code_lookup, calculation, trade_query, definition, policy_query, unclassified. "
+            "hs_code_lookup, calculation, trade_query, definition, policy_query, small_talk, unclassified.\n"
+            "Guidelines:\n"
+            "- Choose 'small_talk' for simple greetings, farewells, casual small talk, roasts, or jokes (e.g., 'hii', 'hello', 'how are you', 'tell me a joke').\n"
+            "- Choose 'hs_code_lookup' for queries asking about HS codes or commodity classification.\n"
             "Return JSON only with keys intent, confidence, reasoning.\n\n"
             f"Query: {question}"
         )
 
         try:
-            response = self.gen_model.generate_content(prompt) #send request to Gemini
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+            ) #send request to Gemini
             content = (response.text or "").strip() #extract text
             
             # Better JSON extraction: find the first JSON object boundaries
@@ -135,7 +140,10 @@ class GeminiProvider(BaseLLMProvider):
         ("USD", 0.92, "Detected 'bucks' → USD")
         """
         try:
-            response = self.gen_model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+            )
             content = (response.text or "").strip()
             
             # Better JSON extraction
@@ -208,7 +216,10 @@ class GeminiProvider(BaseLLMProvider):
             f"Query: {user_input}"
         )
         try:
-            response = self.gen_model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+            )
             rewritten = (response.text or "").strip() or user_input
             return rewritten, {
                 "rewrite_reason": "gemini_rewrite",
@@ -229,7 +240,10 @@ class GeminiProvider(BaseLLMProvider):
             f"Content: {text}"
         )
         try:
-            response = self.gen_model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+            )
             return (response.text or "").strip() or text
         except Exception as e:
             logger.warning(f"Gemini summarization failed: {e}")
@@ -283,7 +297,10 @@ class GeminiProvider(BaseLLMProvider):
         )
 
         try:
-            response = self.gen_model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+            )
             content = (response.text or "").strip()
             
             # Better JSON extraction
@@ -421,7 +438,11 @@ class GeminiProvider(BaseLLMProvider):
             
             async with semaphore:
                 try:
-                    response = await asyncio.to_thread(self.gen_model.generate_content, prompt)
+                    response = await asyncio.to_thread(
+                        self.client.models.generate_content,
+                        model=self.model_name,
+                        contents=prompt,
+                    )
                     rewritten = (response.text or "").strip() or description
                     item = candidate.copy()
                     item["original_description"] = description
@@ -457,7 +478,11 @@ class GeminiProvider(BaseLLMProvider):
         try:
             logger.info(f"Invoking Gemini model '{self.model_name}' for trade parameter extraction in Orchestrator...")
             # Run generate_content in a separate thread so it doesn't block the async event loop
-            response = await asyncio.to_thread(self.gen_model.generate_content, prompt)
+            response = await asyncio.to_thread(
+                self.client.models.generate_content,
+                model=self.model_name,
+                contents=prompt,
+            )
             content = (response.text or "").strip()
 
             # Better JSON extraction

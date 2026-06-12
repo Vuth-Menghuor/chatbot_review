@@ -17,6 +17,8 @@ if env_path.exists():
 else:
     load_dotenv()
 
+from fastapi.middleware.cors import CORSMiddleware
+from .config import get_settings
 from .api.endpoints import router, set_service
 from .api.exceptions import (
     InvalidInputError,
@@ -24,10 +26,12 @@ from .api.exceptions import (
     DALServiceError,
     QueryTimeoutError,
 )
-from .core.service import TradeService
 from .core.exceptions import ValidationError, UnknownIntentError, NoResultsError
 from .dal.exceptions import DALError
 from .core.normaliser import NormalisationError
+from .core.service import TradeService
+
+settings = get_settings()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,7 +43,16 @@ app = FastAPI(
     title="GDCE Trade Query Service",
     description="Query Cambodia trade statistics via DAL API",
     version="1.0.0",
-    servers=[{"url": "http://localhost:8005", "description": "Local server"}],
+    servers=[{"url": f"http://localhost:{settings.port}", "description": "Local server"}],
+)
+
+# Register CORS Middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # ---------------------------------------------------------------------------

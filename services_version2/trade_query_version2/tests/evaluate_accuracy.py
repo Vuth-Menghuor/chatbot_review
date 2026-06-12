@@ -73,7 +73,7 @@ def check_live_servers():
 
 def check_e2e_answer(question, expected_substrings):
     """Query live orchestrator to verify the text answer generated for the question."""
-    url = "http://127.0.0.1:8001/v1/query"
+    url = "http://127.0.0.1:8001/query"
     body = json.dumps({"question": question, "session_id": "test-accuracy-run"}).encode("utf-8")
     req = urllib.request.Request(
         url,

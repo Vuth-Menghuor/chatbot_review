@@ -28,9 +28,9 @@ class TestTimeoutConfigBasics:
         config = TimeoutConfig()
         
         assert config.get_intent_timeout(WorkflowIntent.CALCULATION) == 10
-        assert config.get_intent_timeout(WorkflowIntent.HS_CODE_LOOKUP) == 25
-        assert config.get_intent_timeout(WorkflowIntent.DEFINITION) == 20
-        assert config.get_intent_timeout(WorkflowIntent.POLICY_QUERY) == 25
+        assert config.get_intent_timeout(WorkflowIntent.HS_CODE_LOOKUP) == 45
+        assert config.get_intent_timeout(WorkflowIntent.DEFINITION) == 35
+        assert config.get_intent_timeout(WorkflowIntent.POLICY_QUERY) == 35
         assert config.get_intent_timeout(WorkflowIntent.TRADE_QUERY) == 20
     
     def test_intent_timeout_with_none(self):
@@ -43,7 +43,7 @@ class TestTimeoutConfigBasics:
         config = TimeoutConfig()
         
         assert config.get_service_timeout("calculator") == 10
-        assert config.get_service_timeout("retrieval") == 25
+        assert config.get_service_timeout("retrieval") == 45
         assert config.get_service_timeout("trade_data") == 20
     
     def test_service_timeout_unknown(self):
@@ -194,11 +194,11 @@ class TestTimeoutConfigIntegration:
         selected = min(intent_timeout, service_timeout)
         assert selected == 20
         
-        # HS code lookup via retrieval: min(25, 25) = 25
+        # HS code lookup via retrieval: min(45, 45) = 45
         intent_timeout = config.get_intent_timeout(WorkflowIntent.HS_CODE_LOOKUP)
         service_timeout = config.get_service_timeout("retrieval")
         selected = min(intent_timeout, service_timeout)
-        assert selected == 25
+        assert selected == 45
     
     def test_get_all_timeouts_structure(self):
         """Test structure of get_all_timeouts."""
