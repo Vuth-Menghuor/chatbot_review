@@ -1,5 +1,5 @@
 """
-API Endpoints for Orchestrator v2 Service
+API Endpoints for Orchestrator Service
 FastAPI route handlers with full integration of validators, formatters, and service coordination
 """
 
@@ -21,15 +21,16 @@ from ..infrastructure.metrics import record_query
 from ..infrastructure.cache_service import get_cache_service
 
 # Intents that are safe to cache
-_CACHEABLE_INTENTS = {"calculation", "hs_code_lookup", "definition", "policy", "trade_query"}
+_CACHEABLE_INTENTS = {"calculation", "hs_code_lookup", "definition", "general", "policy", "trade_query"}
 
 # TTL per intent (seconds)
 _CACHE_TTL = {
-    "calculation": 7200,       # 2 hours  — exchange rate refreshes are acceptable at this window
+    "calculation": 86400,      # 24 hours  — exchange rate refreshes are acceptable at this window
     "hs_code_lookup": 86400,   # 24 hours
     "definition": 172800,      # 48 hours
     "policy": 172800,          # 48 hours
     "trade_query": 86400,      # 24 hours — historical trade data is immutable
+    "general": 86400,          # 24 hours
 }
 
 logger = logging.getLogger(__name__)
@@ -104,7 +105,7 @@ async def process_query(
             
             # Check for injection/safety
             is_safe, reason = await input_validator.validate_input_async(question)
-            if not is_safe:
+            if not is_safe and reason != "out_of_scope":
                 logger.warning(f"[{request_id}] ⚠️ Security check failed: {reason}")
                 latency = (time.time() - start_time) * 1000
                 return QueryResponse(
@@ -171,23 +172,7 @@ async def process_query(
                 logger.warning(f"[{request_id}] ⚠️ Output validation failed: {reason}")
                 result['answer'] = "I found a result but it may contain unsafe content. Please rephrase your question."
         
-        # ===== STEP 4: LLM RESPONSE FORMATTING (optional) =====
-        # NOTE: Skip LLM formatting for calculation and trade_query intents - they're already well-formatted
-        if (hasattr(app_request.app.state, 'formatter') and result.get('answer') 
-            and result.get('intent') not in ['calculation', 'trade_query']):
-            formatter = app_request.app.state.formatter
-            if formatter.is_available():
-                logger.debug(f"[{request_id}] 📝 Formatting response with LLM...")
-                try:
-                    formatted_answer = await formatter.format_response(
-                        base_answer=result.get('answer', ''),
-                        question=question,
-                        intent=result.get('intent', 'unknown'),
-                        context=result.get('context', '')
-                    )
-                    result['answer'] = formatted_answer
-                except Exception as e:
-                    logger.warning(f"[{request_id}] LLM formatting failed: {e}, using base answer")
+
         
         latency_ms = (time.time() - start_time) * 1000
         
@@ -326,7 +311,7 @@ async def get_status(config=Depends(get_config)) -> dict:
         Service status including configuration and component states
     """
     return {
-        "service": "GDCE Orchestrator v2",
+        "service": "GDCE Orchestrator",
         "status": "running",
         "version": "2.0.0",
         "timestamp": datetime.utcnow().isoformat(),
@@ -348,7 +333,7 @@ async def get_info():
         Service metadata and capabilities
     """
     return {
-        "service": "GDCE Orchestrator v2",
+        "service": "GDCE Orchestrator",
         "version": "2.0.0",
         "description": "Customs and Trade Query Orchestrator - Routes queries to appropriate services",
         "capabilities": [
@@ -356,7 +341,8 @@ async def get_info():
             "Trade data querying",
             "HS code lookup and classification",
             "Policy procedures and documentation",
-            "Definition and glossary lookup"
+            "Definition and glossary lookup",
+            "Answering General Information related to GDCE."
         ],
         "endpoints": {
             "query": {
@@ -392,6 +378,19 @@ async def get_info():
         }
     }
 
+"""
+What is does: 
+1. Simulates Intent Detection: 
+It runs the intent classifier on the question to show what intent 
+would be triggered (e.g., calculation, trade_query, definition).
+
+2. Predicts Routing: 
+It returns which primary service the query would be sent to (e.g. calculator, 
+retrieval, or trade_data).
+
+3. Displays Configuration Debugging: 
+Shows if LLM intent detection is enabled or if the policy engine is available.
+"""
 
 @router.post("/query/explain", response_model=dict)
 async def explain_query(
@@ -420,6 +419,7 @@ async def explain_query(
         intent = coordinator.workflow_executor.detect_intent(question)
         
         # Validate for calculation
+        # calculation is the only intent that enforces strict input constraints before routing.
         is_valid_calc, missing = coordinator.workflow_executor.validate_calculation_inputs(question) if intent.value == "calculation" else (True, None)
         
         return {

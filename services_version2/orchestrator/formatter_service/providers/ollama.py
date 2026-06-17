@@ -38,7 +38,7 @@ class OllamaFormatterProvider(BaseFormatterProvider):
         try:
             if intent == FormatterIntent.CALCULATION:
                 return await self._format_calculation(response_text, original_question, context)
-            elif intent == FormatterIntent.RETRIEVAL:
+            elif intent in (FormatterIntent.RETRIEVAL, FormatterIntent.HS_CODE_LOOKUP):
                 return await self._format_retrieval(response_text, original_question)
             elif intent == FormatterIntent.TRADE_QUERY:
                 return await self._format_trade_query(response_text, original_question)

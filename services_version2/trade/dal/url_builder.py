@@ -50,7 +50,10 @@ class DALUrlBuilder:
             query_parts["measures"] = ",".join(str(item) for item in measures if str(item).strip())
 
         if payload.get("version"):
-            query_parts["version"] = payload["version"]
+            version = payload["version"]
+            if version == "trade_volume_1.0":
+                version = "1.0"
+            query_parts["version"] = version
         if payload.get("start_period"):
             query_parts["start-period"] = payload["start_period"]
         if payload.get("end_period"):

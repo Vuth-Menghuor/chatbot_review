@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 # Default configurations
 DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite"
-DEFAULT_TIMEOUT_SEC = 10
+DEFAULT_TIMEOUT_SEC = 20
 
 SYSTEM_INSTRUCTION = """You are an expert at parsing natural language trade query questions into structured search parameters for the trade data service.
 Classify the intent and extract key parameters.
@@ -47,6 +47,7 @@ Parameters to extract:
 - limit: Integer limit (e.g. for top N).
 - sort_order: One of ["asc", "desc"] (e.g., "asc" for bottom/lowest, "desc" for top/highest).
 - sort_metric: One of ["VALUE_USD", "NET_WEIGHT", "QUANTITY"].
+- metrics: List of metrics/measures to retrieve. One of ["VALUE_USD", "VALUE_KHR", "NET_WEIGHT", "QUANTITY"]. (e.g., choose VALUE_KHR if user asks for "riel" or "khmer currency", and VALUE_USD for "usd" or "dollars").
 - group_by: Dimensions to group by. One of ["partner_country", "mode_of_transport", "hs_chapter", "hs_heading", "hs_code", "flow", "period"].
 
 Output a single JSON object with these keys. If a parameter is not present or cannot be inferred, set it to null."""
@@ -262,6 +263,13 @@ def parse_and_resolve_parameters(raw: Dict[str, Any], question: str) -> Dict[str
     sort_metric = raw.get("sort_metric")
     if sort_metric is not None:
         params["sort_metric"] = str(sort_metric).upper()
+        
+    # Metrics
+    metrics = raw.get("metrics")
+    if isinstance(metrics, list):
+        params["metrics"] = [str(m).upper() for m in metrics if m]
+    elif isinstance(metrics, str) and metrics:
+        params["metrics"] = [metrics.upper()]
         
     # Group by
     group_by = raw.get("group_by")

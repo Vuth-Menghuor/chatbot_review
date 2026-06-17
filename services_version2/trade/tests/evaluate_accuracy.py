@@ -14,11 +14,21 @@ from pathlib import Path
 repo_root = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(repo_root))
 
-# Load .env manually to ensure API keys are populated
 def load_env():
+    # Load root .env
     env_path = repo_root / ".env"
     if env_path.exists():
         with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, val = line.split("=", 1)
+                    os.environ[key.strip()] = val.strip().strip('"').strip("'")
+    
+    # Load service-local .env
+    local_env_path = repo_root / "services_version2" / "trade_query_version2" / ".env"
+    if local_env_path.exists():
+        with open(local_env_path, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
@@ -28,10 +38,10 @@ def load_env():
 load_env()
 
 # Import the Trade Query module components
-from services_version2.trade_query_version2.core.validation import extract_parameters
+from services_version2.trade_query_version2.core.service import extract_parameters
 from services_version2.trade_query_version2.dal.dal_request_builder import DALRequestBuilder
 from services_version2.trade_query_version2.dal.url_builder import DALUrlBuilder
-from services_version2.trade_query_version2.core.transformers import transform_params_for_dal
+from services_version2.trade_query_version2.core.enrichment import convert_legacy_params
 
 # Log capture handler
 class LogCapture:
@@ -223,18 +233,10 @@ def run_evaluation():
                 actual_params = extract_parameters(question)
                 
                 # 2. DAL Request Construction
-                dal_params = transform_params_for_dal(actual_params)
+                dal_params = convert_legacy_params(actual_params)
                 
-                # Get the strategy and merge defaults to align URL construction with BaseHandler
-                from services_version2.trade_query_version2.handlers.strategies import STRATEGIES
-                from services_version2.trade_query_version2.handlers.base import BaseHandler
                 intent = actual_params.get("intent", "summary")
-                strategy = STRATEGIES.get(intent, STRATEGIES["summary"])
-                
-                handler_instance = BaseHandler()
-                merged_params = handler_instance._merge_strategy_defaults(dal_params, strategy)
-                
-                dal_request = request_builder.build_request(intent, merged_params)
+                dal_request = request_builder.build_request(intent, dal_params)
                 
                 # 3. URL Construction
                 generated_url = url_builder.build(dal_request)

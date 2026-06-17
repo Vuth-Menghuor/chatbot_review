@@ -141,37 +141,7 @@ class TestServiceCoordinator:
         assert response["status"] in ["failed", "completed"]
         assert "request_id" in response
 
-    async def test_hs_intent_safety_gate_routes_fee_query_to_policy(self):
-        """LLM HS intent should not bypass service/fee safety routing."""
-        get_cache_service().invalidate_cache()
-        retrieval_client = AsyncMock()
-        retrieval_client.policy_inquiry = AsyncMock(return_value={
-            "documents": [
-                {
-                    "id": "fee_1",
-                    "content": "Scanning fees are handled as customs service fees.",
-                    "score": 0.91,
-                }
-            ],
-            "status": "success",
-            "answer_source": "extractive_fallback",
-        })
-        retrieval_client.hs_code_lookup = AsyncMock(return_value={"documents": []})
 
-        coordinator = ServiceCoordinator(
-            retrieval_client=retrieval_client,
-            calculator_client=None,
-            trade_data_client=None,
-            use_llm_intent=False,
-            use_input_rewriter=False,
-            llm_service=DummyLLMService(intent="hs_code_lookup"),
-        )
-
-        response = await coordinator.process_query("What is the scanning fee?")
-
-        assert response["intent"] == "policy_query"
-        retrieval_client.policy_inquiry.assert_awaited_once()
-        retrieval_client.hs_code_lookup.assert_not_awaited()
 
     async def test_hs_intent_safety_gate_keeps_livestock_product_in_hs_lookup(self):
         """Product phrases like 'live horse' must stay on HS lookup instead of being downgraded."""

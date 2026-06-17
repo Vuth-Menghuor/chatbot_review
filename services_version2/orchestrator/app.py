@@ -58,7 +58,7 @@ def create_app() -> FastAPI:
     
     # Create app
     app = FastAPI(
-        title="GDCE Orchestrator v2",
+        title="GDCE Orchestrator",
         description="Customs and Trade Query Orchestrator - Routes queries to appropriate services",
         version="2.0.0",
         servers=[{"url": "http://localhost:8001", "description": "Local server"}],

@@ -1,6 +1,7 @@
 """
 API Schemas for Orchestrator service
 Defines request/response models and validation
+Structure for Frontend
 """
 
 from typing import Optional, List, Dict, Any

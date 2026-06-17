@@ -105,8 +105,8 @@ def generate_visualizations(
     target_label_col = config["label_col"]
     if params.get("group_by"):
         for g in params["group_by"]:
-            from ..core.transformers import GROUP_DIMENSION_MAP
-            mapped_g = GROUP_DIMENSION_MAP.get(str(g).lower(), str(g))
+            from ..core.semantic_registry import find_dimension_by_synonym
+            mapped_g = find_dimension_by_synonym(str(g)) or str(g)
             # Resolve to upper or original key casing
             if mapped_g in first_row:
                 target_label_col = mapped_g
