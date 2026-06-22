@@ -130,6 +130,14 @@ class QueryResponse(BaseModel):
         None,
         description="Structured graphical response for charts (bar, line, pie)"
     )
+    suggestions: List[str] = Field(
+        default_factory=list,
+        description="Follow-up question suggestions (trade_query responses)"
+    )
+    summary_metrics: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Summary aggregate metrics for trade_query responses (e.g. total_trade_value, currency)"
+    )
     
     class Config:
         json_schema_extra = {

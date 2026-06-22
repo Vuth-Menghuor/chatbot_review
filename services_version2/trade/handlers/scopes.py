@@ -14,26 +14,26 @@ from ..core.semantic_registry import STRUCTURE, STRUCTURE_REGISTRY, INTENT_RULES
 # Query Intents
 QUERY_INTENTS: list[str] = list(INTENT_RULES.keys())
 
-# Dimensions derived from structure registry
-PROVEN_DIMENSIONS: list[str] = [
-    code for code, f in STRUCTURE_REGISTRY.items()
-    if f.field_type == "dimension" and f.system != "SITC"
-]
+# # Dimensions derived from structure registry
+# PROVEN_DIMENSIONS: list[str] = [
+#     code for code, f in STRUCTURE_REGISTRY.items()
+#     if f.field_type == "dimension" and f.system != "SITC"
+# ]
 
-ASPIRATIONAL_DIMENSIONS: list[str] = [
-    code for code, f in STRUCTURE_REGISTRY.items()
-    if f.field_type == "dimension" and f.system == "SITC"
-] + ["PERIOD", "COUNTRY"]
+# ASPIRATIONAL_DIMENSIONS: list[str] = [
+#     code for code, f in STRUCTURE_REGISTRY.items()
+#     if f.field_type == "dimension" and f.system == "SITC"
+# ] + ["PERIOD", "COUNTRY"]
 
 DIMENSIONS: list[str] = list(STRUCTURE["dimensions"].keys()) + ["PERIOD", "COUNTRY"]
 
 # Measures derived from structure registry
 PROVEN_MEASURES: list[str] = ["VALUE_USD", "NET_WEIGHT"]
 
-ASPIRATIONAL_MEASURES: list[str] = [
-    code for code in STRUCTURE["measures"].keys()
-    if code not in PROVEN_MEASURES
-] + ["GROWTH_RATE", "MARKET_SHARE"]
+# ASPIRATIONAL_MEASURES: list[str] = [
+#     code for code in STRUCTURE["measures"].keys()
+#     if code not in PROVEN_MEASURES
+# ] + ["GROWTH_RATE", "MARKET_SHARE"]
 
 MEASURES: list[str] = list(STRUCTURE["measures"].keys()) + ["GROWTH_RATE", "MARKET_SHARE"]
 
@@ -156,6 +156,8 @@ def apply_intent_scoping(enriched_plan: EnrichedQueryPlan) -> ScopedQueryPlan:
             origin = "KH"
         elif not origin and not dest:
             origin = "KH"
+        # Clear flow filter to query both EX/IM directions
+        direction = None
 
     # Direction normalization and flipping logic (Cambodia-centric)
     if direction:
@@ -238,7 +240,18 @@ def apply_intent_scoping(enriched_plan: EnrichedQueryPlan) -> ScopedQueryPlan:
     raw_group = [str(g) for g in group_by] if isinstance(group_by, list) else []
 
     if not raw_dims and not raw_group:
-        if strategy:
+        if intent == "breakdown":
+            question_lower = (enriched_plan.question or "").lower()
+            if any(term in question_lower for term in ["transport", "mot", "mode", "ship", "plane", "truck", "train", "post", "carrier", "way"]):
+                raw_dims = ["MODE_OF_TRANSPORT"]
+                raw_group = ["MODE_OF_TRANSPORT"]
+            elif classification_system == "SITC" or any(term in question_lower for term in ["sector", "industry", "sitc", "division"]):
+                raw_dims = ["SITC_DIVISION"]
+                raw_group = ["SITC_DIVISION"]
+            else:
+                raw_dims = ["HS_CHAPTER"]
+                raw_group = ["HS_CHAPTER"]
+        elif strategy:
             raw_dims = strategy.default_dimensions
             raw_group = strategy.default_group_by
         else:
@@ -249,6 +262,12 @@ def apply_intent_scoping(enriched_plan: EnrichedQueryPlan) -> ScopedQueryPlan:
         raw_dims = raw_group
     elif not raw_group:
         raw_group = raw_dims
+
+    if intent == "trade_balance":
+        if "FLOW" not in raw_group:
+            raw_group.append("FLOW")
+        if "FLOW" not in raw_dims:
+            raw_dims.append("FLOW")
 
     # Filter/Adjust according to Classification System choices
     final_group = []
@@ -294,6 +313,7 @@ def apply_intent_scoping(enriched_plan: EnrichedQueryPlan) -> ScopedQueryPlan:
         years=enriched_plan.years,
         month=enriched_plan.month,
         quarter=enriched_plan.quarter,
+        semester=enriched_plan.semester,
         start_period=enriched_plan.start_period,
         end_period=enriched_plan.end_period,
         frequency=enriched_plan.frequency,
@@ -304,4 +324,5 @@ def apply_intent_scoping(enriched_plan: EnrichedQueryPlan) -> ScopedQueryPlan:
         sort_metric=enriched_plan.sort_metric,
         limit=limit,
         offset=offset,
+        question=enriched_plan.question,
     )

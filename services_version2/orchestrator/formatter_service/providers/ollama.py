@@ -42,10 +42,10 @@ class OllamaFormatterProvider(BaseFormatterProvider):
                 return await self._format_retrieval(response_text, original_question)
             elif intent == FormatterIntent.TRADE_QUERY:
                 return await self._format_trade_query(response_text, original_question)
-            elif intent == FormatterIntent.POLICY:
-                return await self._format_policy(response_text, original_question)
-            elif intent == FormatterIntent.DEFINITION:
-                return await self._format_definition(response_text, original_question)
+            elif intent == FormatterIntent.GENERAL:
+                if any(kw in original_question.lower() for kw in ["define", "definition", "what is", "meaning", "explain"]):
+                    return await self._format_definition(response_text, original_question)
+                return await self._format_generic(response_text, original_question)
             else:
                 return await self._format_generic(response_text, original_question)
         except Exception as e:

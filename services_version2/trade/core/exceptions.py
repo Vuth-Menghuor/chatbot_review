@@ -15,10 +15,11 @@ class UnknownIntentError(Exception):
 
 
 class NoResultsError(Exception):
-    def __init__(self, message: str = "No results found", query_params: dict | None = None):
+    def __init__(self, message: str = "No results found", query_params: dict | None = None, dal_source_url: str | None = None):
         super().__init__(message)
         self.message = message
         self.query_params = query_params
+        self.dal_source_url = dal_source_url
 
 
 class NormalisationError(Exception):

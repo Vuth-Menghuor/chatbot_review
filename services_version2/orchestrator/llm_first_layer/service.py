@@ -54,7 +54,20 @@ class LLMFirstLayerService:
         self._in_detect_intent = False
         self._in_detect_currency = False
         self._in_rewrite_input = False
+        
+        # Initialize session manager
+        from ..core.input_rewriter import SessionManager
+        self.session_manager = SessionManager()
+        
         logger.info("LLM First Layer Service initialized")
+
+    def get_or_create_session(self, session_id: str) -> Any:
+        """Retrieve or create session context for a session ID."""
+        return self.session_manager.get_or_create_session(session_id)
+
+    def update_session_context(self, session_id: str, **kwargs: Any) -> None:
+        """Update session context attributes."""
+        self.session_manager.update_session_context(session_id, **kwargs)
 
     def _get_llm_service(self):
         """Helper to get/create LLM service with first layer config."""

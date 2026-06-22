@@ -26,7 +26,7 @@ def load_env():
                     os.environ[key.strip()] = val.strip().strip('"').strip("'")
     
     # Load service-local .env
-    local_env_path = repo_root / "services_version2" / "trade_query_version2" / ".env"
+    local_env_path = repo_root / "services_version2" / "trade" / ".env"
     if local_env_path.exists():
         with open(local_env_path, "r", encoding="utf-8") as f:
             for line in f:
@@ -38,15 +38,15 @@ def load_env():
 load_env()
 
 # Import the Trade Query module components
-from services_version2.trade_query_version2.core.service import extract_parameters
-from services_version2.trade_query_version2.dal.dal_request_builder import DALRequestBuilder
-from services_version2.trade_query_version2.dal.url_builder import DALUrlBuilder
-from services_version2.trade_query_version2.core.enrichment import convert_legacy_params
+from services_version2.trade.core.service import extract_parameters
+from services_version2.trade.dal.dal_request_builder import DALRequestBuilder
+from services_version2.trade.dal.url_builder import DALUrlBuilder
+from services_version2.trade.core.enrichment import convert_legacy_params
 
 # Log capture handler
 class LogCapture:
     """Interceptors to capture python logging output from the trade query service."""
-    def __init__(self, logger_name="services_version2.trade_query_version2"):
+    def __init__(self, logger_name="services_version2.trade"):
         self.logger_name = logger_name
         self.log_stream = io.StringIO()
         self.handler = logging.StreamHandler(self.log_stream)

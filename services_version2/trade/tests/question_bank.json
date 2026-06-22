@@ -1,0 +1,1574 @@
+{
+  "_meta": {
+    "current_year_assumed": 2026,
+    "notes": [
+      "expected dicts only contain fields worth checking for that question — fields omitted from 'expected' are NOT checked.",
+      "'country' (singular) checks actual.origin_country OR actual.destination_country OR actual.partner_country against the given ISO-2 code, since the service's field-assignment logic (see core/service.py post_resolve_parameters) sometimes puts a single partner country into origin_country even when it's semantically the destination.",
+      "'partner_countries' checks actual.partner_countries as a SET (order-independent) against the given list.",
+      "'group_by_contains_any' passes if actual.group_by contains at least one of the listed codes (handles HS_CHAPTER vs HS_HEADING ambiguity etc).",
+      "'hs_present' (true) passes if actual.hs_code OR actual.hs_chapter is non-null. Product-name HS resolution depends on a live DAL metadata call — if DAL is unreachable, these will fail even if everything else is correct. Check that separately before blaming extraction.",
+      "'time_range_present' (true) passes if any of actual.year / actual.years / actual.start_period / actual.end_period / actual.period is non-null.",
+      "category values: canonical = obvious keyword phrasing, implicit = missing/relative info, edge = unusual axis combos, adversarial = deliberately designed to trip intent confusion (see 'confused_with' notes)."
+    ]
+  },
+  "questions": [
+    {
+      "id": "summary-01",
+      "subintent": "summary",
+      "category": "canonical",
+      "question": "What was Cambodia's total export value in 2025?",
+      "expected": {
+        "intent": "summary",
+        "trade_direction": "EX",
+        "year": 2025
+      }
+    },
+    {
+      "id": "summary-02",
+      "subintent": "summary",
+      "category": "implicit",
+      "question": "Total trade with Vietnam last year",
+      "expected": {
+        "intent": "summary",
+        "country": "VN",
+        "year": 2025
+      }
+    },
+    {
+      "id": "summary-03",
+      "subintent": "summary",
+      "category": "canonical",
+      "question": "How much did Cambodia import in 2024?",
+      "expected": {
+        "intent": "summary",
+        "trade_direction": "IM",
+        "year": 2024
+      }
+    },
+    {
+      "id": "summary-04",
+      "subintent": "summary",
+      "category": "edge",
+      "question": "Give me a summary of exports to Thailand in Q1 2024",
+      "expected": {
+        "intent": "summary",
+        "trade_direction": "EX",
+        "country": "TH",
+        "quarter": "Q1",
+        "year": 2024
+      }
+    },
+    {
+      "id": "summary-05",
+      "subintent": "summary",
+      "category": "canonical",
+      "question": "Overall trade volume for 2024",
+      "expected": {
+        "intent": "summary",
+        "year": 2024
+      }
+    },
+    {
+      "id": "summary-06",
+      "subintent": "summary",
+      "category": "canonical",
+      "question": "What is the total import value from China in 2025?",
+      "expected": {
+        "intent": "summary",
+        "trade_direction": "IM",
+        "country": "CN",
+        "year": 2025
+      }
+    },
+    {
+      "id": "summary-07",
+      "subintent": "summary",
+      "category": "edge",
+      "question": "Cambodia trade with Japan in semester 1 2025",
+      "expected": {
+        "intent": "summary",
+        "country": "JP",
+        "semester": 1,
+        "year": 2025
+      }
+    },
+    {
+      "id": "summary-08",
+      "subintent": "summary",
+      "category": "edge",
+      "question": "Summary of air exports in 2025",
+      "expected": {
+        "intent": "summary",
+        "trade_direction": "EX",
+        "mode_of_transport": [
+          "air"
+        ],
+        "year": 2025
+      }
+    },
+    {
+      "id": "summary-09",
+      "subintent": "summary",
+      "category": "edge",
+      "question": "How much rice did Cambodia export in 2025?",
+      "expected": {
+        "intent": "summary",
+        "trade_direction": "EX",
+        "hs_present": true,
+        "year": 2025
+      }
+    },
+    {
+      "id": "summary-10",
+      "subintent": "summary",
+      "category": "implicit",
+      "question": "What's our total trade this year?",
+      "expected": {
+        "intent": "summary",
+        "year": 2026
+      }
+    },
+    {
+      "id": "summary-11",
+      "subintent": "summary",
+      "category": "canonical",
+      "question": "Exports to the US in March 2025",
+      "expected": {
+        "intent": "summary",
+        "trade_direction": "EX",
+        "country": "US",
+        "month": 3,
+        "year": 2025
+      }
+    },
+    {
+      "id": "summary-12",
+      "subintent": "summary",
+      "category": "edge",
+      "question": "Total imports by sea in 2024",
+      "expected": {
+        "intent": "summary",
+        "trade_direction": "IM",
+        "mode_of_transport": [
+          "sea"
+        ],
+        "year": 2024
+      }
+    },
+    {
+      "id": "summary-13",
+      "subintent": "summary",
+      "category": "implicit",
+      "question": "Trade value with Singapore",
+      "expected": {
+        "intent": "summary",
+        "country": "SG"
+      }
+    },
+    {
+      "id": "summary-14",
+      "subintent": "summary",
+      "category": "edge",
+      "question": "How much footwear was exported to the EU in 2025?",
+      "expected": {
+        "intent": "summary",
+        "trade_direction": "EX",
+        "hs_present": true,
+        "year": 2025
+      }
+    },
+    {
+      "id": "summary-15",
+      "subintent": "summary",
+      "category": "edge",
+      "question": "What is Cambodia's total export value for H2 2024?",
+      "expected": {
+        "intent": "summary",
+        "trade_direction": "EX",
+        "semester": 2,
+        "year": 2024
+      }
+    },
+    {
+      "id": "summary-16",
+      "subintent": "summary",
+      "category": "edge",
+      "question": "What was the net weight in kilograms of exports to China in 2025?",
+      "expected": {
+        "intent": "summary",
+        "trade_direction": "EX",
+        "country": "CN",
+        "year": 2025
+      }
+    },
+    {
+      "id": "summary-17",
+      "subintent": "summary",
+      "category": "edge",
+      "question": "Total export value of SITC division 02 in 2025",
+      "expected": {
+        "intent": "summary",
+        "trade_direction": "EX",
+        "year": 2025
+      }
+    },
+    {
+      "id": "summary-18",
+      "subintent": "summary",
+      "category": "edge",
+      "question": "Summary of exports to Vietnam by air in March 2025",
+      "expected": {
+        "intent": "summary",
+        "trade_direction": "EX",
+        "country": "VN",
+        "mode_of_transport": [
+          "air"
+        ],
+        "month": 3,
+        "year": 2025
+      }
+    },
+    {
+      "id": "ranking-01",
+      "subintent": "ranking",
+      "category": "canonical",
+      "question": "Top 10 export partners in 2025",
+      "expected": {
+        "intent": "ranking",
+        "trade_direction": "EX",
+        "limit": 10,
+        "sort_order": "desc",
+        "group_by_contains_any": [
+          "PARTNER_COUNTRY"
+        ],
+        "year": 2025
+      }
+    },
+    {
+      "id": "ranking-02",
+      "subintent": "ranking",
+      "category": "canonical",
+      "question": "Bottom 5 import countries in 2024",
+      "expected": {
+        "intent": "ranking",
+        "trade_direction": "IM",
+        "limit": 5,
+        "sort_order": "asc",
+        "year": 2024
+      }
+    },
+    {
+      "id": "ranking-03",
+      "subintent": "ranking",
+      "category": "implicit",
+      "question": "Which countries does Cambodia export the most to?",
+      "expected": {
+        "intent": "ranking",
+        "trade_direction": "EX",
+        "group_by_contains_any": [
+          "PARTNER_COUNTRY"
+        ]
+      }
+    },
+    {
+      "id": "ranking-04",
+      "subintent": "ranking",
+      "category": "canonical",
+      "question": "Top 5 products exported in 2025",
+      "expected": {
+        "intent": "ranking",
+        "trade_direction": "EX",
+        "limit": 5,
+        "group_by_contains_any": [
+          "HS_CHAPTER",
+          "HS_HEADING"
+        ],
+        "year": 2025
+      }
+    },
+    {
+      "id": "ranking-05",
+      "subintent": "ranking",
+      "category": "canonical",
+      "question": "What are the leading import sources for 2024?",
+      "expected": {
+        "intent": "ranking",
+        "trade_direction": "IM",
+        "year": 2024,
+        "group_by_contains_any": [
+          "PARTNER_COUNTRY"
+        ]
+      }
+    },
+    {
+      "id": "ranking-06",
+      "subintent": "ranking",
+      "category": "edge",
+      "question": "Top 3 transport modes used for imports in 2025",
+      "expected": {
+        "intent": "ranking",
+        "trade_direction": "IM",
+        "limit": 3,
+        "group_by_contains_any": [
+          "MODE_OF_TRANSPORT"
+        ],
+        "year": 2025
+      }
+    },
+    {
+      "id": "ranking-07",
+      "subintent": "ranking",
+      "category": "implicit",
+      "question": "Highest export value countries last year",
+      "expected": {
+        "intent": "ranking",
+        "trade_direction": "EX",
+        "year": 2025,
+        "group_by_contains_any": [
+          "PARTNER_COUNTRY"
+        ]
+      }
+    },
+    {
+      "id": "ranking-08",
+      "subintent": "ranking",
+      "category": "implicit",
+      "question": "Top 10 partners by trade volume",
+      "expected": {
+        "intent": "ranking",
+        "limit": 10,
+        "group_by_contains_any": [
+          "PARTNER_COUNTRY"
+        ]
+      }
+    },
+    {
+      "id": "ranking-09",
+      "subintent": "ranking",
+      "category": "canonical",
+      "question": "Lowest 5 export destinations in 2025",
+      "expected": {
+        "intent": "ranking",
+        "trade_direction": "EX",
+        "sort_order": "asc",
+        "limit": 5,
+        "year": 2025
+      }
+    },
+    {
+      "id": "ranking-10",
+      "subintent": "ranking",
+      "category": "edge",
+      "question": "Best performing export markets in Q2 2025",
+      "expected": {
+        "intent": "ranking",
+        "trade_direction": "EX",
+        "quarter": "Q2",
+        "year": 2025
+      }
+    },
+    {
+      "id": "ranking-11",
+      "subintent": "ranking",
+      "category": "edge",
+      "question": "Top 20 HS chapters for imports in 2025",
+      "expected": {
+        "intent": "ranking",
+        "trade_direction": "IM",
+        "limit": 20,
+        "group_by_contains_any": [
+          "HS_CHAPTER"
+        ],
+        "year": 2025
+      }
+    },
+    {
+      "id": "ranking-12",
+      "subintent": "ranking",
+      "category": "edge",
+      "question": "Which 10 countries import the most rice from Cambodia?",
+      "expected": {
+        "intent": "ranking",
+        "trade_direction": "EX",
+        "limit": 10,
+        "hs_present": true,
+        "group_by_contains_any": [
+          "PARTNER_COUNTRY"
+        ]
+      }
+    },
+    {
+      "id": "ranking-13",
+      "subintent": "ranking",
+      "category": "edge",
+      "question": "Top air freight export destinations in 2025",
+      "expected": {
+        "intent": "ranking",
+        "trade_direction": "EX",
+        "mode_of_transport": [
+          "air"
+        ],
+        "year": 2025,
+        "group_by_contains_any": [
+          "PARTNER_COUNTRY"
+        ]
+      }
+    },
+    {
+      "id": "ranking-14",
+      "subintent": "ranking",
+      "category": "canonical",
+      "question": "Smallest 5 trading partners by import value",
+      "expected": {
+        "intent": "ranking",
+        "trade_direction": "IM",
+        "sort_order": "asc",
+        "limit": 5
+      }
+    },
+    {
+      "id": "ranking-15",
+      "subintent": "ranking",
+      "category": "adversarial",
+      "question": "Top 10 partner countries for both imports and exports in 2025",
+      "notes": "no single direction should be forced; tests that LLM doesn't hallucinate EX or IM when both are asked for",
+      "expected": {
+        "intent": "ranking",
+        "limit": 10,
+        "year": 2025
+      }
+    },
+    {
+      "id": "ranking-16",
+      "subintent": "ranking",
+      "category": "edge",
+      "question": "Top 5 export partners by weight in 2025",
+      "expected": {
+        "intent": "ranking",
+        "trade_direction": "EX",
+        "limit": 5,
+        "year": 2025,
+        "group_by_contains_any": [
+          "PARTNER_COUNTRY"
+        ]
+      }
+    },
+    {
+      "id": "ranking-17",
+      "subintent": "ranking",
+      "category": "edge",
+      "question": "Top 5 SITC divisions for imports in 2025",
+      "expected": {
+        "intent": "ranking",
+        "trade_direction": "IM",
+        "limit": 5,
+        "year": 2025,
+        "group_by_contains_any": [
+          "SITC_DIVISION"
+        ]
+      }
+    },
+    {
+      "id": "ranking-18",
+      "subintent": "ranking",
+      "category": "edge",
+      "question": "Which mode of transport had the highest import value in 2025?",
+      "expected": {
+        "intent": "ranking",
+        "trade_direction": "IM",
+        "year": 2025,
+        "group_by_contains_any": [
+          "MODE_OF_TRANSPORT"
+        ]
+      }
+    },
+    {
+      "id": "trend-01",
+      "subintent": "trend",
+      "category": "canonical",
+      "question": "Show the monthly export trend in 2025",
+      "expected": {
+        "intent": "trend",
+        "trade_direction": "EX",
+        "frequency": "M",
+        "year": 2025
+      }
+    },
+    {
+      "id": "trend-02",
+      "subintent": "trend",
+      "category": "implicit",
+      "question": "How has trade with Vietnam changed over the past 5 years?",
+      "expected": {
+        "intent": "trend",
+        "country": "VN",
+        "time_range_present": true
+      }
+    },
+    {
+      "id": "trend-03",
+      "subintent": "trend",
+      "category": "canonical",
+      "question": "Quarterly import trend for 2024",
+      "expected": {
+        "intent": "trend",
+        "trade_direction": "IM",
+        "frequency": "Q",
+        "year": 2024
+      }
+    },
+    {
+      "id": "trend-04",
+      "subintent": "trend",
+      "category": "canonical",
+      "question": "Trade trend with China from 2024 to 2026",
+      "expected": {
+        "intent": "trend",
+        "country": "CN",
+        "start_period": "2024",
+        "end_period": "2026"
+      }
+    },
+    {
+      "id": "trend-05",
+      "subintent": "trend",
+      "category": "implicit",
+      "question": "Show me export trends over time",
+      "expected": {
+        "intent": "trend",
+        "trade_direction": "EX"
+      }
+    },
+    {
+      "id": "trend-06",
+      "subintent": "trend",
+      "category": "edge",
+      "question": "Monthly trend of rice exports in 2025",
+      "expected": {
+        "intent": "trend",
+        "trade_direction": "EX",
+        "hs_present": true,
+        "frequency": "M",
+        "year": 2025
+      }
+    },
+    {
+      "id": "trend-07",
+      "subintent": "trend",
+      "category": "canonical",
+      "question": "How did imports from Thailand evolve between 2024 and 2026?",
+      "expected": {
+        "intent": "trend",
+        "trade_direction": "IM",
+        "country": "TH",
+        "start_period": "2024",
+        "end_period": "2026"
+      }
+    },
+    {
+      "id": "trend-08",
+      "subintent": "trend",
+      "category": "implicit",
+      "question": "Yearly trade trend for the last decade",
+      "expected": {
+        "intent": "trend",
+        "time_range_present": true
+      }
+    },
+    {
+      "id": "trend-09",
+      "subintent": "trend",
+      "category": "edge",
+      "question": "Trend of air transport exports in 2025",
+      "expected": {
+        "intent": "trend",
+        "trade_direction": "EX",
+        "mode_of_transport": [
+          "air"
+        ],
+        "year": 2025
+      }
+    },
+    {
+      "id": "trend-10",
+      "subintent": "trend",
+      "category": "adversarial",
+      "question": "Compare this year's exports to last year",
+      "notes": "confused_with=comparison; single implied country (Cambodia overall) means this should be TREND, not comparison — comparison requires 2+ partner countries per system prompt rule",
+      "expected": {
+        "intent": "trend",
+        "trade_direction": "EX"
+      }
+    },
+    {
+      "id": "trend-11",
+      "subintent": "trend",
+      "category": "edge",
+      "question": "Semester trend for 2024 and 2025",
+      "expected": {
+        "intent": "trend",
+        "frequency": "S",
+        "start_period": "2024-S1",
+        "end_period": "2025-S2"
+      }
+    },
+    {
+      "id": "trend-12",
+      "subintent": "trend",
+      "category": "adversarial",
+      "question": "Historical trade balance trend with Japan",
+      "notes": "confused_with=trade_balance; system prompt states balance signals take precedence over other phrasing when present, so expected intent is trade_balance despite 'trend' wording",
+      "expected": {
+        "intent": "trade_balance",
+        "country": "JP"
+      }
+    },
+    {
+      "id": "trend-13",
+      "subintent": "trend",
+      "category": "edge",
+      "question": "Show import trend for Q1 each year from 2024-2026",
+      "expected": {
+        "intent": "trend",
+        "trade_direction": "IM",
+        "frequency": "Q",
+        "start_period": "2024-Q1",
+        "end_period": "2026-Q1"
+      }
+    },
+    {
+      "id": "trend-14",
+      "subintent": "trend",
+      "category": "canonical",
+      "question": "Track Cambodia's export performance monthly in 2024",
+      "expected": {
+        "intent": "trend",
+        "trade_direction": "EX",
+        "frequency": "M",
+        "year": 2024
+      }
+    },
+    {
+      "id": "trend-15",
+      "subintent": "trend",
+      "category": "implicit",
+      "question": "Trend of trade with Malaysia",
+      "expected": {
+        "intent": "trend",
+        "country": "MY"
+      }
+    },
+    {
+      "id": "trend-16",
+      "subintent": "trend",
+      "category": "edge",
+      "question": "Show the trend of export weight for rice over time",
+      "expected": {
+        "intent": "trend",
+        "trade_direction": "EX",
+        "hs_present": true
+      }
+    },
+    {
+      "id": "trend-17",
+      "subintent": "trend",
+      "category": "edge",
+      "question": "Track the monthly trend of imports from Thailand by sea between 2024 and 2026",
+      "expected": {
+        "intent": "trend",
+        "trade_direction": "IM",
+        "country": "TH",
+        "mode_of_transport": [
+          "sea"
+        ],
+        "frequency": "M",
+        "start_period": "2024-01",
+        "end_period": "2026-12"
+      }
+    },
+    {
+      "id": "trend-18",
+      "subintent": "trend",
+      "category": "edge",
+      "question": "Quarterly trend of SITC Section 7 exports since 2024",
+      "expected": {
+        "intent": "trend",
+        "trade_direction": "EX",
+        "frequency": "Q",
+        "start_period": "2024-Q1"
+      }
+    },
+    {
+      "id": "comparison-01",
+      "subintent": "comparison",
+      "category": "canonical",
+      "question": "Compare exports to Vietnam vs Thailand in 2025",
+      "expected": {
+        "intent": "comparison",
+        "trade_direction": "EX",
+        "partner_countries": [
+          "VN",
+          "TH"
+        ],
+        "year": 2025
+      }
+    },
+    {
+      "id": "comparison-02",
+      "subintent": "comparison",
+      "category": "canonical",
+      "question": "Compare imports from China and Japan",
+      "expected": {
+        "intent": "comparison",
+        "trade_direction": "IM",
+        "partner_countries": [
+          "CN",
+          "JP"
+        ]
+      }
+    },
+    {
+      "id": "comparison-03",
+      "subintent": "comparison",
+      "category": "edge",
+      "question": "Trade comparison between USA and EU in 2024",
+      "expected": {
+        "intent": "comparison",
+        "year": 2024
+      }
+    },
+    {
+      "id": "comparison-04",
+      "subintent": "comparison",
+      "category": "canonical",
+      "question": "How does trade with Singapore compare to Malaysia?",
+      "expected": {
+        "intent": "comparison",
+        "partner_countries": [
+          "SG",
+          "MY"
+        ]
+      }
+    },
+    {
+      "id": "comparison-05",
+      "subintent": "comparison",
+      "category": "edge",
+      "question": "Compare Cambodia's exports to Vietnam, Thailand, and Laos in 2025",
+      "expected": {
+        "intent": "comparison",
+        "trade_direction": "EX",
+        "partner_countries": [
+          "VN",
+          "TH",
+          "LA"
+        ],
+        "year": 2025
+      }
+    },
+    {
+      "id": "comparison-06",
+      "subintent": "comparison",
+      "category": "canonical",
+      "question": "Versus China, how much do we trade with India?",
+      "expected": {
+        "intent": "comparison",
+        "partner_countries": [
+          "CN",
+          "IN"
+        ]
+      }
+    },
+    {
+      "id": "comparison-07",
+      "subintent": "comparison",
+      "category": "canonical",
+      "question": "Compare import value of China against South Korea in 2024",
+      "expected": {
+        "intent": "comparison",
+        "trade_direction": "IM",
+        "partner_countries": [
+          "CN",
+          "KR"
+        ],
+        "year": 2024
+      }
+    },
+    {
+      "id": "comparison-08",
+      "subintent": "comparison",
+      "category": "canonical",
+      "question": "Difference in export value between Japan and Germany",
+      "expected": {
+        "intent": "comparison",
+        "trade_direction": "EX",
+        "partner_countries": [
+          "JP",
+          "DE"
+        ]
+      }
+    },
+    {
+      "id": "comparison-09",
+      "subintent": "comparison",
+      "category": "adversarial",
+      "question": "Compare exports vs imports with Vietnam in 2025",
+      "notes": "confused_with=trade_balance; only ONE partner country (Vietnam) with EX vs IM is literally the trade_balance definition, not comparison (which needs 2+ countries)",
+      "expected": {
+        "intent": "trade_balance",
+        "country": "VN",
+        "year": 2025
+      }
+    },
+    {
+      "id": "comparison-10",
+      "subintent": "comparison",
+      "category": "canonical",
+      "question": "China vs Vietnam: which is a bigger trade partner in 2025?",
+      "expected": {
+        "intent": "comparison",
+        "partner_countries": [
+          "CN",
+          "VN"
+        ],
+        "year": 2025
+      }
+    },
+    {
+      "id": "comparison-11",
+      "subintent": "comparison",
+      "category": "edge",
+      "question": "Compare monthly export trend between Thailand and Vietnam",
+      "notes": "confused_with=trend; explicit 'compare' + 2 named countries should win over the monthly/trend wording per system prompt rule",
+      "expected": {
+        "intent": "comparison",
+        "partner_countries": [
+          "TH",
+          "VN"
+        ]
+      }
+    },
+    {
+      "id": "comparison-12",
+      "subintent": "comparison",
+      "category": "canonical",
+      "question": "Imports: Japan compared to South Korea in 2024",
+      "expected": {
+        "intent": "comparison",
+        "trade_direction": "IM",
+        "partner_countries": [
+          "JP",
+          "KR"
+        ],
+        "year": 2024
+      }
+    },
+    {
+      "id": "comparison-13",
+      "subintent": "comparison",
+      "category": "adversarial",
+      "question": "Compare Cambodia's top 2 trade partners",
+      "notes": "confused_with=ranking; says 'compare' but doesn't name 2 countries explicitly — ambiguous on purpose, just check intent",
+      "expected": {
+        "intent": "ranking"
+      }
+    },
+    {
+      "id": "comparison-14",
+      "subintent": "comparison",
+      "category": "canonical",
+      "question": "Trade value with US relative to UK",
+      "expected": {
+        "intent": "comparison",
+        "partner_countries": [
+          "US",
+          "GB"
+        ]
+      }
+    },
+    {
+      "id": "comparison-15",
+      "subintent": "comparison",
+      "category": "canonical",
+      "question": "How do exports to Vietnam stack up against exports to Indonesia in 2024?",
+      "expected": {
+        "intent": "comparison",
+        "trade_direction": "EX",
+        "partner_countries": [
+          "VN",
+          "ID"
+        ],
+        "year": 2024
+      }
+    },
+    {
+      "id": "comparison-16",
+      "subintent": "comparison",
+      "category": "edge",
+      "question": "Compare exports of SITC division 02 between Thailand and Vietnam",
+      "expected": {
+        "intent": "comparison",
+        "trade_direction": "EX",
+        "partner_countries": [
+          "TH",
+          "VN"
+        ]
+      }
+    },
+    {
+      "id": "comparison-17",
+      "subintent": "comparison",
+      "category": "edge",
+      "question": "Compare the volume of exports to Vietnam vs Thailand in 2025",
+      "expected": {
+        "intent": "comparison",
+        "trade_direction": "EX",
+        "partner_countries": [
+          "VN",
+          "TH"
+        ],
+        "year": 2025
+      }
+    },
+    {
+      "id": "comparison-18",
+      "subintent": "comparison",
+      "category": "edge",
+      "question": "Comparison of exports to China, Japan, and India in 2025",
+      "expected": {
+        "intent": "comparison",
+        "trade_direction": "EX",
+        "partner_countries": [
+          "CN",
+          "JP",
+          "IN"
+        ],
+        "year": 2025
+      }
+    },
+    {
+      "id": "breakdown-01",
+      "subintent": "breakdown",
+      "category": "canonical",
+      "question": "Breakdown of exports by product in 2025",
+      "expected": {
+        "intent": "breakdown",
+        "trade_direction": "EX",
+        "year": 2025,
+        "group_by_contains_any": [
+          "HS_CHAPTER",
+          "HS_HEADING"
+        ]
+      }
+    },
+    {
+      "id": "breakdown-02",
+      "subintent": "breakdown",
+      "category": "canonical",
+      "question": "Show imports broken down by transport mode in 2025",
+      "expected": {
+        "intent": "breakdown",
+        "trade_direction": "IM",
+        "year": 2025,
+        "group_by_contains_any": [
+          "MODE_OF_TRANSPORT"
+        ]
+      }
+    },
+    {
+      "id": "breakdown-03",
+      "subintent": "breakdown",
+      "category": "edge",
+      "question": "Breakdown of trade by economic sector in 2024",
+      "expected": {
+        "intent": "breakdown",
+        "year": 2024,
+        "group_by_contains_any": [
+          "SITC_SECTION",
+          "SITC_DIVISION"
+        ]
+      }
+    },
+    {
+      "id": "breakdown-04",
+      "subintent": "breakdown",
+      "category": "canonical",
+      "question": "What's the distribution of exports to Vietnam by HS chapter in 2025?",
+      "expected": {
+        "intent": "breakdown",
+        "trade_direction": "EX",
+        "country": "VN",
+        "year": 2025,
+        "group_by_contains_any": [
+          "HS_CHAPTER"
+        ]
+      }
+    },
+    {
+      "id": "breakdown-05",
+      "subintent": "breakdown",
+      "category": "canonical",
+      "question": "Breakdown imports by mode of transport for 2024",
+      "expected": {
+        "intent": "breakdown",
+        "trade_direction": "IM",
+        "year": 2024,
+        "group_by_contains_any": [
+          "MODE_OF_TRANSPORT"
+        ]
+      }
+    },
+    {
+      "id": "breakdown-06",
+      "subintent": "breakdown",
+      "category": "edge",
+      "question": "Show export breakdown by product category for Q1 2025",
+      "expected": {
+        "intent": "breakdown",
+        "trade_direction": "EX",
+        "quarter": "Q1",
+        "year": 2025,
+        "group_by_contains_any": [
+          "HS_CHAPTER"
+        ]
+      }
+    },
+    {
+      "id": "breakdown-07",
+      "subintent": "breakdown",
+      "category": "edge",
+      "question": "Sector breakdown of imports in 2025",
+      "expected": {
+        "intent": "breakdown",
+        "trade_direction": "IM",
+        "year": 2025,
+        "group_by_contains_any": [
+          "SITC_SECTION",
+          "SITC_DIVISION"
+        ]
+      }
+    },
+    {
+      "id": "breakdown-08",
+      "subintent": "breakdown",
+      "category": "implicit",
+      "question": "How is trade with China broken down by transport mode?",
+      "expected": {
+        "intent": "breakdown",
+        "country": "CN",
+        "group_by_contains_any": [
+          "MODE_OF_TRANSPORT"
+        ]
+      }
+    },
+    {
+      "id": "breakdown-09",
+      "subintent": "breakdown",
+      "category": "edge",
+      "question": "Breakdown of rice exports by destination country in 2025",
+      "expected": {
+        "intent": "breakdown",
+        "trade_direction": "EX",
+        "hs_present": true,
+        "year": 2025,
+        "group_by_contains_any": [
+          "PARTNER_COUNTRY"
+        ]
+      }
+    },
+    {
+      "id": "breakdown-10",
+      "subintent": "breakdown",
+      "category": "canonical",
+      "question": "Distribution of imports by product chapter in 2024",
+      "expected": {
+        "intent": "breakdown",
+        "trade_direction": "IM",
+        "year": 2024,
+        "group_by_contains_any": [
+          "HS_CHAPTER"
+        ]
+      }
+    },
+    {
+      "id": "breakdown-11",
+      "subintent": "breakdown",
+      "category": "edge",
+      "question": "Show me the industry breakdown of exports in 2025",
+      "expected": {
+        "intent": "breakdown",
+        "trade_direction": "EX",
+        "year": 2025,
+        "group_by_contains_any": [
+          "SITC_SECTION",
+          "SITC_DIVISION"
+        ]
+      }
+    },
+    {
+      "id": "breakdown-12",
+      "subintent": "breakdown",
+      "category": "edge",
+      "question": "Breakdown by HS heading for garment exports in 2025",
+      "expected": {
+        "intent": "breakdown",
+        "trade_direction": "EX",
+        "year": 2025,
+        "hs_present": true,
+        "group_by_contains_any": [
+          "HS_HEADING"
+        ]
+      }
+    },
+    {
+      "id": "breakdown-13",
+      "subintent": "breakdown",
+      "category": "implicit",
+      "question": "Transport mode breakdown for trade with Thailand",
+      "expected": {
+        "intent": "breakdown",
+        "country": "TH",
+        "group_by_contains_any": [
+          "MODE_OF_TRANSPORT"
+        ]
+      }
+    },
+    {
+      "id": "breakdown-14",
+      "subintent": "breakdown",
+      "category": "canonical",
+      "question": "Product breakdown of imports from Japan in 2025",
+      "expected": {
+        "intent": "breakdown",
+        "trade_direction": "IM",
+        "country": "JP",
+        "year": 2025,
+        "group_by_contains_any": [
+          "HS_CHAPTER"
+        ]
+      }
+    },
+    {
+      "id": "breakdown-15",
+      "subintent": "breakdown",
+      "category": "canonical",
+      "question": "Breakdown of exports by partner country in 2024",
+      "expected": {
+        "intent": "breakdown",
+        "trade_direction": "EX",
+        "year": 2024,
+        "group_by_contains_any": [
+          "PARTNER_COUNTRY"
+        ]
+      }
+    },
+    {
+      "id": "breakdown-16",
+      "subintent": "breakdown",
+      "category": "edge",
+      "question": "How are imports from Thailand distributed by mode of transport in 2025?",
+      "expected": {
+        "intent": "breakdown",
+        "trade_direction": "IM",
+        "country": "TH",
+        "year": 2025,
+        "group_by_contains_any": [
+          "MODE_OF_TRANSPORT"
+        ]
+      }
+    },
+    {
+      "id": "breakdown-17",
+      "subintent": "breakdown",
+      "category": "edge",
+      "question": "Economic sector breakdown of imports in 2025",
+      "expected": {
+        "intent": "breakdown",
+        "trade_direction": "IM",
+        "year": 2025,
+        "group_by_contains_any": [
+          "SITC_SECTION",
+          "SITC_DIVISION"
+        ]
+      }
+    },
+    {
+      "id": "growth-01",
+      "subintent": "growth",
+      "category": "canonical",
+      "question": "What was the export growth rate in 2025 compared to 2024?",
+      "expected": {
+        "intent": "growth",
+        "trade_direction": "EX",
+        "time_range_present": true
+      }
+    },
+    {
+      "id": "growth-02",
+      "subintent": "growth",
+      "category": "implicit",
+      "question": "How much did imports from China grow year-over-year?",
+      "expected": {
+        "intent": "growth",
+        "trade_direction": "IM",
+        "country": "CN"
+      }
+    },
+    {
+      "id": "growth-03",
+      "subintent": "growth",
+      "category": "canonical",
+      "question": "Export growth for Vietnam from 2024 to 2026",
+      "expected": {
+        "intent": "growth",
+        "trade_direction": "IM",
+        "country": "VN",
+        "start_period": "2024",
+        "end_period": "2026"
+      }
+    },
+    {
+      "id": "growth-04",
+      "subintent": "growth",
+      "category": "canonical",
+      "question": "Which products had the fastest growth in exports in 2025?",
+      "expected": {
+        "intent": "growth",
+        "trade_direction": "EX"
+      }
+    },
+    {
+      "id": "growth-05",
+      "subintent": "growth",
+      "category": "implicit",
+      "question": "Did imports increase or decrease in 2025 vs 2024?",
+      "expected": {
+        "intent": "growth",
+        "trade_direction": "IM"
+      }
+    },
+    {
+      "id": "growth-06",
+      "subintent": "growth",
+      "category": "implicit",
+      "question": "YoY growth of trade with Thailand",
+      "expected": {
+        "intent": "growth",
+        "country": "TH"
+      }
+    },
+    {
+      "id": "growth-07",
+      "subintent": "growth",
+      "category": "edge",
+      "question": "Show the growth rate of rice exports",
+      "expected": {
+        "intent": "growth",
+        "trade_direction": "EX",
+        "hs_present": true
+      }
+    },
+    {
+      "id": "growth-08",
+      "subintent": "growth",
+      "category": "canonical",
+      "question": "How fast did exports to the US grow between 2024 and 2026?",
+      "expected": {
+        "intent": "growth",
+        "trade_direction": "EX",
+        "country": "US",
+        "start_period": "2024",
+        "end_period": "2026"
+      }
+    },
+    {
+      "id": "growth-09",
+      "subintent": "growth",
+      "category": "adversarial",
+      "question": "Growth comparison for imports from Japan and Korea",
+      "notes": "confused_with=comparison; 'growth' keyword present but no explicit compare/vs verb — expected growth, partner countries not strictly checked",
+      "expected": {
+        "intent": "growth",
+        "trade_direction": "IM"
+      }
+    },
+    {
+      "id": "growth-10",
+      "subintent": "growth",
+      "category": "edge",
+      "question": "Did Cambodia's trade with the EU grow last year?",
+      "expected": {
+        "intent": "growth"
+      }
+    },
+    {
+      "id": "growth-11",
+      "subintent": "growth",
+      "category": "edge",
+      "question": "Month over month growth in exports for 2025",
+      "expected": {
+        "intent": "growth",
+        "trade_direction": "EX",
+        "frequency": "M",
+        "year": 2025
+      }
+    },
+    {
+      "id": "growth-12",
+      "subintent": "growth",
+      "category": "canonical",
+      "question": "Decline in imports from Vietnam in 2025",
+      "expected": {
+        "intent": "growth",
+        "trade_direction": "IM",
+        "country": "VN",
+        "year": 2025
+      }
+    },
+    {
+      "id": "growth-13",
+      "subintent": "growth",
+      "category": "edge",
+      "question": "Growth rate of air transport exports in 2025",
+      "expected": {
+        "intent": "growth",
+        "trade_direction": "EX",
+        "mode_of_transport": [
+          "air"
+        ],
+        "year": 2025
+      }
+    },
+    {
+      "id": "growth-14",
+      "subintent": "growth",
+      "category": "implicit",
+      "question": "How has Cambodia's overall trade grown since 2024?",
+      "expected": {
+        "intent": "growth",
+        "start_period": "2024"
+      }
+    },
+    {
+      "id": "growth-15",
+      "subintent": "growth",
+      "category": "implicit",
+      "question": "Export growth for the garment sector in the past 3 years",
+      "expected": {
+        "intent": "growth",
+        "trade_direction": "EX",
+        "time_range_present": true
+      }
+    },
+    {
+      "id": "growth-16",
+      "subintent": "growth",
+      "category": "edge",
+      "question": "Did the weight of exports to Vietnam increase or decrease in 2025 vs 2024?",
+      "expected": {
+        "intent": "growth",
+        "trade_direction": "EX",
+        "country": "VN"
+      }
+    },
+    {
+      "id": "growth-17",
+      "subintent": "growth",
+      "category": "edge",
+      "question": "YoY growth of the SITC division 02 sector in 2025",
+      "expected": {
+        "intent": "growth",
+        "year": 2025
+      }
+    },
+    {
+      "id": "tradebalance-01",
+      "subintent": "trade_balance",
+      "category": "canonical",
+      "question": "What is Cambodia's trade balance with Vietnam in 2025?",
+      "expected": {
+        "intent": "trade_balance",
+        "country": "VN",
+        "year": 2025
+      }
+    },
+    {
+      "id": "tradebalance-02",
+      "subintent": "trade_balance",
+      "category": "canonical",
+      "question": "Trade surplus or deficit with China?",
+      "expected": {
+        "intent": "trade_balance",
+        "country": "CN"
+      }
+    },
+    {
+      "id": "tradebalance-03",
+      "subintent": "trade_balance",
+      "category": "implicit",
+      "question": "Show the trade balance for 2024",
+      "expected": {
+        "intent": "trade_balance",
+        "year": 2024
+      }
+    },
+    {
+      "id": "tradebalance-04",
+      "subintent": "trade_balance",
+      "category": "canonical",
+      "question": "Does Cambodia have a trade deficit with Thailand?",
+      "expected": {
+        "intent": "trade_balance",
+        "country": "TH"
+      }
+    },
+    {
+      "id": "tradebalance-05",
+      "subintent": "trade_balance",
+      "category": "canonical",
+      "question": "Net trade with Japan in 2025",
+      "expected": {
+        "intent": "trade_balance",
+        "country": "JP",
+        "year": 2025
+      }
+    },
+    {
+      "id": "tradebalance-06",
+      "subintent": "trade_balance",
+      "category": "edge",
+      "question": "Export-import balance with the US in Q1 2025",
+      "expected": {
+        "intent": "trade_balance",
+        "country": "US",
+        "quarter": "Q1",
+        "year": 2025
+      }
+    },
+    {
+      "id": "tradebalance-07",
+      "subintent": "trade_balance",
+      "category": "adversarial",
+      "question": "What's our overall trade balance over the years?",
+      "notes": "confused_with=trend; 'over the years' suggests trend wording but balance signal should take precedence per system prompt rule",
+      "expected": {
+        "intent": "trade_balance"
+      }
+    },
+    {
+      "id": "tradebalance-08",
+      "subintent": "trade_balance",
+      "category": "canonical",
+      "question": "Balance of trade with South Korea",
+      "expected": {
+        "intent": "trade_balance",
+        "country": "KR"
+      }
+    },
+    {
+      "id": "tradebalance-09",
+      "subintent": "trade_balance",
+      "category": "implicit",
+      "question": "Is Cambodia importing more than exporting from Vietnam?",
+      "expected": {
+        "intent": "trade_balance",
+        "country": "VN"
+      }
+    },
+    {
+      "id": "tradebalance-10",
+      "subintent": "trade_balance",
+      "category": "edge",
+      "question": "Trade balance with the EU in 2025",
+      "expected": {
+        "intent": "trade_balance",
+        "year": 2025
+      }
+    },
+    {
+      "id": "tradebalance-11",
+      "subintent": "trade_balance",
+      "category": "canonical",
+      "question": "Cambodia's net trade position with Singapore",
+      "expected": {
+        "intent": "trade_balance",
+        "country": "SG"
+      }
+    },
+    {
+      "id": "tradebalance-12",
+      "subintent": "trade_balance",
+      "category": "canonical",
+      "question": "Surplus or deficit with Malaysia in 2024",
+      "expected": {
+        "intent": "trade_balance",
+        "country": "MY",
+        "year": 2024
+      }
+    },
+    {
+      "id": "tradebalance-13",
+      "subintent": "trade_balance",
+      "category": "edge",
+      "question": "What is the trade balance for semester 1 2025 with China?",
+      "expected": {
+        "intent": "trade_balance",
+        "country": "CN",
+        "semester": 1,
+        "year": 2025
+      }
+    },
+    {
+      "id": "tradebalance-14",
+      "subintent": "trade_balance",
+      "category": "implicit",
+      "question": "How much more does Cambodia export than import to Indonesia?",
+      "expected": {
+        "intent": "trade_balance",
+        "country": "ID"
+      }
+    },
+    {
+      "id": "tradebalance-15",
+      "subintent": "trade_balance",
+      "category": "implicit",
+      "question": "Total trade balance for 2024",
+      "expected": {
+        "intent": "trade_balance",
+        "year": 2024
+      }
+    },
+    {
+      "id": "tradebalance-16",
+      "subintent": "trade_balance",
+      "category": "edge",
+      "question": "What is the trade surplus or deficit of HS chapter 10 with Thailand?",
+      "expected": {
+        "intent": "trade_balance",
+        "country": "TH",
+        "hs_present": true
+      }
+    },
+    {
+      "id": "tradebalance-17",
+      "subintent": "trade_balance",
+      "category": "edge",
+      "question": "Cambodia's net trade balance by air in 2025",
+      "expected": {
+        "intent": "trade_balance",
+        "year": 2025
+      }
+    },
+    {
+      "id": "tradebalance-18",
+      "subintent": "trade_balance",
+      "category": "edge",
+      "question": "Track the trade balance with Vietnam monthly in 2025",
+      "expected": {
+        "intent": "trade_balance",
+        "country": "VN",
+        "year": 2025
+      }
+    }
+  ]
+}

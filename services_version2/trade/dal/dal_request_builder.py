@@ -17,10 +17,13 @@ class DALRequestBuilder:
 
     def build_from_plan(self, plan: FinalQueryPlan) -> DALRequest:
         """Map a finalized FinalQueryPlan directly to a DALRequest without logic (Stage 5 Serialization)."""
+        metrics = list(plan.metrics)
+        if "QUANTITY" in metrics and "QUANTITY.UNIT" not in metrics:
+            metrics.append("QUANTITY.UNIT")
         return DALRequest(
             intent=plan.intent,
             filters=plan.filters,
-            metrics=plan.metrics,
+            metrics=metrics,
             group_by=plan.group_by,
             dimensions=plan.dimensions,
             version=plan.version,
@@ -54,7 +57,7 @@ class DALRequestBuilder:
 
         known_keys = {
             "origin_country", "destination_country", "partner_country", "partner_countries",
-            "mode_of_transport", "year", "month", "quarter", "hs_code", "hs_chapter",
+            "mode_of_transport", "year", "month", "quarter", "semester", "hs_code", "hs_chapter",
             "trade_direction", "trade_volume", "trade_value", "limit", "offset", "period",
             "start_period", "end_period", "frequency", "sort", "sort_order", "sort_metric",
             "metrics", "group_by", "dimensions", "filters", "version", "sitc_section", "sitc_division"
@@ -143,15 +146,25 @@ class DALRequestBuilder:
 
         # Mode of Transport Mapping
         transport_mode = params.get("mode_of_transport")
-        if transport_mode and str(transport_mode).strip():
-            filters["MODE_OF_TRANSPORT"] = str(transport_mode).strip()
+        if transport_mode:
+            if isinstance(transport_mode, list):
+                valid_modes = [str(m).strip() for m in transport_mode if str(m).strip()]
+                if len(valid_modes) == 1:
+                    filters["MODE_OF_TRANSPORT"] = valid_modes[0]
+                elif valid_modes:
+                    filters["MODE_OF_TRANSPORT"] = valid_modes
+            elif str(transport_mode).strip():
+                filters["MODE_OF_TRANSPORT"] = str(transport_mode).strip()
 
         return filters
 
     def _build_metrics(self, params: Mapping[str, Any]) -> list[str]:
         metrics = params.get("metrics")
         if isinstance(metrics, list) and metrics:
-            return [str(m).strip() for m in metrics if str(m).strip()]
+            result = [str(m).strip() for m in metrics if str(m).strip()]
+            if "QUANTITY" in result and "QUANTITY.UNIT" not in result:
+                result.append("QUANTITY.UNIT")
+            return result
         return ["VALUE_USD", "NET_WEIGHT"]
 
     def _build_group_by_and_dimensions(self, intent: str, params: Mapping[str, Any]) -> tuple[list[str], list[str]]:
@@ -207,6 +220,7 @@ class DALRequestBuilder:
         year = params.get("year")
         quarter = params.get("quarter")
         month = params.get("month")
+        semester = params.get("semester")
 
         if year is None:
             return None, None, None, params.get("frequency")
@@ -214,6 +228,9 @@ class DALRequestBuilder:
         year_text = str(year)
         if quarter:
             return f"{year_text}-{quarter}", None, None, params.get("frequency") or "Q"
+
+        if semester is not None:
+            return f"{year_text}-S{semester}", None, None, params.get("frequency") or "S"
 
         if month is not None:
             month_text = str(month).zfill(2)

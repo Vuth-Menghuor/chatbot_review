@@ -27,7 +27,20 @@ logger = logging.getLogger(__name__)
 # STAGE 2 — SEMANTIC ENRICHMENT
 # ===========================================================================
 
-def resolve_dimension_value(dimension: str, value_text: str) -> Optional[str]:
+def resolve_dimension_value(dimension: str, value_text: Any) -> Any:
+    """Map dynamic text value(s) to a dimension code (e.g. 'export' -> 'EX', or ['air', 'sea'] -> ['4', '1'])."""
+    if isinstance(value_text, list):
+        resolved_list = []
+        for val in value_text:
+            res = resolve_dimension_value_single(dimension, val)
+            if res:
+                resolved_list.append(res)
+        return resolved_list if resolved_list else None
+    else:
+        return resolve_dimension_value_single(dimension, value_text)
+
+
+def resolve_dimension_value_single(dimension: str, value_text: str) -> Optional[str]:
     """Map dynamic text value to a dimension code (e.g. 'export' -> 'EX')."""
     dim_code = find_dimension_by_synonym(dimension)
     if not dim_code:
@@ -157,6 +170,8 @@ def resolve_entities(raw_plan: RawQueryPlan) -> Dict[str, Any]:
                     resolved["hs_chapter"] = resolved_hs
                 else:
                     resolved["hs_code"] = resolved_hs
+            else:
+                resolved["hs_code"] = prod_str
 
     return resolved
 
@@ -185,6 +200,11 @@ def enrich_query_plan(raw_plan: RawQueryPlan) -> EnrichedQueryPlan:
             hs_vs_sitc_suggestion = "SITC"
             break
 
+    year = raw_plan.raw_year
+    years = raw_plan.raw_years
+    if year is None and isinstance(years, list) and len(years) == 1:
+        year = years[0]
+
     return EnrichedQueryPlan(
         intent=intent_normalized,
         origin_country=entities["origin_country"],
@@ -196,10 +216,11 @@ def enrich_query_plan(raw_plan: RawQueryPlan) -> EnrichedQueryPlan:
         sitc_section=entities["sitc_section"],
         sitc_division=entities["sitc_division"],
         mode_of_transport=entities["mode_of_transport"],
-        year=raw_plan.raw_year,
-        years=raw_plan.raw_years,
+        year=year,
+        years=years,
         month=raw_plan.raw_month,
         quarter=raw_plan.raw_quarter,
+        semester=raw_plan.raw_semester,
         start_period=raw_plan.raw_start_period,
         end_period=raw_plan.raw_end_period,
         frequency=raw_plan.raw_frequency,
@@ -218,10 +239,6 @@ def enrich_query_plan(raw_plan: RawQueryPlan) -> EnrichedQueryPlan:
 # ===========================================================================
 # STAGE 4 — QUERY ORCHESTRATION
 # ===========================================================================
-
-def apply_defaults(scoped_plan: ScopedQueryPlan, filters: Dict[str, Any]) -> None:
-    """Apply default filter parameters to the query plan filters dictionary."""
-    pass
 
 
 def apply_cambodia_perspective(scoped_plan: ScopedQueryPlan, filters: Dict[str, Any]) -> None:
@@ -302,26 +319,76 @@ def orchestrate_query_plan(scoped_plan: ScopedQueryPlan) -> FinalQueryPlan:
     end_period: Optional[str] = scoped_plan.end_period
     frequency: Optional[str] = scoped_plan.frequency
 
-    resolved_freq: Optional[str] = None
-    if scoped_plan.year is not None:
-        year_text = str(scoped_plan.year)
-        if scoped_plan.quarter:
-            period = f"{year_text}-{scoped_plan.quarter}"
-            resolved_freq = "Q"
-        elif scoped_plan.month is not None:
-            month_text = str(scoped_plan.month).zfill(2)
-            period = f"{year_text}-{month_text}"
-            resolved_freq = "M"
-        else:
-            period = year_text
-            resolved_freq = "A"
-
+    # Apply frequency default for range queries
     from ..handlers.strategies import STRATEGIES
     strategy = STRATEGIES.get(scoped_plan.intent)
     default_frequency = strategy.default_frequency if strategy else None
 
+    if (start_period or end_period) and not frequency:
+        frequency = default_frequency or "A"
+        logger.info(f"[orchestrate_query_plan] Range query has no frequency. Defaulting to '{frequency}'.")
+
+    # If start_period or end_period are specified, they should be normalized to correct frequency sub-periods
+    if start_period or end_period:
+        if not frequency:
+            frequency = default_frequency or "A"
+        
+        # Normalize 4-digit years to correct frequency start/end periods
+        if frequency == "S":
+            if start_period and len(start_period) == 4:
+                start_period = f"{start_period}-S1"
+            if end_period and len(end_period) == 4:
+                end_period = f"{end_period}-S2"
+        elif frequency == "Q":
+            if start_period and len(start_period) == 4:
+                start_period = f"{start_period}-Q1"
+            if end_period and len(end_period) == 4:
+                end_period = f"{end_period}-Q4"
+        elif frequency == "M":
+            if start_period and len(start_period) == 4:
+                start_period = f"{start_period}-01"
+            if end_period and len(end_period) == 4:
+                end_period = f"{end_period}-12"
+        
+        # Range query takes precedence over year-constructed period
+        period = None
+        resolved_freq = frequency
+    else:
+        resolved_freq = None
+        if scoped_plan.year is not None:
+            year_text = str(scoped_plan.year)
+            if scoped_plan.quarter:
+                period = f"{year_text}-{scoped_plan.quarter}"
+                resolved_freq = "Q"
+            elif scoped_plan.semester is not None:
+                semester_text = str(scoped_plan.semester)
+                period = f"{year_text}-S{semester_text}"
+                resolved_freq = "S"
+            elif scoped_plan.month is not None:
+                month_text = str(scoped_plan.month).zfill(2)
+                period = f"{year_text}-{month_text}"
+                resolved_freq = "M"
+            elif frequency == "S":
+                # Unspecified semester under frequency S queries both semesters
+                start_period = f"{year_text}-S1"
+                end_period = f"{year_text}-S2"
+                period = None
+                resolved_freq = "S"
+            else:
+                period = year_text
+                resolved_freq = "A"
+
     if not frequency:
         frequency = default_frequency or resolved_freq
+
+    import datetime
+    # Fallback: if no time context at all, default to last complete year
+    if not period and not start_period and not end_period:
+        default_year = datetime.datetime.now().year - 1
+        period = str(default_year)
+        if not frequency:
+            frequency = "A"
+        logger.info(f"[orchestrate_query_plan] No period specified. Defaulting to {period} (Annual).")
 
     # 6. Sorting formatting
     sort: Optional[str] = None
@@ -340,6 +407,16 @@ def orchestrate_query_plan(scoped_plan: ScopedQueryPlan) -> FinalQueryPlan:
         elif sort_order == "desc" or scoped_plan.intent == "ranking" or not sort_order:
             sort = f"{sort_metric}:desc"
 
+    # Substitute VALUE_KHR with VALUE_USD (Problem 4)
+    clean_metrics = []
+    for m in scoped_plan.metrics:
+        if m == "VALUE_KHR":
+            logger.warning("VALUE_KHR requested but not available in dataset. Substituting VALUE_USD.")
+            if "VALUE_USD" not in clean_metrics:
+                clean_metrics.append("VALUE_USD")
+        else:
+            clean_metrics.append(m)
+
     # 7. Groupings
     dimensions_list, group_by_list = build_groupings(scoped_plan)
 
@@ -347,7 +424,7 @@ def orchestrate_query_plan(scoped_plan: ScopedQueryPlan) -> FinalQueryPlan:
         intent=scoped_plan.intent,
         version=scoped_plan.version,
         filters=filters,
-        metrics=scoped_plan.metrics,
+        metrics=clean_metrics,
         group_by=group_by_list,
         dimensions=dimensions_list,
         period=period,
@@ -384,6 +461,7 @@ def convert_legacy_params(raw_params: dict[str, Any]) -> dict[str, Any]:
         raw_years=raw_params.get("years"),
         raw_month=raw_params.get("month"),
         raw_quarter=raw_params.get("quarter"),
+        raw_semester=raw_params.get("semester"),
         raw_start_period=raw_params.get("start_period"),
         raw_end_period=raw_params.get("end_period"),
         raw_frequency=raw_params.get("frequency"),
@@ -395,6 +473,7 @@ def convert_legacy_params(raw_params: dict[str, Any]) -> dict[str, Any]:
         raw_limit=raw_params.get("limit"),
         raw_offset=raw_params.get("offset"),
         version=raw_params.get("version", "trade_volume_1.0"),
+        question=raw_params.get("question"),
     )
 
     enriched = enrich_query_plan(raw_plan)
@@ -423,6 +502,7 @@ def convert_legacy_params(raw_params: dict[str, Any]) -> dict[str, Any]:
         "years": scoped.years,
         "month": scoped.month,
         "quarter": scoped.quarter,
+        "semester": scoped.semester,
     }
     
     # Flatten fields for compatibility with legacy test assertions

@@ -1476,6 +1476,12 @@ async def initialize_service_clients(config) -> ServiceRegistry:
         )
         registry.register("retrieval", retrieval_client)
     
+    if hasattr(config, "general_service_url") and config.general_service_url:
+        general_client = ServiceClientFactory.create_retrieval_client(
+            config.general_service_url
+        )
+        registry.register("general", general_client)
+    
     if config.calculator_service_url:
         calculator_client = ServiceClientFactory.create_calculator_client(
             config.calculator_service_url

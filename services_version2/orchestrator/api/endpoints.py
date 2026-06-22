@@ -143,6 +143,8 @@ async def process_query(
                 metadata=cached_result.get("metadata", {}),
                 table=cached_result.get("table"),
                 visualization=cached_result.get("visualization"),
+                suggestions=cached_result.get("suggestions", []),
+                summary_metrics=cached_result.get("summary_metrics"),
             )
             if "citations" in cached_result:
                 response.citations = [
@@ -187,6 +189,8 @@ async def process_query(
             metadata=result.get("metadata", {}),
             table=result.get("table"),
             visualization=result.get("visualization"),
+            suggestions=result.get("suggestions", []),
+            summary_metrics=result.get("summary_metrics"),
         )
         
         # Add citations
@@ -221,6 +225,8 @@ async def process_query(
                 ],
                 "table": result.get("table"),
                 "visualization": result.get("visualization"),
+                "suggestions": result.get("suggestions", []),
+                "summary_metrics": result.get("summary_metrics"),
             }
             # intent=None → key = hash(question) — same as the lookup above
             cache_service.cache_response(
@@ -311,7 +317,7 @@ async def get_status(config=Depends(get_config)) -> dict:
         Service status including configuration and component states
     """
     return {
-        "service": "GDCE Orchestrator",
+        "service": "GDCE Orchestrator v2",
         "status": "running",
         "version": "2.0.0",
         "timestamp": datetime.utcnow().isoformat(),
@@ -432,7 +438,7 @@ async def explain_query(
                 "missing_fields": missing or []
             },
             "intended_workflow": {
-                "primary_service": "calculator" if intent.value == "calculation" else "retrieval" if intent.value == "definition" else "trade_data",
+                "primary_service": "calculator" if intent.value == "calculation" else "general" if intent.value == "general" else "trade_data" if intent.value == "trade_query" else "retrieval",
                 "validation_required": True,
                 "output_formatting": True
             },

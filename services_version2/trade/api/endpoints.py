@@ -52,13 +52,25 @@ async def query_trade_data(request: QueryRequest) -> dict[str, Any]:
         raise map_core_exception_to_http(e)
     except NoResultsError as e:
         logger.info(f"No results: {e}")
+        
+        dal_url = getattr(e, "dal_source_url", None) or getattr(e, "query_params", {}).get("dal_source_url", "")
+        raw_params = getattr(e, "query_params", None)
+        filtered_params = None
+        if isinstance(raw_params, dict):
+            filtered_params = {k: v for k, v in raw_params.items() if v is not None and k != "dal_source_url"}
+    
         return {
             "status": "no_data",
             "count": 0,
             "records": [],
-            "query_params": getattr(e, "query_params", None),
+            "summary": {},
+            "query_params": filtered_params,
+            "metadata": {
+                "dal_source_url": dal_url,
+                "intent": getattr(e, "query_params", {}).get("intent", "unknown")
+            },
             "message": str(e),
-            "suggestion": "Try adjusting your filters (e.g. using a different country, year, or transport mode)."
+            "suggestion": ["Try adjusting your filters (e.g. using a different country, year, or transport mode)."]
         }
     except DALError as e:
         logger.error(f"DAL error: {e}")

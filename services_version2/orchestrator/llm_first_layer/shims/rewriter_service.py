@@ -24,6 +24,12 @@ RewriterService = Any
 
 
 def get_rewriter_service(config: Optional[RewriterServiceConfig] = None) -> Any:
+    if config and (getattr(config, "rewrite_provider", None) == "ollama" or hasattr(config, "ollama_host")):
+        from ...core.input_rewriter import InputRewriter
+        return InputRewriter(
+            ollama_host=getattr(config, "ollama_host", "http://localhost:11434"),
+            model=getattr(config, "ollama_model", "default")
+        )
     return get_llm_first_layer_service()
 
 

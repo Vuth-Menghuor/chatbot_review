@@ -1,7 +1,7 @@
 """Extra unit tests for parameter extraction and handler logic."""
 
 import pytest
-from services_version2.trade_query_version2.core.service import extract_parameters
+from services_version2.trade.core.service import extract_parameters
 
 def test_extract_parameters_trended_last_3_years():
     params = extract_parameters("How have Cambodia's exports to China trended over the last 3 years?")
@@ -40,7 +40,7 @@ def test_extract_parameters_quarterly_frequency():
     assert params.get("frequency") == "Q"
 
 def test_convert_legacy_params_respects_sort_order():
-    from services_version2.trade_query_version2.core.enrichment import convert_legacy_params
+    from services_version2.trade.core.enrichment import convert_legacy_params
     params = {
         "intent": "ranking",
         "sort_order": "asc",
@@ -50,7 +50,7 @@ def test_convert_legacy_params_respects_sort_order():
     assert merged["sort"] == "VALUE_USD:asc"
 
 def test_generate_visualizations_trade_balance_aggregation():
-    from services_version2.trade_query_version2.visualization.chart_mapper import generate_visualizations
+    from services_version2.trade.visualization.chart_mapper import generate_visualizations
     rows = [
         {"PERIOD": "2025-01", "FLOW": "EX", "VALUE_USD": 1000.0},
         {"PERIOD": "2025-01", "FLOW": "IM", "VALUE_USD": 400.0},
@@ -71,7 +71,7 @@ def test_generate_visualizations_trade_balance_aggregation():
     assert vis["datasets"][0]["label"] == "Net Trade Balance (USD)"
 
 def test_convert_legacy_params_preserves_partner_countries():
-    from services_version2.trade_query_version2.core.enrichment import convert_legacy_params
+    from services_version2.trade.core.enrichment import convert_legacy_params
     raw_params = {
         "intent": "comparison",
         "origin_country": "KH",
@@ -84,7 +84,7 @@ def test_convert_legacy_params_preserves_partner_countries():
     assert params["destination_country"] is None
 
 def test_convert_legacy_params_comparison_no_countries():
-    from services_version2.trade_query_version2.core.enrichment import convert_legacy_params
+    from services_version2.trade.core.enrichment import convert_legacy_params
     raw_params = {
         "intent": "comparison",
         "destination_country": "KH",
@@ -96,7 +96,7 @@ def test_convert_legacy_params_comparison_no_countries():
     assert params["origin_country"] is None
 
 def test_convert_legacy_params_comparison_filters_out_cambodia():
-    from services_version2.trade_query_version2.core.enrichment import convert_legacy_params
+    from services_version2.trade.core.enrichment import convert_legacy_params
     raw_params = {
         "intent": "comparison",
         "partner_countries": ["KH", "Cambodia", "US", "CN"],
@@ -114,3 +114,43 @@ def test_extract_parameters_currency_usd():
     params = extract_parameters("Show me the imports from Vietnam in USD for 2024.")
     assert "VALUE_USD" in params.get("metrics", [])
     assert "VALUE_KHR" not in params.get("metrics", [])
+
+def test_extract_parameters_semester_range():
+    params = extract_parameters("Show trade trend of electronics from S1 2024 to S2 2024")
+    assert params["intent"] == "trend"
+    assert params["start_period"] == "2024-S1"
+    assert params["end_period"] == "2024-S2"
+    assert params["frequency"] == "S"
+    
+    params = extract_parameters("Compare imports of garment in 2024 S1 and S2")
+    assert params["intent"] == "trend"
+    assert params["start_period"] == "2024-S1"
+    assert params["end_period"] == "2024-S2"
+    assert params["frequency"] == "S"
+    
+    params = extract_parameters("How did trade balance change between S1 and S2 of 2025?")
+    assert params["intent"] == "trade_balance"
+    assert params["start_period"] == "2025-S1"
+    assert params["end_period"] == "2025-S2"
+    assert params["frequency"] == "S"
+
+
+def test_compare_air_vs_sea_transport():
+    params = extract_parameters("Compare air freight exports to Japan against sea freight exports to Japan")
+    assert params["intent"] in ("trend", "comparison")
+    assert set(params["mode_of_transport"]) == {"air", "sea"}
+    assert params["trade_direction"] == "EX"
+    assert params["partner_country"] == "JP"
+    
+    # Check filters mapping in convert_legacy_params
+    from services_version2.trade.core.enrichment import convert_legacy_params
+    legacy_transformed = convert_legacy_params({
+        "intent": "trend",
+        "trade_direction": "export",
+        "mode_of_transport": ["air", "sea"],
+        "partner_countries": ["JP"]
+    })
+    assert legacy_transformed["intent"] == "trend"
+    assert legacy_transformed["trade_direction"] == "EX"
+    assert legacy_transformed["partner_country"] == "JP"
+    assert set(legacy_transformed["filters"]["MODE_OF_TRANSPORT"]) == {"4", "1"}

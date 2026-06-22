@@ -132,13 +132,30 @@ def _get_product_keyword_map() -> dict[str, str]:
 
 def resolve_product_to_hs(product_name: str) -> Optional[str]:
     """Resolve a raw product name description to a numeric HS chapter or heading."""
-    # 1. Explicitly tagged HS codes (e.g. 'HS 8471', 'HS code 2709')
+    name_lower = product_name.lower().strip()
+    
+    # 1. Direct semantic mapping for generic industry terms
+    semantic_map = {
+        "garment": "61",
+        "clothing": "61",
+        "apparel": "61",
+        "footwear": "64",
+        "shoe": "64",
+        "rice": "1006",
+        "electronics": "85",
+        "electronic": "85"
+    }
+    
+    for term, code in semantic_map.items():
+        if term in name_lower:
+            return code
+
+    # 2. Explicitly tagged HS codes (e.g. 'HS 8471', 'HS code 2709')
     match = re.search(r"\b(?:heading|code|hs|hs\s+code)\s+(\d{4,8})\b", product_name, re.IGNORECASE)
     if match:
         return match.group(1)
 
-    # 2. Match longest phrase keys first from the live mapping
-    name_lower = product_name.lower().strip()
+    # 3. Match longest phrase keys first from the live mapping
     try:
         product_map = _get_product_keyword_map()
         for key in sorted(product_map.keys(), key=len, reverse=True):

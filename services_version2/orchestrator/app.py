@@ -175,6 +175,7 @@ def create_app() -> FastAPI:
             
             coordinator = ServiceCoordinator(
                 retrieval_client=registry.get("retrieval"),
+                general_client=registry.get("general"),
                 calculator_client=registry.get("calculator"),
                 trade_data_client=registry.get("trade_data"),
                 policy_engine=policy_engine,
@@ -229,6 +230,8 @@ def create_app() -> FastAPI:
                         service_clients = {}
                         if registry.get("retrieval"):
                             service_clients["retrieval"] = registry.get("retrieval")
+                        if registry.get("general"):
+                            service_clients["general"] = registry.get("general")
                         if registry.get("calculator"):
                             service_clients["calculator"] = registry.get("calculator")
                         if registry.get("trade_data"):

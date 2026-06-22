@@ -29,12 +29,7 @@ from .timeout_config import (
     TimeoutConfig,
     get_timeout_config,
 )
-from .hs_classifier import (
-    detect_hs_semantic_conflict,
-    extract_hs_code,
-    is_hs_lookup_eligible,
-    validate_selected_code,
-)
+
 from ..llm_first_layer.shims.validator_service import extract_certificate_type
 from .validators import get_validator, ValidationResult
 
@@ -144,6 +139,7 @@ class ServiceCoordinator:
     def __init__(
         self,
         retrieval_client=None,
+        general_client=None,
         calculator_client=None,
         trade_data_client=None,
         policy_engine=None,
@@ -159,6 +155,7 @@ class ServiceCoordinator:
         first_layer_service: Optional[Any] = None,
     ):
         self.retrieval_client = retrieval_client
+        self.general_client = general_client or retrieval_client
         self.calculator_client = calculator_client
         self.trade_data_client = trade_data_client
         self.first_layer_service = first_layer_service  
@@ -212,6 +209,8 @@ class ServiceCoordinator:
         9. Session state updates and final response formatting.
         """
         # Step 1: Initialize a unique request ID and workflow tracking context
+        from ..utils import standardize_hs_codes_in_text
+        question = standardize_hs_codes_in_text(question)
         request_id = str(uuid.uuid4())
         context = WorkflowContext(
             request_id=request_id,
@@ -422,8 +421,7 @@ class ServiceCoordinator:
                 WorkflowIntent.CALCULATION,
                 WorkflowIntent.TRADE_QUERY,
                 WorkflowIntent.HS_CODE_LOOKUP,
-                WorkflowIntent.DEFINITION,
-                WorkflowIntent.POLICY_QUERY
+                WorkflowIntent.GENERAL
             }:
                 logger.info(f"[{request_id}] Query intent '{context.intent}' does not match any core intention. Handling as small talk.")
                 
@@ -510,6 +508,11 @@ class ServiceCoordinator:
                     context.rewrite_metadata = rewrite_metadata
                     rewrite_status = "applied"
                     rewrite_skip_reason = None
+                    
+                    logger.info(
+                        f"[{request_id}] 🔵 Input Rewriter: original='{original_query}' "
+                        f"-> rewritten='{rewritten_question}' | metadata={rewrite_metadata}"
+                    )
 
                     # If rewriter flags that the original query is better, fallback to original query
                     if isinstance(rewrite_metadata, dict) and rewrite_metadata.get("rewritten") is False:
@@ -518,12 +521,14 @@ class ServiceCoordinator:
                         rewrite_status = "skipped"
                         rewrite_skip_reason = "original_better"
 
-                    # Validate that rewriting hasn't corrupted or injected hallucinations/bad info into the query
-                    if not self._is_rewrite_valid(original_query, rewritten_question):
+                    # Validate that rewriting hasn't corrupted or injected hallucinations/bad info into the query.
+                    # For GENERAL intent, use a relaxed check — short follow-ups legitimately expand a lot.
+                    if not self._is_rewrite_valid(original_query, rewritten_question, intent=context.intent):
                         context.rewritten_input = original_query
                         context.rewrite_metadata = {**(rewrite_metadata or {}), "rewrite_reason": "validation_rejected", "validation_status": "rejected"}
                         rewrite_status = "skipped"
                         rewrite_skip_reason = "rewrite_validation_failed"
+                        logger.info(f"[{request_id}] ⚠️ Input Rewriter validation rejected. Reverting to original query.")
                     else:
                         context.rewrite_metadata = {**rewrite_metadata, "validation_status": "accepted"}
                 except Exception as e:
@@ -535,9 +540,16 @@ class ServiceCoordinator:
             else:
                 context.rewrite_metadata = {
                     "rewrite_reason": "not_applied",
-                    "reason": "trade_query rule" if context.intent == WorkflowIntent.TRADE_QUERY else "input_rewriter_disabled",
+                    "reason": (
+                        "trade_query rule" if context.intent == WorkflowIntent.TRADE_QUERY
+                        else "hs_code_lookup rule" if context.intent == WorkflowIntent.HS_CODE_LOOKUP
+                        else "input_rewriter_disabled"
+                    ),
                     "intent": context.intent.value if context.intent else None,
                 }
+                logger.info(
+                    f"[{request_id}] ⚪ Input Rewriter: skipped (reason: {context.rewrite_metadata.get('reason')})"
+                )
 
             # Step 12: Microservice Selection & Routing
             # Choose whether to route using original query or rewritten query based on rewriting outcomes
@@ -557,11 +569,22 @@ class ServiceCoordinator:
             # Step 13: Update session tracking with processed query info
             if self.use_input_rewriter and session_id and context.session_context:
                 try:
-                    self.rewriter_service.update_session_context(
-                        session_id,
-                        last_intent=context.intent.value if context.intent else None,
-                        currency=context.detected_currency
-                    )
+                    # Detect and set product category & import/export mode in session
+                    from .hs_classifier import detect_simple_product_category
+                    category = detect_simple_product_category(context.original_input)
+                    mode = "import" if "import" in context.original_input.lower() else "export" if "export" in context.original_input.lower() else None
+                    
+                    update_kwargs = {
+                        "last_intent": context.intent.value if context.intent else None,
+                    }
+                    if context.detected_currency:
+                        update_kwargs["currency"] = context.detected_currency
+                    if category and category != "other":
+                        update_kwargs["product_category"] = category
+                    if mode:
+                        update_kwargs["import_export_mode"] = mode
+                        
+                    self.rewriter_service.update_session_context(session_id, **update_kwargs)
                     answer_summary = "Query processed"
                     if context.retrieval_result and context.retrieval_result.get("documents"):
                         docs = context.retrieval_result.get("documents", [])
@@ -591,13 +614,14 @@ class ServiceCoordinator:
 
     # Check if the user's request needs a search/retrieval system.
     def _is_retrieval_intent(self, intent: WorkflowIntent) -> bool:
-        return intent in {WorkflowIntent.HS_CODE_LOOKUP, WorkflowIntent.DEFINITION, WorkflowIntent.POLICY_QUERY, WorkflowIntent.UNCLASSIFIED}
+        return intent in {WorkflowIntent.HS_CODE_LOOKUP, WorkflowIntent.GENERAL, WorkflowIntent.UNCLASSIFIED}
 
 
     # Decide which backend service handles the request.
     def _resolve_target_service(self, intent: WorkflowIntent) -> str:
         if intent == WorkflowIntent.CALCULATION: return "calculator"
         if intent == WorkflowIntent.TRADE_QUERY: return "trade_data"
+        if intent == WorkflowIntent.GENERAL: return "general"
         return "retrieval"
 
     # Merge the pending query with the clarification query.
@@ -655,94 +679,222 @@ class ServiceCoordinator:
             return clarification_response or ""
 
     def _validate_merged_query(self, merged_query: str, resolved_intent: str) -> bool:
+        """
+        Validates that a merged/combined query is substantive enough and contains 
+        relevant keywords for the detected intent.
+        """
+        # Check 1: Query must exist, and be at least 5 characters long
         if not merged_query or not merged_query.strip() or len(merged_query.strip()) < 5:
-            return False
+            return False  
+                
+        # Check 2: If the intent is a calculation task, verify calculation-related keywords are present
         if resolved_intent == "calculation":
             calc_keywords = ["tax", "duty", "tariff", "import", "cif", "value", "calculate", "cost"]
-            if not any(kw in merged_query.lower() for kw in calc_keywords): return False
+            if not any(kw in merged_query.lower() for kw in calc_keywords): 
+                return False
+
+        # Check 3: If the intent is HS code lookup, verify HS code-related keywords are present
         if resolved_intent == "hs_code_lookup":
-            hs_keywords = ["hs code", "hs-code", "tariff code", "code","ahtn", "harmonized code"]
-            if not any(kw in merged_query.lower() for kw in hs_keywords): return False
+            hs_keywords = ["hs code", "hs-code", "tariff code", "code", "ahtn", "harmonized code"]
+
+            # ACCEPT if either:
+            # A) User explicitly mentions HS code keywords, OR
+            # B) Text looks like a commercial/product description (naked description)
+            has_explicit_hs_keywords = any(kw in merged_query.lower() for kw in hs_keywords)
+            looks_commercial = self._looks_like_commercial_description(merged_query)
+
+            if not (has_explicit_hs_keywords or looks_commercial): 
+                return False
+
         return True
 
+
     def _looks_like_commercial_description(self, text: str) -> bool:
-        """Structural heuristic gatekeeper to recognize pastings from logistics sheets or manifests."""
-        if not text: return False
+        """
+        Structural heuristic to detect if text appears to be copied from a logistics sheet,
+        shipping manifest, or commercial product listing. Uses pattern matching for 
+        specifications, model codes, and domain-specific vocabulary.
+        """
+        if not text: 
+            return False
+        
+        # Convert to lowercase for case-insensitive matching
         low = text.lower()
-        spec_unit_pattern = re.compile(r"\b(?:\d+[\.\d]*\s*cc|cc\b|\d+[\.\d]*\s*(?:wh|kwh|v|ah)\b|\d+\s*seats?\b|\d+\s*wheels?\b|(?:19|20)\d{2}\b|\d+\s*(?:g|kg|ml|l|pcs|bags|ctn)\s*x\s*\d+)\b", re.IGNORECASE)
-        model_code_pattern = re.compile(r"\b[A-Z0-9]{2,}[0-9][A-Z0-9]*\b|\b[A-Z][A-Z0-9]{3,}\b|\(\d+\)")
-        commercial_words = {"new", "used", "moto", "auto", "electric", "hybrid", "plug", "diesel", "petrol", "lpg", "cng", "hev", "bev", "phev", "ckd", "ikd", "cbp", "sedan", "suv", "van", "truck", "bus", "wheel", "seat", "door", "battery", "tea", "bag", "bags", "powder", "powdered", "whole", "rice", "food", "pack", "packs", "box", "frozen", "fresh", "organic", "grade"}
+        
+        # Pattern 1: Match specifications and technical units
+        # Looks for patterns like: "500cc", "2000wh", "19 seats", "2024", "500g x 10", etc.
+        spec_unit_pattern = re.compile(
+            r"\b(?:\d+[\.\d]*\s*cc|cc\b|\d+[\.\d]*\s*(?:wh|kwh|v|ah)\b|\d+\s*seats?\b|\d+\s*wheels?\b|(?:19|20)\d{2}\b|\d+\s*(?:g|kg|ml|l|pcs|bags|ctn)\s*x\s*\d+)\b", 
+            re.IGNORECASE
+        )
+        
+        # Pattern 2: Match model codes and product identifiers
+        # Looks for patterns like: "ABC123", "MODEL99XY", "(2023)", etc.
+        model_code_pattern = re.compile(
+            r"\b[A-Z0-9]{2,}[0-9][A-Z0-9]*\b|\b[A-Z][A-Z0-9]{3,}\b|\(\d+\)"
+        )
+        
+        # Pattern 3: Dictionary of commercial/product-related keywords
+        # Covers vehicles, food products, electronics, packaging, etc.
+        commercial_words = {
+            "new", "used", "moto", "auto", "electric", "hybrid", "plug", "diesel", "petrol", "lpg", "cng", 
+            "hev", "bev", "phev", "ckd", "ikd", "cbp",  
+            "sedan", "suv", "van", "truck", "bus", "wheel", "seat", "door", "battery",  
+            "tea", "bag", "bags", "powder", "powdered", "whole", "rice", "food", "pack", "packs", "box",  
+            "frozen", "fresh", "organic", "grade"  
+        }
+        
+        # Check if the text contains specification patterns (e.g., "500cc", "2024")
         has_spec = bool(spec_unit_pattern.search(low))
+        
+        # Check if the text contains model codes or product identifiers
         has_model = bool(model_code_pattern.search(text))
-        words_set = set(re.findall(r"[a-z]+", low))
-        descriptor_hits = len(words_set & commercial_words)
+        
+        # Extract all words from text and check how many match commercial keywords
+        words_set = set(re.findall(r"[a-z]+", low))  # Extract all alphabetic words
+        descriptor_hits = len(words_set & commercial_words)  # Count matches
+        
+        # Return True if at least 2 out of 3 indicators are present
         return sum([has_spec, has_model, descriptor_hits >= 1]) >= 2
 
+
     def _apply_intent_safety_gate(self, context: WorkflowContext, original_query: str) -> WorkflowIntent:
+        """
+        Safety mechanism that can override or adjust the detected intent based on 
+        additional analysis. Prevents false classifications and corrects intent misdetections.
+        """
+        # Get the intent that was already detected by earlier logic
         detected_intent = context.intent
 
         if detected_intent == WorkflowIntent.HS_CODE_LOOKUP:
             return detected_intent
 
-        if detected_intent in {WorkflowIntent.DEFINITION, WorkflowIntent.POLICY_QUERY, WorkflowIntent.UNCLASSIFIED}:
+        # For lower-confidence intents (GENERAL, UNCLASSIFIED),
+        # perform additional analysis to see if we should reclassify
+        if detected_intent in {WorkflowIntent.GENERAL, WorkflowIntent.UNCLASSIFIED}:
+            # Use cleaned input if available, otherwise fall back to original query
             candidate_query = context.cleaned_input or original_query
-            if self._looks_like_short_product_lookup(candidate_query): return WorkflowIntent.HS_CODE_LOOKUP
-            if self._looks_like_trade_data_query(candidate_query): return WorkflowIntent.TRADE_QUERY
+            
+            # Check if the query looks like a product lookup despite being classified differently
+            if self._looks_like_short_product_lookup(candidate_query): 
+                return WorkflowIntent.HS_CODE_LOOKUP
+            
+            # Check if the query looks like a trade data request
+            if self._looks_like_trade_data_query(candidate_query): 
+                return WorkflowIntent.TRADE_QUERY
+        
+        # No reclassification needed; return the original detected intent
         return detected_intent
 
+    # Detects if query is asking for trade statistics/data (volume, flows, comparisons).
     def _looks_like_trade_data_query(self, query: str) -> bool:
         q_lower = (query or "").lower()
-        disqualifiers = ["hs code", "tariff code", "classify", "classification", "calculate", "duty", "tax", "vat", "fee", "regulation", "procedure"]
-        if any(token in q_lower for token in disqualifiers): return False
+        disqualifiers = ["hs code", "tariff code", "classify", "classification", 
+                        "calculate", "duty", "tax", "vat", "fee", "regulation", "procedure"]
+        if any(token in q_lower for token in disqualifiers): 
+            return False
+        # check for required parameters (Trade data queries usually reference specific time periods)
         has_year = re.search(r"\b20\d{2}\b", q_lower) is not None
+        # Core indicator that user is talking about trade movement
         has_trade_flow = re.search(r"\b(import|imports|imported|im|export|exports|exported|ex)\b", q_lower) is not None
+        # Indicates comparison or bilateral trade ("from X to Y", "between A and B")
         has_relation = re.search(r"\b(from|to|between|with|vs|versus)\b", q_lower) is not None
         has_trade_term = re.search(r"\b(trade|volume|flow|shipment|shipping|cargo|freight|data)\b", q_lower) is not None
+        
         return bool(has_year and ((has_trade_flow and has_relation) or has_trade_term))
 
+    # Detects if query is a NAKED PRODUCT DESCRIPTION (no explicit HS code request).e.g, "500cc motorcycle, automatic, sedan style"
     def _looks_like_short_product_lookup(self, query: str) -> bool:
         normalized = (query or "").strip().lower()
-        if not normalized: return False
+        if not normalized: 
+            return False
         disqualifiers = ["hs", "code", "classify", "classification", "calculate", "duty", "tax", "import", "export", "trade", "regulation", "policy", "procedure", "what is", "define", "explain", "how much", "between", "from", "to"]
-        if any(token in normalized for token in disqualifiers): return False
-        if re.match(r"^(what|how|which|where|when|why|can|could|is|are|do|does)\b", normalized): return False
+        if any(token in normalized for token in disqualifiers): 
+            return False
+        if re.match(r"^(what|how|which|where|when|why|can|could|is|are|do|does)\b", normalized): 
+            return False
+        # Product descriptions are short (product specs, not essays)
         tokens = re.findall(r"[a-z0-9]+", normalized)
-        if not tokens or len(tokens) > 6: return False
+        if not tokens or len(tokens) > 6: 
+            return False
+        # Blocks casual chat/off-topic queries
         blocked_tokens = {"hello", "hi", "hey", "thanks", "please", "weather", "time", "date", "football", "soccer", "movie", "music", "recipe", "cook", "joke", "politics", "war", "crime", "hack", "hacking", "investment", "stock"}
-        if any(token in blocked_tokens for token in tokens): return False
+        if any(token in blocked_tokens for token in tokens): 
+            return False
         return True
 
     def _query_has_explicit_intent(self, query: str) -> bool:
+        """
+        HIGH-CONFIDENCE intent detector: checks if query EXPLICITLY states intent via keywords.
+        Used to establish baseline intent confidence before falling back to heuristics. 
+        """
         q = (query or "").lower()
-        hs_signals = ["hs code", "hs-code", "hscode", "ahtn", "tariff code", "harmonized code", "classify", "classification"]
-        if any(sig in q for sig in hs_signals): return True
-        calc_signals = ["calculate", "compute", "how much duty", "import duty", "import tax", "customs duty", "duty rate", "cif value", "fob value"]
-        if any(sig in q for sig in calc_signals): return True
+        hs_signals = ["hs", "hs code", "hs-code", "hscode", "ahtn", "tariff code", "harmonized code", "classify", "classification"]
+        if any(sig in q for sig in hs_signals): 
+            return True
+        calc_signals = ["calculate", "compute", "how much duty", "import duty", "import tax", "customs duty", "duty rate", "cif value", "fob value", "net mass", "volume"]
+        if any(sig in q for sig in calc_signals): 
+            return True
         trade_signals = ["trade data", "trade statistics", "trade volume", "trade flow", "bilateral trade", "export data", "import data"]
-        if any(sig in q for sig in trade_signals): return True
+        if any(sig in q for sig in trade_signals): 
+            return True
         policy_signals = ["procedure", "process", "steps", "how to import", "how to export", "what documents", "regulation", "compliance"]
-        if any(sig in q for sig in policy_signals): return True
+        if any(sig in q for sig in policy_signals): 
+            return True
         definition_signals = ["what is", "define ", "definition of", "explain ", "meaning of"]
-        if any(sig in q for sig in definition_signals): return True
+        if any(sig in q for sig in definition_signals): 
+            return True
         return False
 
-
-
     def _get_rewrite_skip_reason(self, intent: WorkflowIntent, rewriter_enabled: bool) -> str:
-        if not rewriter_enabled: return "input_rewriter_disabled"
-        if intent == WorkflowIntent.TRADE_QUERY: return "trade_query rule"
-        if intent == WorkflowIntent.HS_CODE_LOOKUP: return "hs_code_lookup skip_rewrite - retrieval service has own LLM spec extraction"
+        """
+        Determines the reason for skipping query rewriting based on intent and rewriter status.
+        """
+        if not rewriter_enabled: 
+            return "input_rewriter_disabled"
+        if intent == WorkflowIntent.TRADE_QUERY: 
+            return "trade_query rule"
+        if intent == WorkflowIntent.HS_CODE_LOOKUP: 
+            return "hs_code_lookup skip_rewrite - retrieval service has own LLM spec extraction"
         return "rewrite_allowed"
+    
+    def _is_rewrite_valid(self, original_query: str, rewritten_query: str, intent: Optional[WorkflowIntent] = None) -> bool:
+        """
+        Validates that a rewritten query preserves the essential structure and meaning
+        of the original query. Prevents over-aggressive rewrites that lose critical data.
 
-    def _is_rewrite_valid(self, original_query: str, rewritten_query: str) -> bool:
+        For GENERAL intent, only checks that the rewrite is non-empty — short follow-up
+        queries like "what about it?" legitimately expand to much longer, low-overlap results.
+        For all other intents, enforces structured token preservation and ≥50% token overlap.
+        """
+        # TOKENIZE both queries into comparable units
+        # Extracts: words, numbers, structured identifiers (with dots/dashes). e.g,  "500cc" → ["500cc"]
         original_tokens = self._rewrite_tokens(original_query)
         rewritten_tokens = self._rewrite_tokens(rewritten_query)
-        if not rewritten_tokens: return False
+
+        if not rewritten_tokens:
+            return False
+
+        # GENERAL intent: trust the LLM rewriter — only reject empty rewrites.
+        # Short pronouns/follow-ups ("what about it?") expand naturally to low-overlap results.
+        if intent == WorkflowIntent.GENERAL:
+            return True
+
+        """
+        EXTRACT structured tokens from original
+        "Structured" = contains digits OR has dots/dashes (codes, specs, years, versions)
+        Examples: "500cc", "2024", "hs-code", "v1.0", "model-x3"
+        These are critical identifiers that MUST be preserved
+        """
         structured_tokens = {token for token in original_tokens if any(char.isdigit() for char in token) or "." in token or "-" in token}
-        if structured_tokens and not structured_tokens.issubset(set(rewritten_tokens)): return False
+        # check if the rewritten query contains all essential information
+        if structured_tokens and not structured_tokens.issubset(set(rewritten_tokens)):
+            return False
+        # For calculation: how much of the original vocabulary appears in the rewrite?
         overlap = len(set(original_tokens) & set(rewritten_tokens)) / max(len(set(original_tokens)), 1)
         return overlap >= 0.5
-
+    
+    # Tokenizes text into a list of word/number/identifier tokens.(for sematic purpose)
     def _rewrite_tokens(self, text: str) -> list[str]:
         return re.findall(r"[a-z0-9][a-z0-9\.-]*", text.lower())
 
@@ -751,6 +903,7 @@ class ServiceCoordinator:
         normalized = re.sub(r"\s+", " ", normalized)
         return normalized
 
+    # Determines which query text to send to downstream retrieval/calculation services.
     def _get_service_query(self, context: WorkflowContext) -> str:
         service_query = context.metadata.get("service_query") if context.metadata else None
         return service_query if service_query else (context.cleaned_input or context.question)
@@ -760,25 +913,35 @@ class ServiceCoordinator:
         if intent == WorkflowIntent.CALCULATION: await self._handle_calculation(context)
         elif intent == WorkflowIntent.TRADE_QUERY: await self._handle_trade_query(context)
         elif intent == WorkflowIntent.HS_CODE_LOOKUP: await self._handle_hs_code_lookup(context)
-        elif intent == WorkflowIntent.DEFINITION or intent == WorkflowIntent.POLICY_QUERY: await self._handle_definition(context)
+        elif intent == WorkflowIntent.GENERAL: await self._handle_default(context)
         else: await self._handle_default(context)
     
     async def _handle_calculation(self, context: WorkflowContext):
+        # Log the routing decision for debugging/tracing
         logger.info(f"[{context.request_id}] Routing to calculator service")
         try:
+            # Guard: calculator service must be initialized
+            # If not, fail fast with a clear error
             if not self.calculator_client:
                 context.add_error("Calculator service not configured")
                 context.status = WorkflowStatus.FAILED
                 return
                 
             cache = get_cache_service()
+            # Determine which query string to use (priority: metadata override > cleaned > original)
             service_query = self._get_service_query(context)
+            # Cache key includes intent type to avoid collision with other intents
             cached_result = cache.get_cached_response(service_query, intent="calculation")
             if cached_result:
                 context.set_result("calculation", cached_result)
                 context.status = WorkflowStatus.COMPLETED
                 return
-            
+            """
+            Miss: compute timeout as the minimum of:
+            - Intent-specific timeout (calculation queries might be slower than others)
+            - Service-specific timeout (calculator service has its own SLA - Service Level Agreement)
+            Take the stricter (smaller) timeout to prevent hanging
+            """
             timeout_sec = min(self.timeout_config.get_intent_timeout(context.intent), self.timeout_config.get_service_timeout("calculator"))
             
             try:
@@ -820,38 +983,12 @@ class ServiceCoordinator:
         except Exception as e:
             context.add_error(f"Trade data service error: {str(e)}")
             context.status = WorkflowStatus.FAILED
-    
-    def _enrich_product_query(self, original_query: str, retrieved_documents: List[Dict[str, Any]]) -> tuple[str, Dict[str, Any]]:
-        enrichment_data = {"keywords": set(), "descriptions": set(), "materials": set(), "specifications": set(), "source_count": 0}
-        if not retrieved_documents: return original_query, {"keywords": [], "source_count": 0}
-        
-        for doc in retrieved_documents[:5]:
-            metadata = doc.get("metadata", {}) if isinstance(doc.get("metadata"), dict) else {}
-            content = doc.get("content", "")
-            description = metadata.get("description", "")
-            text_to_process = f"{description} {content}".lower()
-            words = text_to_process.split()
-            for word in words:
-                clean_word = word.strip('.,;:!?()[]{}')
-                if len(clean_word) > 2 and clean_word not in {"the", "for", "and", "with", "from", "that", "this", "are", "hs", "code"} and not clean_word.isdigit():
-                    enrichment_data["keywords"].add(clean_word)
-            if metadata.get("material_type"): enrichment_data["materials"].add(metadata.get("material_type"))
-            if metadata.get("specification"): enrichment_data["specifications"].add(metadata.get("specification"))
-            if description: enrichment_data["descriptions"].add(description)
-            enrichment_data["source_count"] += 1
-        
-        enriched_parts = [original_query]
-        top_keywords = sorted(list(enrichment_data["keywords"]))[:5]
-        if top_keywords: enriched_parts.append(f"(similar to: {', '.join(top_keywords)})")
-        if enrichment_data["materials"]:
-            materials = sorted(list(enrichment_data["materials"]))[:2]
-            enriched_parts.append(f"(materials: {', '.join(materials)})")
-        
-        return " ".join(enriched_parts), {"keywords": top_keywords, "materials": list(enrichment_data["materials"])[:2], "source_count": enrichment_data["source_count"], "enrichment_applied": len(top_keywords) > 0 or len(enrichment_data["materials"]) > 0}
-    
+
     async def _handle_hs_code_lookup(self, context: WorkflowContext):
         """
-        Routes directly to hs_code_lookup with generate_answer=True.
+        Routes directly to the retrieval service for HS code lookup.
+        The retrieval service handles candidate ranking and generates a final_answer.
+        The orchestrator simply passes that final_answer through to the response.
         """
         logger.info(f"[{context.request_id}] Routing to retrieval service for HS Lookup")
         try:
@@ -859,34 +996,42 @@ class ServiceCoordinator:
                 context.add_error("Retrieval service not configured")
                 context.status = WorkflowStatus.FAILED
                 return
-            
+
             service_query = self._get_service_query(context)
-            timeout_sec = min(self.timeout_config.get_intent_timeout(context.intent), self.timeout_config.get_service_timeout("retrieval"))
-            
+            timeout_sec = min(
+                self.timeout_config.get_intent_timeout(context.intent),
+                self.timeout_config.get_service_timeout("retrieval")
+            )
+
             cache = get_cache_service()
             cached_result = cache.get_cached_response(service_query, intent="hs_code_lookup")
             if cached_result:
                 context.set_result("retrieval", cached_result)
                 context.status = WorkflowStatus.COMPLETED
                 return
-            
+
             try:
-                # Force generate_answer=True to fetch the raw final answer directly
                 result = await asyncio.wait_for(
                     self.retrieval_client.hs_code_lookup(
-                        query=service_query, 
-                        top_k=5, 
-                        generate_answer=True, 
-                        hs_mode="best", 
+                        query=service_query,
+                        top_k=5,
+                        generate_answer=True,
+                        hs_mode="best",
                         session_id=context.session_id
-                    ), 
+                    ),
                     timeout=timeout_sec
                 )
-                
-                cache.cache_response(question=service_query, response=result, intent="hs_code_lookup", ttl_seconds=24*3600, source="retrieval")
+
+                cache.cache_response(
+                    question=service_query,
+                    response=result,
+                    intent="hs_code_lookup",
+                    ttl_seconds=24 * 3600,
+                    source="retrieval"
+                )
                 context.set_result("retrieval", result)
                 context.status = WorkflowStatus.COMPLETED
-                
+
             except asyncio.TimeoutError:
                 context.add_error(f"HS code lookup service timed out after {timeout_sec}s")
                 context.status = WorkflowStatus.FAILED
@@ -895,7 +1040,6 @@ class ServiceCoordinator:
             context.status = WorkflowStatus.FAILED
     
     async def _handle_definition(self, context: WorkflowContext):
-        endpoint_name = "policy-inquiry" if context.intent == WorkflowIntent.POLICY_QUERY else "definition"
         try:
             if not self.retrieval_client:
                 context.add_error("Retrieval service not configured")
@@ -904,7 +1048,7 @@ class ServiceCoordinator:
             
             timeout_sec = min(self.timeout_config.get_intent_timeout(context.intent), self.timeout_config.get_service_timeout("retrieval"))
             cache = get_cache_service()
-            intent_key = str(context.intent.value) if context.intent else "definition"
+            intent_key = "general"
             service_query = self._get_service_query(context)
             cached_result = cache.get_cached_response(service_query, intent=intent_key)
             if cached_result:
@@ -913,14 +1057,9 @@ class ServiceCoordinator:
                 return
             
             try:
-                if context.intent == WorkflowIntent.POLICY_QUERY:
-                    result = await asyncio.wait_for(
-                        self.retrieval_client.policy_inquiry(query=service_query, top_k=5, generate_answer=True, session_id=context.session_id), timeout=timeout_sec
-                    )
-                else:
-                    result = await asyncio.wait_for(
-                        self.retrieval_client.definition(query=service_query, top_k=5, generate_answer=True, session_id=context.session_id), timeout=timeout_sec
-                    )
+                result = await asyncio.wait_for(
+                    self.retrieval_client.general(query=service_query, top_k=5, generate_answer=True, session_id=context.session_id), timeout=timeout_sec
+                )
                 cache.cache_response(question=service_query, response=result, intent=intent_key, ttl_seconds=48*3600, source="retrieval")
                 context.set_result("retrieval", result)
                 context.status = WorkflowStatus.COMPLETED
@@ -933,11 +1072,11 @@ class ServiceCoordinator:
     
     async def _handle_default(self, context: WorkflowContext):
         try:
-            if not self.retrieval_client:
-                context.add_error("Retrieval service not configured")
+            if not self.general_client:
+                context.add_error("General service not configured")
                 context.status = WorkflowStatus.FAILED
                 return
-            timeout_sec = min(self.timeout_config.get_intent_timeout(context.intent), self.timeout_config.get_service_timeout("retrieval"))
+            timeout_sec = min(self.timeout_config.get_intent_timeout(context.intent), self.timeout_config.get_service_timeout("general"))
             cache = get_cache_service()
             service_query = self._get_service_query(context)
             cached_result = cache.get_cached_response(service_query, intent="general")
@@ -947,16 +1086,16 @@ class ServiceCoordinator:
                 return
             try:
                 result = await asyncio.wait_for(
-                    self.retrieval_client.general(query=service_query, top_k=5, generate_answer=True, session_id=context.session_id), timeout=timeout_sec
+                    self.general_client.general(query=service_query, top_k=5, generate_answer=True, session_id=context.session_id), timeout=timeout_sec
                 )
-                cache.cache_response(question=service_query, response=result, intent="general", ttl_seconds=48*3600, source="retrieval")
+                cache.cache_response(question=service_query, response=result, intent="general", ttl_seconds=48*3600, source="general")
                 context.set_result("retrieval", result)
                 context.status = WorkflowStatus.COMPLETED
             except asyncio.TimeoutError:
-                context.add_error(f"Retrieval service timed out after {timeout_sec}s")
+                context.add_error(f"General service timed out after {timeout_sec}s")
                 context.status = WorkflowStatus.FAILED
         except Exception as e:
-            context.add_error(f"Retrieval service error: {str(e)}")
+            context.add_error(f"General service error: {str(e)}")
             context.status = WorkflowStatus.FAILED
     
     def _build_ask_back_response(self, context: WorkflowContext, question: str, clarification_question: str, candidate_intents: list, trigger_reason: str = "") -> Dict[str, Any]:
@@ -1015,10 +1154,31 @@ class ServiceCoordinator:
                 response["citations"] = context.calculation_result.get("references", [])
         
         if context.trade_query_result:
-            response["answer"] = context.trade_query_result.get("answer", context.trade_query_result.get("final_answer", "No response generated by trade service."))
-            if "table" in context.trade_query_result: response["table"] = context.trade_query_result["table"]
-            if "visualization" in context.trade_query_result: response["visualization"] = context.trade_query_result["visualization"]
-            if "citations" in context.trade_query_result: response["citations"] = context.trade_query_result["citations"]
+            # Trade service response keys: message, suggestion, summary, table, visualization
+            # Map "message" → "answer" (primary display text)
+            response["answer"] = (
+                context.trade_query_result.get("message") or
+                context.trade_query_result.get("answer") or
+                context.trade_query_result.get("final_answer") or
+                "No response generated by trade service."
+            )
+            # Forward table and visualization unchanged
+            if "table" in context.trade_query_result:
+                response["table"] = context.trade_query_result["table"]
+            if "visualization" in context.trade_query_result:
+                response["visualization"] = context.trade_query_result["visualization"]
+            # Forward suggestions (trade service key: "suggestion")
+            if "suggestion" in context.trade_query_result:
+                response["suggestions"] = context.trade_query_result["suggestion"]
+            elif "suggestions" in context.trade_query_result:
+                response["suggestions"] = context.trade_query_result["suggestions"]
+            # Forward summary metrics (trade service key: "summary")
+            if "summary" in context.trade_query_result:
+                response["summary_metrics"] = context.trade_query_result["summary"]
+            # Forward citations if present
+            if "citations" in context.trade_query_result:
+                response["citations"] = context.trade_query_result["citations"]
+            # Merge any metadata from trade service response
             if "metadata" in context.trade_query_result and isinstance(context.trade_query_result["metadata"], dict):
                 response["metadata"].update(context.trade_query_result["metadata"])
         

@@ -342,14 +342,75 @@ class RuleBasedValidatorProvider:
             if w in t_lower:
                 return ValidationResult.out_of_scope(f"out_of_scope: {w}")
 
+        # 3.5 Conversational question fast-path
+        # Any WH-question or modal question is a valid general/definition/policy query.
+        # Catch these before the keyword loop so "What is ATIGA?", "How does RCEP work?",
+        # "Can you explain Form D?" etc. never reach AMBIGUOUS.
+        _question_prefixes = (
+            "what is ", "what are ", "what was ", "what were ",
+            "what does ", "what do ", "what's ", "what's ",
+            "how is ", "how are ", "how does ", "how do ",
+            "how to ", "how can ", "how would ", "how should ",
+            "why is ", "why are ", "why does ", "why do ",
+            "who is ", "who are ", "who does ", "who can ",
+            "where is ", "where are ", "where do ", "where can ",
+            "when is ", "when are ", "when does ", "when do ",
+            "which is ", "which are ", "which does ",
+            "can you ", "could you ", "do you ", "does ",
+            "tell me ", "explain ", "describe ",
+            "is there ", "are there ", "is it ", "are they ",
+        )
+        if any(t_lower.startswith(p) or (" " + p) in t_lower for p in _question_prefixes):
+            return ValidationResult.in_scope("general_question_pattern")
+
         # 4. Scope Keywords match
         scope_keywords = {
-            "hs_code_lookup": ["hs code", "hs", "classify", "classification", "tariff code", "commodity code", "product code"],
-            "calculation": ["calculate", "compute", "duty", "tax", "cif", "fob", "vat"],
-            "trade_query": ["import", "export", "trade", "procedure", "process", "requirement", "shipping"],
-            "policy_query": ["regulation", "rule", "fta", "agreement", "compliance", "policy", "law", "decree"],
-            "definition": ["define", "definition", "meaning", "explain", "describe"],
-            "customs_general": ["customs", "declaration", "invoice", "packing list", "certificate", "cambodia"]
+            "hs_code_lookup": [
+                "hs code", "hs", "classify", "classification",
+                "tariff code", "commodity code", "product code", "ahtn",
+                "harmonized",
+            ],
+            "calculation": [
+                "calculate", "compute", "duty", "tax", "cif", "fob", "vat",
+                "tariff rate", "duty rate", "preferential rate",
+            ],
+            "trade_query": [
+                "import", "export", "trade", "procedure", "process",
+                "requirement", "shipping", "shipment", "cargo", "freight",
+                "logistics", "clearance", "border",
+            ],
+            # All definition / policy / FTA / procedural / customs queries → general service
+            "general": [
+                # Definition markers
+                "define", "definition", "meaning", "explain", "describe",
+                # Natural WH-question starters
+                "what is", "what are", "what was", "what were",
+                "what does", "what do", "what's",
+                "how is", "how are", "how does", "how do",
+                "how to", "how can",
+                "why is", "why are", "why does",
+                "who is", "who are",
+                "tell me about", "can you explain", "can you tell",
+                "what exactly", "what kind", "what type",
+                # Policy / regulatory terms
+                "regulation", "rule", "fta", "agreement", "compliance",
+                "policy", "law", "decree", "prakas", "circular", "guideline",
+                "permission", "permit", "license", "licence",
+                # FTA / trade agreement acronyms
+                "atiga", "rcep", "acfta", "afta", "cptpp", "evfta",
+                "aifta", "akfta", "aanzfta", "asean",
+                "form d", "form e", "form ak", "form ai", "form aj",
+                "certificate of origin", "rules of origin",
+                # GDCE-specific
+                "gdce", "general department of customs",
+                "customs duty", "customs excise",
+                "qip", "sez", "special economic zone",
+                "preferential", "exemption", "waiver",
+                # Customs / documentation (merged from customs_general)
+                "customs", "declaration", "invoice", "packing list",
+                "certificate", "cambodia", "ministry of commerce",
+                "camcontrol", "cdc", "moc", "mef",
+            ],
         }
         matched_keywords = []
         for category, keywords in scope_keywords.items():

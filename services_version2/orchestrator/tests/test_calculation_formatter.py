@@ -73,11 +73,11 @@ async def test_formatter_intent_mapping():
         context={}
     )
 
-    # Test policy_query maps to POLICY
+    # Test policy_query maps to GENERAL
     await service.format_response("RAW_ANSWER", "question text", "policy_query")
     service._provider.format_response.assert_called_with(
         response_text="RAW_ANSWER",
-        intent=FormatterIntent.POLICY,
+        intent=FormatterIntent.GENERAL,
         original_question="question text",
         context={}
     )

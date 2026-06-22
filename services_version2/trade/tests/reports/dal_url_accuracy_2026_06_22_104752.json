@@ -1,0 +1,57 @@
+{
+  "timestamp": "2026_06_22_104752",
+  "overall_accuracy": 83.9,
+  "total_cases": 124,
+  "passed_cases": 104,
+  "subintent_stats": {
+    "summary": {
+      "total": 18,
+      "PASS": 13,
+      "PARTIAL": 3,
+      "FAIL": 2,
+      "ERROR": 0
+    },
+    "ranking": {
+      "total": 18,
+      "PASS": 17,
+      "PARTIAL": 1,
+      "FAIL": 0,
+      "ERROR": 0
+    },
+    "trend": {
+      "total": 18,
+      "PASS": 13,
+      "PARTIAL": 1,
+      "FAIL": 4,
+      "ERROR": 0
+    },
+    "comparison": {
+      "total": 18,
+      "PASS": 17,
+      "PARTIAL": 0,
+      "FAIL": 0,
+      "ERROR": 1
+    },
+    "breakdown": {
+      "total": 17,
+      "PASS": 16,
+      "PARTIAL": 1,
+      "FAIL": 0,
+      "ERROR": 0
+    },
+    "growth": {
+      "total": 17,
+      "PASS": 13,
+      "PARTIAL": 1,
+      "FAIL": 2,
+      "ERROR": 1
+    },
+    "trade_balance": {
+      "total": 18,
+      "PASS": 15,
+      "PARTIAL": 2,
+      "FAIL": 1,
+      "ERROR": 0
+    }
+  }
+}

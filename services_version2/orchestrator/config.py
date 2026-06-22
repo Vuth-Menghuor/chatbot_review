@@ -128,6 +128,10 @@ class OrchestratorConfig:
             "TRADE_DATA_SERVICE_URL",
             "http://127.0.0.1:8004"
         )
+        self.general_service_url = os.getenv(
+            "GENERAL_SERVICE_URL",
+            "http://127.0.0.1:8005"
+        )
         
         # Service Configuration
         self.qdrant_host = os.getenv("QDRANT_HOST", "localhost")
@@ -202,6 +206,10 @@ class OrchestratorConfig:
     def get_trade_data_url(self) -> str:
         """Get the trade data service URL."""
         return self.trade_data_service_url
+
+    def get_general_url(self) -> str:
+        """Get the general service URL."""
+        return self.general_service_url
     
     def validate(self) -> bool:
         """
@@ -226,6 +234,7 @@ class OrchestratorConfig:
             "host": self.host,
             "port": self.port,
             "retrieval_service_url": self.retrieval_service_url,
+            "general_service_url": self.general_service_url,
             "calculator_service_url": self.calculator_service_url,
             "trade_data_service_url": self.trade_data_service_url,
             "qdrant_host": self.qdrant_host,

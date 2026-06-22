@@ -10,7 +10,7 @@ class LLMServiceConfig:
 
     intent_provider: str = "ollama"
     currency_provider: str = "ollama"
-    rewrite_provider: str = "ollama"
+    rewrite_provider: str = "gemini"
     summarization_provider: str = "gemini"
     hs_selection_provider: str = "gemini"
 

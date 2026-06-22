@@ -201,6 +201,28 @@ def mock_retrieval_client():
 
 
 @pytest.fixture
+def mock_general_client():
+    """Provide mock general client."""
+    client = AsyncMock(spec=RetrievalServiceClient)
+    base_response = {
+        "documents": [
+            {
+                "doc_id": "test_gen_1",
+                "title": "Test General Document",
+                "content": "Test general content",
+                "score": 0.95
+            }
+        ],
+        "status": "success",
+        "answer_source": "mock",
+        "final_answer": "Mocked general answer"
+    }
+    client.general = AsyncMock(return_value=base_response)
+    client.health = AsyncMock(return_value={"status": "healthy"})
+    return client
+
+
+@pytest.fixture
 def mock_calculator_client():
     """Provide mock calculator client."""
     client = AsyncMock(spec=CalculatorServiceClient)
@@ -255,7 +277,7 @@ def mock_trade_data_client():
 
 
 class DummyLLMService:
-    def __init__(self, intent="definition", selection=None):
+    def __init__(self, intent="general", selection=None):
         self.intent = intent
         self.selection = selection or {
             "selected_code": None,
@@ -288,13 +310,14 @@ class DummyLLMService:
 
 
 @pytest.fixture
-def coordinator(mock_retrieval_client, mock_calculator_client, mock_trade_data_client):
+def coordinator(mock_retrieval_client, mock_general_client, mock_calculator_client, mock_trade_data_client):
     """Provide service coordinator with mocked clients."""
     policy_engine = get_policy_engine()
     formatter_mock = MagicMock()
     formatter_mock.is_available = MagicMock(return_value=False)
     return ServiceCoordinator(
         retrieval_client=mock_retrieval_client,
+        general_client=mock_general_client,
         calculator_client=mock_calculator_client,
         trade_data_client=mock_trade_data_client,
         policy_engine=policy_engine,

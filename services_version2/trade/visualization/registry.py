@@ -34,9 +34,9 @@ VISUALIZATION_REGISTRY: Dict[str, Dict[str, Any]] = {
     "growth": {
         "type": "bar",
         "label_col": "PARTNER_COUNTRY",
-        "value_col": "VALUE_USD",
+        "value_col": "growth_rate_pct",
         "title": "Trade Growth",
-        "dataset_label": "Trade Value (USD)",
+        "dataset_label": "Growth Rate (%)",
     },
     "trade_balance": {
         "type": "bar",

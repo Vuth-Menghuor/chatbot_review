@@ -33,8 +33,6 @@ class WorkflowIntentType(str, Enum):
     """Supported workflow intents."""
     CALCULATION = "calculation"
     TRADE_QUERY = "trade_query"
-    DEFINITION = "definition"
-    POLICY_QUERY = "policy_query"
     HS_CODE_LOOKUP = "hs_code_lookup"
     GENERAL = "general"
 

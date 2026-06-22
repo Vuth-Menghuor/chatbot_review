@@ -3,8 +3,8 @@
 import json
 import pytest
 
-from services_version2.trade_query_version2.core.exceptions import ValidationError
-from services_version2.trade_query_version2.core.semantic_registry import (
+from services_version2.trade.core.exceptions import ValidationError
+from services_version2.trade.core.semantic_registry import (
     STRUCTURE_REGISTRY,
     normalize_intent,
     find_dimension_by_synonym,
@@ -12,21 +12,21 @@ from services_version2.trade_query_version2.core.semantic_registry import (
     get_parent_dimension,
     get_children_dimensions,
 )
-from services_version2.trade_query_version2.core.enrichment import (
+from services_version2.trade.core.enrichment import (
     resolve_dimension_value,
     enrich_query_plan,
     orchestrate_query_plan,
     convert_legacy_params,
 )
-from services_version2.trade_query_version2.handlers.scopes import apply_intent_scoping
-from services_version2.trade_query_version2.core.validation import validate_query_plan, validate_extracted_parameters
-from services_version2.trade_query_version2.core.query_plan import (
+from services_version2.trade.handlers.scopes import apply_intent_scoping
+from services_version2.trade.core.validation import validate_query_plan, validate_extracted_parameters
+from services_version2.trade.core.query_plan import (
     RawQueryPlan,
     EnrichedQueryPlan,
     ScopedQueryPlan,
     FinalQueryPlan,
 )
-from services_version2.trade_query_version2.dal.dal_request_builder import DALRequestBuilder
+from services_version2.trade.dal.dal_request_builder import DALRequestBuilder
 
 
 def test_normalize_intent():

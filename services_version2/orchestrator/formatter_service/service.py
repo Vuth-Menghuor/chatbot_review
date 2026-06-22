@@ -106,9 +106,10 @@ class OrchestratorFormatterService:
             'calculation': FormatterIntent.CALCULATION,
             'retrieval': FormatterIntent.RETRIEVAL,
             'trade_query': FormatterIntent.TRADE_QUERY,
-            'policy': FormatterIntent.POLICY,
-            'policy_query': FormatterIntent.POLICY,
-            'definition': FormatterIntent.DEFINITION,
+            'policy': FormatterIntent.GENERAL,
+            'policy_query': FormatterIntent.GENERAL,
+            'definition': FormatterIntent.GENERAL,
+            'general': FormatterIntent.GENERAL,
             'hs_code_lookup': FormatterIntent.HS_CODE_LOOKUP,
             'hs_code': FormatterIntent.HS_CODE_LOOKUP,
         }

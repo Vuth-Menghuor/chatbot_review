@@ -26,9 +26,7 @@ class OllamaProvider(BaseLLMProvider):
         self.intent_detector = get_intent_service(intent_config)
 
         rewriter_config = RewriterServiceConfig(
-            ollama_host=self.host,
-            ollama_model=model,
-            ollama_timeout=timeout,
+            rewrite_provider="gemini",
         )
         self._rewriter_service = get_rewriter_service(rewriter_config)
 

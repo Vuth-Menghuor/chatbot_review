@@ -6,7 +6,7 @@ Enforces clear state transitions and type safety across the 5 pipeline stages.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 
 @dataclass(frozen=True)
@@ -18,11 +18,12 @@ class RawQueryPlan:
     raw_partner_countries: Optional[List[str]] = None
     raw_trade_direction: Optional[str] = None
     raw_product: Optional[str] = None
-    raw_mode_of_transport: Optional[str] = None
+    raw_mode_of_transport: Optional[Union[str, List[str]]] = None
     raw_year: Optional[int] = None
     raw_years: Optional[List[int]] = None
     raw_month: Optional[int] = None
     raw_quarter: Optional[str] = None
+    raw_semester: Optional[int] = None
     raw_start_period: Optional[str] = None
     raw_end_period: Optional[str] = None
     raw_frequency: Optional[str] = None
@@ -34,6 +35,7 @@ class RawQueryPlan:
     raw_limit: Optional[int] = None
     raw_offset: Optional[int] = None
     version: str = "trade_volume_1.0"
+    question: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -48,11 +50,12 @@ class EnrichedQueryPlan:
     hs_chapter: Optional[str] = None
     sitc_section: Optional[str] = None
     sitc_division: Optional[str] = None
-    mode_of_transport: Optional[str] = None
+    mode_of_transport: Optional[Union[str, List[str]]] = None
     year: Optional[int] = None
     years: Optional[List[int]] = None
     month: Optional[int] = None
     quarter: Optional[str] = None
+    semester: Optional[int] = None
     start_period: Optional[str] = None
     end_period: Optional[str] = None
     frequency: Optional[str] = None
@@ -65,6 +68,7 @@ class EnrichedQueryPlan:
     offset: Optional[int] = None
     version: str = "trade_volume_1.0"
     hs_vs_sitc_suggestion: Optional[str] = None  # "HS" or "SITC"
+    question: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -80,11 +84,12 @@ class ScopedQueryPlan:
     hs_chapter: Optional[str]
     sitc_section: Optional[str]
     sitc_division: Optional[str]
-    mode_of_transport: Optional[str]
+    mode_of_transport: Optional[Union[str, List[str]]]
     year: Optional[int]
     years: Optional[List[int]]
     month: Optional[int]
     quarter: Optional[str]
+    semester: Optional[int]
     start_period: Optional[str]
     end_period: Optional[str]
     frequency: Optional[str]
@@ -95,6 +100,7 @@ class ScopedQueryPlan:
     sort_metric: Optional[str]
     limit: int
     offset: int
+    question: Optional[str] = None
 
 
 @dataclass(frozen=True)

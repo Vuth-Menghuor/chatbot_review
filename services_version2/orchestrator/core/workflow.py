@@ -30,11 +30,28 @@ class WorkflowIntent(str, Enum):
     """Supported workflow intents."""
     CALCULATION = "calculation"
     TRADE_QUERY = "trade_query"
-    DEFINITION = "definition"
-    POLICY_QUERY = "policy_query"
+    GENERAL = "general"
     HS_CODE_LOOKUP = "hs_code_lookup"
     UNCLASSIFIED = "unclassified"
     SMALL_TALK = "small_talk"
+
+    @classmethod
+    def _missing_(cls, value):
+        if isinstance(value, str):
+            val_lower = value.lower().strip()
+            # Aliases → GENERAL (definition, policy variants)
+            if val_lower in {"definition", "policy", "policy_query", "general_query"}:
+                return cls.GENERAL
+            # Aliases → UNCLASSIFIED (small_talk falls back here so coordinator handles it)
+            if val_lower in {"small_talk", "smalltalk", "chit_chat"}:
+                return cls.UNCLASSIFIED
+            # Aliases → HS_CODE_LOOKUP
+            if val_lower in {"hs_code", "hs", "hs_lookup", "commodity"}:
+                return cls.HS_CODE_LOOKUP
+            # Aliases → TRADE_QUERY
+            if val_lower in {"trade", "trade_data", "trade_statistics"}:
+                return cls.TRADE_QUERY
+        return super()._missing_(value)
 
 
 class WorkflowStatus(str, Enum):
@@ -261,8 +278,7 @@ class WorkflowExecutor:
             WorkflowIntent.CALCULATION:   ["calculate", "compute", "how much", "duty", "tax"],
             WorkflowIntent.HS_CODE_LOOKUP: ["hs code", "classify", "code for", "tariff code"],
             WorkflowIntent.TRADE_QUERY:   ["trade", "export", "import", "shipping"],
-            WorkflowIntent.POLICY_QUERY:  ["procedure", "regulation", "requirement", "compliance"],
-            WorkflowIntent.DEFINITION:    ["what is", "define", "meaning", "explain"],
+            WorkflowIntent.GENERAL:       ["procedure", "regulation", "requirement", "compliance", "what is", "define", "meaning", "explain"],
         }
         hits = sum(1 for kw in kw_maps.get(intent, []) if kw in q_lower)
         confidence = min(0.85, 0.55 + hits * 0.06)
@@ -350,9 +366,9 @@ class WorkflowExecutor:
             "trade_query":    ["trade data", "trade statistics", "trade volume", "trade flow",
                                "bilateral trade", "export data", "import data",
                                "export statistics", "import statistics"],
-            "policy_query":   ["procedure", "requirement", "how to", "how do i", "steps",
-                               "what do i need", "documents needed", "regulations for", "compliance"],
-            "definition":     ["what is", "define", "meaning of", "explain", "describe", "what does"],
+            "general":        ["procedure", "requirement", "how to", "how do i", "steps",
+                               "what do i need", "documents needed", "regulations for", "compliance",
+                               "what is", "define", "meaning of", "explain", "describe", "what does"],
         }
         scores: Dict[str, float] = {}
         for intent, keywords in kw_maps.items():
@@ -575,24 +591,18 @@ class WorkflowExecutor:
     def _keyword_based_intent_detection(self, question: str) -> WorkflowIntent:
         """
         Fallback keyword-based intent detection with enhanced safety gates.
-        Ported from gemini_orchestrator_e2e.py test harness.
-        
+
         Priority order:
-        1. Explicit HS code or numeric code patterns
-        2. Fee/service questions (route to POLICY_QUERY, not HS)
-        3. Explicit HS markers
-        4. Policy/compliance keywords
-        5. Definition/explanation keywords
-        6. Calculation keywords
-        7. Trade keywords
-        8. Product phrase heuristic
-        9. Fallback to policy engine
-        
-        Args:
-            question: User question
-            
-        Returns:
-            Detected intent
+        1. Combined product/HS/CIF + calculation signal → CALCULATION
+        2. Explicit HS code numeric pattern → HS_CODE_LOOKUP
+        3. Service/fee question safety gate → GENERAL
+        4. Explicit HS classification markers → HS_CODE_LOOKUP
+        5. Policy/compliance/procedural keywords → GENERAL
+        6. Trade statistics keywords → TRADE_QUERY
+        7. Definition/explanation keywords → GENERAL
+        8. Calculation keywords → CALCULATION
+        9. Product phrase heuristic → HS_CODE_LOOKUP
+        10. Policy engine fallback
         """
         q_lower = question.lower()
 
@@ -604,7 +614,7 @@ class WorkflowExecutor:
             "what.*tax", "tax for", "duty for", "dues", "taxes", "import tax",
             "how much.*import", "how much.*duty", "how much.*tax",
             "import.*cost", "import.*tax", "import.*duty", "tariff rate",
-            "export", "exporting", "export tax",
+            "export tax",
             "qip", "qualified investment",
             "sez", "special economic zone",
             "diplomatic", "embassy", "consulate",
@@ -612,8 +622,6 @@ class WorkflowExecutor:
             "university", "school", "educational", "education",
             "hospital", "medical", "health", "donated",
             "passenger", "luggage", "personal effects",
-            "fta", "acfta", "afta", "atiga", "rcep", "preferential",
-            "dq", "deal", "quote agreement",
             "cif", "declared value", "dv ",
         ]
         product_markers = [
@@ -653,18 +661,17 @@ class WorkflowExecutor:
             "fee", "charge", "charges", "cost", "price", "how much"
         ]
         if any(m in q_lower for m in non_hs_service_markers):
-            # Only force POLICY_QUERY if there is no explicit calculation intent
             if not has_calc_marker:
-                logger.debug(f"Intent detection: POLICY_QUERY (service/fee question, safety gate)")
-                return WorkflowIntent.POLICY_QUERY
+                logger.debug(f"Intent detection: GENERAL (service/fee question, safety gate)")
+                return WorkflowIntent.GENERAL
             logger.debug(f"Intent detection: CALCULATION (fee marker overridden by calc signal)")
             return WorkflowIntent.CALCULATION
 
         # PRIORITY 3: Explicit HS classification markers
         # But first, check if they are asking to define "HS code" itself
         if any(pat in q_lower for pat in ["what is an hs code", "what is hs code", "what is hscode", "define hs code", "define hscode", "explain hs code", "explain hscode", "what are hs codes"]):
-            logger.debug(f"Intent detection: DEFINITION (defining HS code itself)")
-            return WorkflowIntent.DEFINITION
+            logger.debug(f"Intent detection: GENERAL (defining HS code itself)")
+            return WorkflowIntent.GENERAL
 
         hs_markers = [
             "hs code", "hs-code", "hscode",
@@ -691,16 +698,16 @@ class WorkflowExecutor:
             "process for",
         ]
         if any(phrase in q_lower for phrase in policy_composite_phrases):
-            logger.debug(f"Intent detection: POLICY_QUERY (policy composite phrase)")
-            return WorkflowIntent.POLICY_QUERY
+            logger.debug(f"Intent detection: GENERAL (policy composite phrase)")
+            return WorkflowIntent.GENERAL
 
         policy_keywords = [
             "requirements", "requirement", "procedure", "regulation", "policy",
             "compliance", "permit", "rules of origin"
         ]
         if any(kw in q_lower for kw in policy_keywords):
-            logger.debug(f"Intent detection: POLICY_QUERY (policy keyword)")
-            return WorkflowIntent.POLICY_QUERY
+            logger.debug(f"Intent detection: GENERAL (policy keyword)")
+            return WorkflowIntent.GENERAL
 
         # PRIORITY 4.5: Trade query keywords (moved before Definition/Calculation to handle overlaps like "what is trade data")
         trade_keywords = [
@@ -726,8 +733,8 @@ class WorkflowExecutor:
             if has_calc_marker:
                 logger.debug(f"Intent detection: CALCULATION (definition marker overridden by calc signal)")
                 return WorkflowIntent.CALCULATION
-            logger.debug(f"Intent detection: DEFINITION (definition keyword)")
-            return WorkflowIntent.DEFINITION
+            logger.debug(f"Intent detection: GENERAL (definition keyword)")
+            return WorkflowIntent.GENERAL
 
         # PRIORITY 6: Calculation keywords (SECONDARY to HS)
         calculation_keywords = [
@@ -741,7 +748,7 @@ class WorkflowExecutor:
             # Value / shipment phrases
             "cif value", "fob value", "declared value", "consignment value",
             "shipment value", "cif:", "fob:",
-            # Exemptions / preferential
+            # Exemptions / preferential rates
             "duty exemption", "tax exemption", "duty-free", "tax-free",
             "preferential rate", "fta rate", "atiga rate", "acfta rate", "rcep rate",
             # Special entity exemptions
@@ -752,8 +759,6 @@ class WorkflowExecutor:
             "university", "school", "educational",
             "hospital", "medical", "donated",
             "passenger", "luggage",
-            # FTA keywords (already appear in combined_calc_markers)
-            "fta", "acfta", "afta", "atiga", "rcep", "preferential",
         ]
         if any(kw in q_lower for kw in calculation_keywords):
             logger.debug(f"Intent detection: CALCULATION (calculation keyword)")
@@ -811,15 +816,14 @@ class WorkflowExecutor:
         Returns:
             List of service calls to execute in order
         """
-        sequences = {
+        intent_sequences = {
             WorkflowIntent.CALCULATION: ["calculator"],
             WorkflowIntent.TRADE_QUERY: ["trade_data"],
-            WorkflowIntent.DEFINITION: ["retrieval"],
-            WorkflowIntent.POLICY_QUERY: ["retrieval"],
+            WorkflowIntent.GENERAL: ["retrieval"],
             WorkflowIntent.UNCLASSIFIED: ["retrieval"],
         }
         
-        return sequences.get(intent, ["retrieval"])
+        return intent_sequences.get(intent, ["retrieval"])
     
     def should_fallback(self, context: WorkflowContext) -> bool:
         """
@@ -918,9 +922,8 @@ class FallbackPolicy:
     def __init__(self):
         """Initialize fallback policy."""
         self.fallback_map = {
-            WorkflowIntent.CALCULATION: WorkflowIntent.RETRIEVAL,
-            WorkflowIntent.TRADE_QUERY: WorkflowIntent.RETRIEVAL,
-            WorkflowIntent.POLICY_QUERY: WorkflowIntent.DEFINITION,
+            WorkflowIntent.CALCULATION: WorkflowIntent.GENERAL,
+            WorkflowIntent.TRADE_QUERY: WorkflowIntent.GENERAL,
         }
     
     def get_fallback_intent(self, intent: WorkflowIntent) -> Optional[WorkflowIntent]:

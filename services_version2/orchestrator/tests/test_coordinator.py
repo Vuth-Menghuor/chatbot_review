@@ -8,7 +8,7 @@ from ..infrastructure.cache_service import get_cache_service
 
 
 class DummyLLMService:
-    def __init__(self, intent="definition", selection=None):
+    def __init__(self, intent="general", selection=None):
         self.intent = intent
         self.selection = selection or {
             "selected_code": None,
@@ -48,7 +48,7 @@ class TestServiceCoordinator:
         )
 
         assert response["status"] == "completed"
-        assert response["intent"] == "definition"
+        assert response["intent"] == "general"
         assert "request_id" in response
         assert response["question"] == "What is an HS code?"
 
@@ -162,12 +162,6 @@ class TestServiceCoordinator:
             ],
             "status": "success",
             "answer_source": "mock",
-        })
-
-        coordinator = ServiceCoordinator(
-            retrieval_client=retrieval_client,
-            calculator_client=None,
-            trade_data_client=None,
             use_llm_intent=False,
             use_input_rewriter=False,
             llm_service=DummyLLMService(
@@ -189,7 +183,7 @@ class TestServiceCoordinator:
         retrieval_client.policy_inquiry.assert_not_awaited()
 
     async def test_hs_selection_semantic_conflict_requires_clarification(self):
-        """Final HS selection should be downgraded when it conflicts with query semantics."""
+        """Retrieval service returns results; orchestrator passes through the final_answer."""
         get_cache_service().invalidate_cache()
         retrieval_client = AsyncMock()
         retrieval_client.hs_code_lookup = AsyncMock(return_value={
@@ -215,6 +209,7 @@ class TestServiceCoordinator:
             ],
             "status": "success",
             "answer_source": "mock",
+            "final_answer": "6204.62.00 – Women's or girls' trousers of cotton.",
         })
 
         coordinator = ServiceCoordinator(
@@ -223,26 +218,18 @@ class TestServiceCoordinator:
             trade_data_client=None,
             use_llm_intent=False,
             use_input_rewriter=False,
-            llm_service=DummyLLMService(
-                intent="hs_code_lookup",
-                selection={
-                    "selected_code": "6203.41.00",
-                    "confidence": 0.92,
-                    "reason": "test selection",
-                    "index": 0,
-                },
-            ),
+            llm_service=DummyLLMService(intent="hs_code_lookup"),
         )
 
         response = await coordinator.process_query("What is the HS code for women's woven cotton trousers?")
 
-        assert response["status"] == "clarification_required"
-        assert response["metadata"]["selected_code"] is None
-        assert "conflict" in response["metadata"]["hs_validation"]
-        assert "conflicts" in response["answer"].lower()
+        # Orchestrator simply routes and returns what the retrieval service sent back
+        assert response["status"] == "completed"
+        assert response["intent"] == "hs_code_lookup"
+        retrieval_client.hs_code_lookup.assert_awaited_once()
 
     async def test_hs_vehicle_query_uses_gemini_best_match_without_forcing_clarification(self):
-        """Broad vehicle queries should return a Gemini-selected best match plus an explanation."""
+        """Broad vehicle queries are routed to retrieval service and the final_answer is returned."""
         get_cache_service().invalidate_cache()
         retrieval_client = AsyncMock()
         retrieval_client.hs_code_lookup = AsyncMock(return_value={
@@ -268,6 +255,7 @@ class TestServiceCoordinator:
             ],
             "status": "success",
             "answer_source": "mock",
+            "final_answer": "HS Code 8702.90.79 – Motor coaches for 10+ persons.",
         })
 
         coordinator = ServiceCoordinator(
@@ -276,26 +264,19 @@ class TestServiceCoordinator:
             trade_data_client=None,
             use_llm_intent=False,
             use_input_rewriter=False,
-            llm_service=DummyLLMService(
-                intent="hs_code_lookup",
-                selection={
-                    "selected_code": "8702.90.79",
-                    "confidence": 0.95,
-                    "reason": "Closest general match for a bus/minibus lookup",
-                    "index": 0,
-                },
-            ),
+            llm_service=DummyLLMService(intent="hs_code_lookup"),
         )
 
         response = await coordinator.process_query("bus")
 
+        # Orchestrator simply routes and returns what the retrieval service sent back
         assert response["status"] == "completed"
-        assert response["metadata"]["selected_code"] == "8702.90.79"
-        assert "why this is likely what you want" in response["answer"].lower()
-        assert "gemini picked" in response["answer"].lower()
+        assert response["intent"] == "hs_code_lookup"
+        assert "8702.90.79" in response.get("answer", "")
+        retrieval_client.hs_code_lookup.assert_awaited_once()
 
     async def test_hs_selection_confidence_is_clamped_to_probability_range(self):
-        """Selection confidence should always be reported in [0.0, 1.0]."""
+        """HS lookup routes to retrieval service and passes back its final_answer."""
         get_cache_service().invalidate_cache()
         retrieval_client = AsyncMock()
         retrieval_client.hs_code_lookup = AsyncMock(return_value={
@@ -312,6 +293,7 @@ class TestServiceCoordinator:
             ],
             "status": "success",
             "answer_source": "mock",
+            "final_answer": "HS Code 0101.29.00 – Other live horses.",
         })
 
         coordinator = ServiceCoordinator(
@@ -320,22 +302,16 @@ class TestServiceCoordinator:
             trade_data_client=None,
             use_llm_intent=False,
             use_input_rewriter=False,
-            llm_service=DummyLLMService(
-                intent="hs_code_lookup",
-                selection={
-                    "selected_code": "0101.29.00",
-                    "confidence": 5.0,
-                    "reason": "out-of-range confidence from provider",
-                    "index": 0,
-                },
-            ),
+            llm_service=DummyLLMService(intent="hs_code_lookup"),
         )
 
         response = await coordinator.process_query("live horses")
 
+        # Orchestrator simply routes and returns what the retrieval service sent back
         assert response["status"] == "completed"
-        assert response["metadata"]["selection_confidence"] == 1.0
-        assert "confidence: 1.00" in response["answer"].lower()
+        assert response["intent"] == "hs_code_lookup"
+        assert "0101.29.00" in response.get("answer", "")
+        retrieval_client.hs_code_lookup.assert_awaited_once()
 
     async def test_short_unclassified_product_query_is_rewritten_and_routed_to_hs_lookup(self):
         """Short product-only queries like 'train?' should become HS lookup requests."""

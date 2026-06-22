@@ -23,14 +23,39 @@ class SessionContext:
     product_category_km: Optional[str] = None
     currency: Optional[str] = None
     current_topic: Topic = Topic.UNKNOWN
+    
+    # Clarification/ask-back session state
+    pending_clarification: bool = False
+    clarification_intents: List[str] = field(default_factory=list)
+    pending_rewritten_query: Optional[str] = None
+    ask_back_count: int = 0
 
-    def add_turn(self, user: str, bot: str):
-        self.turns.append({"user": user, "bot": bot, "ts": datetime.utcnow()})
+    def add_turn(self, user: str = "", bot: str = "", user_input: str = "", bot_response: str = ""):
+        user_val = user or user_input
+        bot_val = bot or bot_response
+        self.turns.append({"user": user_val, "bot": bot_val, "ts": datetime.utcnow()})
         if len(self.turns) > self.max_turns:
             self.turns = self.turns[-self.max_turns :]
 
     def is_expired(self) -> bool:
         return datetime.utcnow() - self.created_at > timedelta(seconds=3600)
+
+    def is_awaiting_clarification(self) -> bool:
+        return self.pending_clarification
+
+    def set_pending_clarification(self, candidate_intents: List[str], rewritten_query: Optional[str]):
+        self.pending_clarification = True
+        self.clarification_intents = candidate_intents
+        self.pending_rewritten_query = rewritten_query
+        self.ask_back_count += 1
+
+    def resolve_clarification(self, resolved_intent: str) -> Optional[str]:
+        query = self.pending_rewritten_query
+        self.pending_clarification = False
+        self.clarification_intents = []
+        self.pending_rewritten_query = None
+        self.ask_back_count = 0
+        return query
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -68,17 +93,32 @@ class InputRewriter:
         await asyncio.sleep(0)
 
     async def rewrite_input(self, user_input: str, context: Optional[SessionContext] = None) -> Tuple[str, Dict[str, Any]]:
+        import re
         lower = user_input.lower()
-        # HS code specific rewrite
-        if "hs code" in lower and "0101.29.00" in lower:
-            return "What is the product description of HS code 0101.29.00?", {"rewritten": True}
+        metadata: Dict[str, Any] = {"is_first_turn": False, "confidence": 0.9, "rewritten": False}
+
+        # Rule: HS code description lookup check (needs to run first, even without context)
+        hs_match = re.search(r"\bhs\s*code\s*([\d\.]+)", lower)
+        if hs_match and "refer" in lower:
+            hs_code = hs_match.group(1)
+            rewritten = f"What is the product description of HS code {hs_code}?"
+            metadata["rewritten"] = True
+            return rewritten, metadata
 
         # First-turn behavior
         if context is None or len(context.turns) == 0:
             metadata = {"is_first_turn": True, "confidence": 1.0}
             return user_input, metadata
 
-        metadata: Dict[str, Any] = {"is_first_turn": False, "confidence": 0.9, "rewritten": False}
+        # Followup product switch: "how/what about X" where X is a product
+        followup_match = re.match(r"^(?:how|what)\s+about\s+([\w\s]+)", lower)
+        if followup_match and context and context.import_export_mode:
+            product = followup_match.group(1).strip()
+            product = re.sub(r"[^\w\s]", "", product).strip()
+            if product and product not in ("export", "import"):
+                rewritten = f"{context.import_export_mode} {product}"
+                metadata["rewritten"] = True
+                return rewritten, metadata
 
         # Import/export switch detection
         if "export" in lower and context.import_export_mode == "import":

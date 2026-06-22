@@ -29,7 +29,5 @@ class FormatterIntent(str, Enum):
     CALCULATION = "calculation"
     RETRIEVAL = "retrieval"
     TRADE_QUERY = "trade_query"
-    POLICY = "policy"
-    DEFINITION = "definition"
     GENERAL = "general"
     HS_CODE_LOOKUP = "hs_code_lookup"

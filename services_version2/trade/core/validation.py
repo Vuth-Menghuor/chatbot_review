@@ -41,13 +41,6 @@ def validate_query_plan(plan: FinalQueryPlan) -> None:
     # 3. Measures/metrics validation
     if plan.metrics:
         for m in plan.metrics:
-            if m == "VALUE_KHR":
-                # Raise validation warning with fallback suggestion
-                warning_payload = {
-                    "warning": "VALUE_KHR not available",
-                    "fallback_suggested": "VALUE_USD",
-                }
-                raise ValidationError(json.dumps(warning_payload), field="metrics")
             if m not in dataset_rules["measures"]:
                 raise ValidationError(f"Unsupported measure: {m}", field="metrics")
 
@@ -75,15 +68,25 @@ def validate_query_plan(plan: FinalQueryPlan) -> None:
     mot = plan.filters.get("MODE_OF_TRANSPORT")
     if mot:
         valid_mots = STRUCTURE["dimensions"]["MODE_OF_TRANSPORT"]["values"]
-        if str(mot) not in valid_mots:
-            raise ValidationError(f"Invalid mode of transport: {mot}", field="mode_of_transport")
+        if isinstance(mot, list):
+            for m in mot:
+                if str(m) not in valid_mots:
+                    raise ValidationError(f"Invalid mode of transport: {m}", field="mode_of_transport")
+        else:
+            if str(mot) not in valid_mots:
+                raise ValidationError(f"Invalid mode of transport: {mot}", field="mode_of_transport")
 
     # 7. Trade flow / direction code validation
     direction = plan.filters.get("FLOW")
     if direction:
         valid_flows = STRUCTURE["dimensions"]["FLOW"]["values"]
-        if str(direction) not in valid_flows:
-            raise ValidationError(f"Invalid trade direction: {direction}", field="trade_direction")
+        if isinstance(direction, list):
+            for d in direction:
+                if str(d) not in valid_flows:
+                    raise ValidationError(f"Invalid trade direction: {d}", field="trade_direction")
+        else:
+            if str(direction) not in valid_flows:
+                raise ValidationError(f"Invalid trade direction: {direction}", field="trade_direction")
 
     # 8. HS code format validation (numeric checks)
     hs_code = plan.filters.get("HS_CODE") or plan.filters.get("HS_HEADING") or plan.filters.get("HS_CHAPTER")
@@ -96,9 +99,36 @@ def validate_query_plan(plan: FinalQueryPlan) -> None:
             if not str(hs_code).isdigit():
                 raise ValidationError(f"HS code must be numeric digits, got: {hs_code}", field="hs_code")
 
+    # 9. Period and frequency format validation
+    if plan.frequency and plan.period:
+        freq = plan.frequency.upper()
+        p = plan.period
+        import re
+        if not re.match(r"^\d{4}$", p):
+            if freq == "Q":
+                if not re.match(r"^\d{4}-Q[1-4]$", p):
+                    raise ValidationError(f"Quarterly period must be YYYY-Qn (1-4) or YYYY, got: {p}", field="period")
+            elif freq == "M":
+                if not re.match(r"^\d{4}-(0[1-9]|1[0-2])$", p):
+                    raise ValidationError(f"Monthly period must be YYYY-MM (01-12) or YYYY, got: {p}", field="period")
+            elif freq == "S":
+                if not re.match(r"^\d{4}-S[12]$", p):
+                    raise ValidationError(f"Semi-Annual period must be YYYY-Sn (1-2) or YYYY, got: {p}", field="period")
+            elif freq == "A":
+                raise ValidationError(f"Annual period must be YYYY, got: {p}", field="period")
+
 
 def validate_extracted_parameters(params: dict[str, Any]) -> None:
     """Validate structured parameter values and schema rules against semantic registry."""
+    if params.get("metrics"):
+        for m in params["metrics"]:
+            if m == "VALUE_KHR":
+                warning_payload = {
+                    "warning": "VALUE_KHR not available",
+                    "fallback_suggested": "VALUE_USD",
+                }
+                raise ValidationError(json.dumps(warning_payload), field="metrics")
+
     # Reconstruct FinalQueryPlan for backward compatibility
     filters = params.get("filters", {})
     if not filters:
@@ -135,4 +165,3 @@ def validate_extracted_parameters(params: dict[str, Any]) -> None:
         offset=params.get("offset", 0),
     )
     validate_query_plan(plan)
-

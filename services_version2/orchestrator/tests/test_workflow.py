@@ -98,7 +98,7 @@ class TestWorkflowIntentDetection:
         
         for question in questions:
             intent = executor.detect_intent(question)
-            assert intent == WorkflowIntent.DEFINITION
+            assert intent == WorkflowIntent.GENERAL
 
 
 class TestWorkflowSequencing:
@@ -111,7 +111,7 @@ class TestWorkflowSequencing:
         sequences = {
             WorkflowIntent.CALCULATION: ["calculator"],
             WorkflowIntent.TRADE_QUERY: ["trade_data"],
-            WorkflowIntent.DEFINITION: ["retrieval"],
+            WorkflowIntent.GENERAL: ["retrieval"],
         }
         
         for intent, expected_sequence in sequences.items():

@@ -166,6 +166,7 @@ SEMANTIC: Dict[str, Dict[str, Any]] = {
                 "6": ["multimodal", "multi-modal"],
                 "7": ["fixed", "pipeline"],
                 "8": ["inland", "river", "canal"],
+                "9": ["other transport", "not elsewhere specified", "nes", "unclassified transport"],
                 "0": ["unknown", "unspecified"],
             },
         },
@@ -373,5 +374,3 @@ def get_children_dimensions(code: str) -> List[str]:
         if dim_details.get("parent") == code:
             children.append(dim_code)
     return children
-
-

@@ -26,35 +26,6 @@ class QueryRequest(BaseModel):
     }
 
 
-class TradeRecord(BaseModel):
-    """A single trade record in the response."""
-
-    hs_code: Optional[str] = None
-    origin_country: Optional[str] = None
-    destination_country: Optional[str] = None
-    mode_of_transport: Optional[str] = None
-    trade_value: Optional[float] = None
-    currency: Optional[str] = "USD"
-    trade_type: Optional[str] = None
-    year: Optional[int] = None
-    month: Optional[int] = None
-
-    model_config = {
-        "json_schema_extra": {
-            "example": {
-                "hs_code": "8517",
-                "origin_country": "KH",
-                "destination_country": "US",
-                "mode_of_transport": "4",
-                "trade_value": 124500000.0,
-                "currency": "USD",
-                "trade_type": "EX",
-                "year": 2022,
-            }
-        }
-    }
-
-
 class TableData(BaseModel):
     """Structured table response for frontend grids."""
 
@@ -90,9 +61,7 @@ class TradeQueryResponse(BaseModel):
     table: Optional[TableData] = None
     visualization: Optional[VisualizationData] = None
     message: Optional[str] = None
-    suggestion: Optional[str] = None
-    total_trade_value: Optional[float] = Field(default=None, description="Total trade value in USD or query currency")
-    currency: Optional[str] = Field(default="USD", description="Currency code (e.g. USD)")
+    suggestion: Optional[list[str]] = None
 
     model_config = {
         "json_schema_extra": {

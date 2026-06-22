@@ -29,8 +29,7 @@ class TestTimeoutConfigBasics:
         
         assert config.get_intent_timeout(WorkflowIntent.CALCULATION) == 10
         assert config.get_intent_timeout(WorkflowIntent.HS_CODE_LOOKUP) == 45
-        assert config.get_intent_timeout(WorkflowIntent.DEFINITION) == 35
-        assert config.get_intent_timeout(WorkflowIntent.POLICY_QUERY) == 35
+        assert config.get_intent_timeout(WorkflowIntent.GENERAL) == 35
         assert config.get_intent_timeout(WorkflowIntent.TRADE_QUERY) == 20
     
     def test_intent_timeout_with_none(self):

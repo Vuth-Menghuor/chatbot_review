@@ -37,6 +37,27 @@ def _resolve_column_key(row: Dict[str, Any], target_key: str) -> str:
     return list(row.keys())[0] if row else target_key
 
 
+def _resolve_group_by_column(first_row: Dict[str, Any], group_by: List[str]) -> Optional[str]:
+    """Resolve the first usable group_by dimension to an actual key present in the row.
+
+    Shared helper used both for non-trend label-column overrides and for
+    trend-intent secondary series resolution. Returns None if no group_by
+    dimension can be matched against the row's keys.
+    """
+    from ..core.semantic_registry import find_dimension_by_synonym
+
+    for g in group_by:
+        mapped_g = find_dimension_by_synonym(str(g)) or str(g)
+        if mapped_g in first_row:
+            return mapped_g
+        if mapped_g.upper() in first_row:
+            return mapped_g.upper()
+        for k in first_row.keys():
+            if k.lower() == mapped_g.lower():
+                return k
+    return None
+
+
 def _build_dynamic_title(intent: str, config_title: str, query_params: Dict[str, Any], label_col: str = "") -> str:
     """Build a contextual, human-friendly title based on query filters and intent."""
     flow = query_params.get("trade_direction")
@@ -101,31 +122,35 @@ def generate_visualizations(
     # Resolve actual keys from rows
     first_row = rows[0]
 
-    # Override default label column if an explicit group_by dimension is present in the parameters
+    group_by = params.get("group_by") or []
+
+    # Override default label column if an explicit group_by dimension is present
+    # in the parameters. NOTE: for "trend" intent we deliberately do NOT
+    # override the label column (it must stay PERIOD so the X-axis remains
+    # chronological) — but we DO need to resolve the group_by dimension
+    # separately so it can become the *series* split (see series_col below).
+    # Previously this block was skipped entirely for intent == "trend",
+    # which meant a group_by like MODE_OF_TRANSPORT was silently dropped
+    # for trend charts, causing all groups to collapse into a single
+    # (incorrectly overwritten) line.
     target_label_col = config["label_col"]
-    if params.get("group_by"):
-        for g in params["group_by"]:
-            from ..core.semantic_registry import find_dimension_by_synonym
-            mapped_g = find_dimension_by_synonym(str(g)) or str(g)
-            # Resolve to upper or original key casing
-            if mapped_g in first_row:
-                target_label_col = mapped_g
-                break
-            elif mapped_g.upper() in first_row:
-                target_label_col = mapped_g.upper()
-                break
-            else:
-                matched = False
-                for k in first_row.keys():
-                    if k.lower() == mapped_g.lower():
-                        target_label_col = k
-                        matched = True
-                        break
-                if matched:
-                    break
+    if intent != "trend" and group_by:
+        resolved = _resolve_group_by_column(first_row, group_by)
+        if resolved:
+            target_label_col = resolved
 
     label_col = _resolve_column_key(first_row, target_label_col)
     value_col = _resolve_column_key(first_row, config["value_col"])
+
+    # For trend intent, resolve a secondary series column from group_by
+    # (e.g. MODE_OF_TRANSPORT) so transform_to_line_chart can build one
+    # line per group instead of a single, silently-overwritten series.
+    series_col = None
+    if intent == "trend" and group_by:
+        series_col = _resolve_group_by_column(first_row, group_by)
+        # Don't treat the period column itself as a series split.
+        if series_col and series_col.upper() == str(label_col).upper():
+            series_col = None
 
     # Build dynamic contextual title
     title = _build_dynamic_title(intent, config["title"], params, label_col)
@@ -143,10 +168,10 @@ def generate_visualizations(
             if k.upper() == "FLOW":
                 flow_key = k
                 break
-        
+
         labels_list = [str(r.get(label_col)) for r in rows if r.get(label_col) is not None]
         has_duplicates = len(labels_list) != len(set(labels_list))
-        
+
         if flow_key and label_col.upper() != flow_key.upper() and has_duplicates:
             aggregated_map = {}
             for r in rows:
@@ -159,20 +184,20 @@ def generate_visualizations(
                     val = float(val) if val is not None else 0.0
                 except (ValueError, TypeError):
                     val = 0.0
-                
+
                 flow_val = str(r.get(flow_key, "")).upper()
-                
+
                 if lbl_str not in aggregated_map:
                     aggregated_map[lbl_str] = dict(r)
                     aggregated_map[lbl_str][value_col] = 0.0
-                
+
                 if flow_val == "EX" or "EXPORT" in flow_val:
                     aggregated_map[lbl_str][value_col] += val
                 elif flow_val == "IM" or "IMPORT" in flow_val:
                     aggregated_map[lbl_str][value_col] -= val
                 else:
                     aggregated_map[lbl_str][value_col] += val
-            
+
             seen_labels = []
             new_rows = []
             for r in rows:
@@ -183,7 +208,7 @@ def generate_visualizations(
                         seen_labels.append(lbl_str)
                         new_rows.append(aggregated_map[lbl_str])
             chart_rows = new_rows
-            
+
             if "net_weight" in value_col.lower() or "weight" in value_col.lower():
                 dataset_label = "Net Trade Balance (KG)"
             else:
@@ -197,7 +222,7 @@ def generate_visualizations(
         )
     elif chart_type == "line":
         visualization_data = transform_to_line_chart(
-            chart_rows, label_col, value_col, title
+            chart_rows, label_col, value_col, title, series_col=series_col
         )
     elif chart_type == "pie":
         visualization_data = transform_to_pie_chart(

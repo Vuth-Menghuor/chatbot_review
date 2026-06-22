@@ -1,6 +1,6 @@
 """Visualization transformers: converting raw DAL rows to Table and Chart JSON formats."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from .base import COLUMN_MAP
 
 
@@ -66,12 +66,71 @@ def transform_to_line_chart(
     label_col: str,
     value_col: str,
     title: str,
+    series_col: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Generate chronological multi-series or single-series line chart JSON payload."""
-    # Collect all unique periods sorted chronologically
-    periods = sorted(list(set(str(r.get(label_col)) for r in rows if r.get(label_col))))
+    """Generate chronological multi-series or single-series line chart JSON payload.
 
-    # Check if we have a FLOW / direction column to split into Export/Import datasets
+    Args:
+        rows: Raw DAL rows.
+        label_col: Column used for the X-axis (chronological periods).
+        value_col: Column used for the Y-axis values.
+        title: Chart title.
+        series_col: Optional column name. When provided (and not the same as
+            label_col), each distinct value in this column becomes its own
+            line series (e.g. "MODE_OF_TRANSPORT" -> one line per mode).
+            This generalizes the previous FLOW-only splitting logic to any
+            grouping dimension, fixing the bug where rows sharing the same
+            period but differing only in a secondary dimension (like
+            transport mode) silently overwrote each other, leaving only the
+            last-processed group's data in the chart.
+    """
+    # Collect all unique periods sorted chronologically
+    periods = sorted(list(set(str(r.get(label_col)) for r in rows if r.get(label_col) is not None)))
+
+    def _to_float(v: Any) -> float:
+        try:
+            return float(v) if v is not None else 0.0
+        except (ValueError, TypeError):
+            return 0.0
+
+    # --- General-purpose grouped series (e.g. MODE_OF_TRANSPORT, any group_by dim) ---
+    # Takes priority over the legacy FLOW-specific logic below, since it is a
+    # strict superset: FLOW is just one possible series_col value.
+    if series_col and series_col != label_col and any(series_col in r for r in rows):
+        series_groups: Dict[str, Dict[str, float]] = {}
+        series_order: List[str] = []  # preserve first-seen order for stable dataset ordering
+
+        for r in rows:
+            series_val = r.get(series_col)
+            if series_val is None:
+                continue
+            series_key = str(series_val)
+            period = str(r.get(label_col))
+            val = _to_float(r.get(value_col, 0.0))
+
+            if series_key not in series_groups:
+                series_groups[series_key] = {}
+                series_order.append(series_key)
+            # Sum in case multiple rows share the same (series, period) pair
+            series_groups[series_key][period] = series_groups[series_key].get(period, 0.0) + val
+
+        datasets = []
+        for series_key in series_order:
+            period_map = series_groups[series_key]
+            data = [period_map.get(p, 0.0) for p in periods]
+            datasets.append({
+                "label": series_key,
+                "data": data,
+            })
+
+        return {
+            "type": "line",
+            "title": title,
+            "labels": periods,
+            "datasets": datasets,
+        }
+
+    # --- Legacy FLOW-specific splitting (Exports vs Imports) ---
     has_flow = any("FLOW" in r for r in rows) or any("flow" in r for r in rows)
     flow_key = "FLOW" if any("FLOW" in r for r in rows) else "flow"
 
@@ -79,46 +138,34 @@ def transform_to_line_chart(
     flow_labels = {"EX": "Exports", "IM": "Imports"}
 
     if has_flow:
-        # Group data by flow code
-        flow_groups = {}
+        flow_groups: Dict[str, Dict[str, float]] = {}
         for r in rows:
             f = str(r.get(flow_key, "EX")).upper()
             period = str(r.get(label_col))
-            val = r.get(value_col, 0.0)
-            try:
-                val = float(val) if val is not None else 0.0
-            except (ValueError, TypeError):
-                val = 0.0
+            val = _to_float(r.get(value_col, 0.0))
 
             if f not in flow_groups:
                 flow_groups[f] = {}
-            flow_groups[f][period] = val
+            flow_groups[f][period] = flow_groups[f].get(period, 0.0) + val
 
         for flow_code, label_name in flow_labels.items():
-            if flow_code in flow_groups or any(flow_code == k for k in flow_groups.keys()):
-                # Construct data matching chronological period list
-                flow_data = []
-                for p in periods:
-                    flow_data.append(flow_groups.get(flow_code, {}).get(p, 0.0))
+            if flow_code in flow_groups:
+                flow_data = [flow_groups.get(flow_code, {}).get(p, 0.0) for p in periods]
                 datasets.append({
                     "label": label_name,
                     "data": flow_data,
                 })
     else:
-        # Single dataset line chart
-        line_data = []
-        period_map = {}
+        # Single dataset line chart — only safe to use period_map as a
+        # straight overwrite here because there is exactly one row per
+        # period in this branch (no secondary grouping dimension present).
+        period_map: Dict[str, float] = {}
         for r in rows:
             period = str(r.get(label_col))
-            val = r.get(value_col, 0.0)
-            try:
-                val = float(val) if val is not None else 0.0
-            except (ValueError, TypeError):
-                val = 0.0
-            period_map[period] = val
+            val = _to_float(r.get(value_col, 0.0))
+            period_map[period] = period_map.get(period, 0.0) + val
 
-        for p in periods:
-            line_data.append(period_map.get(p, 0.0))
+        line_data = [period_map.get(p, 0.0) for p in periods]
 
         datasets.append({
             "label": "Trade Value (USD)",

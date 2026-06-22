@@ -114,8 +114,6 @@ class GeminiFormatterProvider(BaseFormatterProvider):
             FormatterIntent.HS_CODE_LOOKUP: self._prompt_hs_code,
             FormatterIntent.RETRIEVAL: self._prompt_retrieval,
             FormatterIntent.TRADE_QUERY: self._prompt_trade,
-            FormatterIntent.POLICY: self._prompt_policy,
-            FormatterIntent.DEFINITION: self._prompt_definition,
             FormatterIntent.GENERAL: self._prompt_general,
         }
 

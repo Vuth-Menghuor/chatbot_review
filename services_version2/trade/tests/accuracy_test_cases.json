@@ -191,7 +191,9 @@
       "origin_country": "JP",
       "quarter": "Q1",
       "year": 2026,
-      "mode_of_transport": "sea"
+      "mode_of_transport": [
+        "sea"
+      ]
     },
     "expected_url_params": {
       "dimensions": "FLOW",
@@ -218,7 +220,9 @@
       "origin_country": "JP",
       "quarter": "Q1",
       "year": 2026,
-      "mode_of_transport": "sea"
+      "mode_of_transport": [
+        "sea"
+      ]
     },
     "expected_url_params": {
       "dimensions": "FLOW",
@@ -244,7 +248,9 @@
       "trade_direction": "EX",
       "destination_country": "DE",
       "year": 2025,
-      "mode_of_transport": "air"
+      "mode_of_transport": [
+        "air"
+      ]
     },
     "expected_url_params": {
       "dimensions": "FLOW",
@@ -408,7 +414,9 @@
     "expected_params": {
       "intent": "summary",
       "trade_direction": "IM",
-      "mode_of_transport": "sea"
+      "mode_of_transport": [
+        "sea"
+      ]
     },
     "expected_url_params": {
       "dimensions": "FLOW",
@@ -687,7 +695,9 @@
       "year": 2024,
       "limit": 5,
       "sort_order": "desc",
-      "mode_of_transport": "air"
+      "mode_of_transport": [
+        "air"
+      ]
     },
     "expected_url_params": {
       "dimensions": "PARTNER_COUNTRY",
@@ -712,7 +722,9 @@
       "intent": "ranking",
       "trade_direction": "EX",
       "hs_chapter": "61",
-      "mode_of_transport": "air",
+      "mode_of_transport": [
+        "air"
+      ],
       "sort_order": "desc"
     },
     "expected_url_params": {
@@ -1247,7 +1259,9 @@
       "intent": "trend",
       "trade_direction": "EX",
       "hs_chapter": "61",
-      "mode_of_transport": "air",
+      "mode_of_transport": [
+        "air"
+      ],
       "start_period": "2023"
     },
     "expected_url_params": {
@@ -1666,7 +1680,9 @@
       "intent": "comparison",
       "trade_direction": "EX",
       "partner_country": "JP",
-      "mode_of_transport": "air"
+      "mode_of_transport": [
+        "air"
+      ]
     },
     "expected_url_params": {
       "dimensions": "PARTNER_COUNTRY,FLOW",
@@ -1781,7 +1797,9 @@
     "expected_params": {
       "intent": "comparison",
       "trade_direction": "IM",
-      "mode_of_transport": "sea"
+      "mode_of_transport": [
+        "sea"
+      ]
     },
     "expected_url_params": {
       "dimensions": "PARTNER_COUNTRY,FLOW",
@@ -1911,7 +1929,9 @@
       "intent": "comparison",
       "trade_direction": "EX",
       "partner_country": "JP",
-      "mode_of_transport": "air"
+      "mode_of_transport": [
+        "air"
+      ]
     },
     "expected_url_params": {
       "dimensions": "PARTNER_COUNTRY,FLOW",
@@ -1987,7 +2007,9 @@
       "intent": "comparison",
       "trade_direction": "EX",
       "hs_code": "1006",
-      "mode_of_transport": "air"
+      "mode_of_transport": [
+        "air"
+      ]
     },
     "expected_url_params": {
       "dimensions": "PARTNER_COUNTRY,FLOW",
@@ -3235,7 +3257,9 @@
       "intent": "trade_balance",
       "partner_country": "CN",
       "year": 2025,
-      "mode_of_transport": "sea"
+      "mode_of_transport": [
+        "sea"
+      ]
     },
     "expected_url_params": {
       "dimensions": "FLOW",

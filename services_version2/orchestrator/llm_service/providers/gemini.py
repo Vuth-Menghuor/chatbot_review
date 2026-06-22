@@ -50,17 +50,28 @@ class GeminiProvider(BaseLLMProvider):
             raise RuntimeError("Gemini provider is not available")
 
         prompt = (
-            "Classify the user's query into one of these intents: "
-            "hs_code_lookup, calculation, trade_query, definition, policy_query, small_talk, unclassified.\n"
+            "Classify the user's query into EXACTLY one of these four intents: "
+            "hs_code_lookup, calculation, trade_query, general.\n"
             "Guidelines:\n"
-            "- Choose 'policy_query' for queries asking about customs procedures, rules, regulations, required documents, permits, licensing, compliance, or step-by-step instructions to import or export goods (e.g., 'How can to import goods to Cambodia', 'procedure to import cars').\n"
-            "- Choose 'trade_query' for queries asking for historical trade statistics, trade volume, import/export values, trends, or bilateral trade comparisons (e.g., 'trade volume with Vietnam', 'Cambodia imports data'). Do NOT choose this for procedural/how-to import questions.\n"
-            "- Choose 'hs_code_lookup' for queries asking about HS codes, commodity classification, or finding the code for a specific product by using naked or not naked commercial description or product description. (e.g., NEW BYD SEALION 5 PREMIUM BYD6471ST6HEV4 5SEATS PLUG IN HYBRID  2025 LEFT 1498CC, or hs code of living horse.\n"
-            "- Choose 'calculation' for queries asking to calculate customs duties, taxes, tariffs, or importing cost estimations, often including values, quantities, or cif_value, net mass.\n"
-            "- Choose 'definition' for queries asking for definitions of terms, acronyms, or explanations of specific concepts (e.g., 'What is CIF?', 'What is ATIGA').\n"
-            "- Choose 'small_talk' for simple greetings, farewells, casual small talk, roasts, or jokes (e.g., 'hii', 'hello', 'how are you', 'tell me a joke').\n"
-            "- Choose 'unclassified' if the query does not fit any of the above.\n"
-            "Return JSON only with keys intent, confidence, reasoning.\n\n"
+            "- 'hs_code_lookup': The user wants to find or classify an HS/AHTN tariff code for a product, "
+            "or has provided a raw commercial/shipping description to classify "
+            "(e.g., 'HS code for rice', 'NEW BYD SEALION 5 PREMIUM 1498CC', 'what is the tariff code for laptop').\n"
+            "- 'calculation': The user wants to calculate or estimate customs duties, import taxes, VAT, "
+            "or total import cost, usually with a product + value or CIF/FOB figure "
+            "(e.g., 'calculate duty on $5000 laptop', 'how much tax to import car from China').\n"
+            "- 'trade_query': The user asks for historical trade statistics, bilateral trade volumes, "
+            "import/export data or trends "
+            "(e.g., 'Cambodia trade volume with Vietnam 2023', 'top exports last year'). "
+            "Do NOT use this for procedural or how-to import questions.\n"
+            "- 'general': Everything else — definitions, explanations, policies, regulations, "
+            "FTA/trade agreement details (ATIGA, RCEP, ACFTA, ASEAN, Form D/E), "
+            "customs procedures, required documents, permits, licensing, step-by-step guidance, "
+            "and any other knowledge/information query "
+            "(e.g., 'What is ATIGA?', 'How to import goods to Cambodia?', 'What documents do I need?', "
+            "'What is CIF?', 'Explain rules of origin').\n"
+            "- If the query is a greeting, farewell, joke, or casual small talk with no customs/trade content, "
+            "still return 'general' with low confidence.\n"
+            "Return JSON only with keys: intent, confidence (0.0-1.0), reasoning.\n\n"
             f"Query: {question}"
         )
 
@@ -209,28 +220,61 @@ class GeminiProvider(BaseLLMProvider):
         if not self.is_available():
             raise RuntimeError("Gemini provider is not available")
 
+        history_str = ""
+        context_str = ""
+        
+        if context:
+            # Build conversation history
+            if hasattr(context, "turns") and context.turns:
+                history_str = "\nConversation History:\n"
+                for turn in context.turns[-3:]:  # Last 3 turns for context
+                    user_val = turn.get("user") or turn.get("user_input", "")
+                    bot_val = turn.get("bot") or turn.get("bot_response", "")
+                    history_str += f"User: {user_val}\nAssistant: {bot_val}\n"
+            
+            # Build active session parameters context
+            parts = []
+            if getattr(context, "product_category", None):
+                parts.append(f"- Product Category: {context.product_category}")
+            if getattr(context, "import_export_mode", None):
+                parts.append(f"- Import/Export Mode: {context.import_export_mode}")
+            if getattr(context, "currency", None):
+                parts.append(f"- Currency: {context.currency}")
+            if parts:
+                context_str = "\nActive Session Context:\n" + "\n".join(parts) + "\n"
+
         prompt = (
-            "Rewrite the user query with strict fidelity to the original meaning. "
-            "Do not add new information. Do not change structured values. "
-            "Preserve ambiguity when the original query is ambiguous. "
-            "Do not infer missing product details, trade terms, quantities, classifications, or countries beyond what the user explicitly provided."
-            "Keep the rewrite as close as possible to the original query. "
-            "If the query is already clear, return it unchanged. "
-            "Do not change HS codes, numbers, currencies, country names, dates, or product names. "
-            "Return only the rewritten query.\n\n"
-            f"Query: {user_input}"
+            "You are a context-aware query rewriter for a Cambodia Customs and Trade assistant.\n"
+            "Given the conversation history, active session context, and the latest user query, "
+            "rewrite the latest query to resolve pronouns, references, and elliptical follow-up questions.\n"
+            "If the query is a follow-up (e.g., 'how about export?', 'what if value is higher?', 'how about motor?'), "
+            "expand it using the context (e.g., 'calculate import tax for motor' or 'export rice').\n"
+            "Guidelines:\n"
+            "- Do not add new information not implied by the query or history.\n"
+            "- Keep the rewrite clean, clear, and direct.\n"
+            "- If the query is already complete and doesn't need context, return it unchanged.\n"
+            "- Return ONLY the rewritten query text and nothing else.\n\n"
         )
+        if history_str:
+            prompt += history_str
+        if context_str:
+            prompt += context_str
+            
+        prompt += f"\nLatest User Query: {user_input}\nRewritten Query:"
+
         try:
             response = self.client.models.generate_content(
                 model=self.model_name,
                 contents=prompt,
             )
             rewritten = (response.text or "").strip() or user_input
+            was_rewritten = rewritten != user_input
             return rewritten, {
                 "rewrite_reason": "gemini_rewrite",
                 "confidence": 0.8,
-                "intent_changed": False,
+                "intent_changed": was_rewritten,
                 "topic_switch": False,
+                "rewritten": was_rewritten,
             }
         except Exception as exc:
             logger.warning(f"Gemini rewrite failed: {exc}")
