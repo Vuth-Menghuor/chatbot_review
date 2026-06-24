@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import AsyncMock
 
-from ..core import ServiceCoordinator
+from ..core import ServiceCoordinator, get_policy_engine
 from ..infrastructure.cache_service import get_cache_service
 
 
@@ -162,6 +162,14 @@ class TestServiceCoordinator:
             ],
             "status": "success",
             "answer_source": "mock",
+            "metadata": {
+                "selected_code": "0101.21.00"
+            }
+        })
+
+        coordinator = ServiceCoordinator(
+            retrieval_client=retrieval_client,
+            policy_engine=get_policy_engine(),
             use_llm_intent=False,
             use_input_rewriter=False,
             llm_service=DummyLLMService(

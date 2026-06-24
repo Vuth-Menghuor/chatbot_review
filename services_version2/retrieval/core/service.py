@@ -597,86 +597,64 @@ class RetrievalService:
         query: str,
         top_k: Optional[int] = None,
         session_id: Optional[str] = None,
-        collection: Optional[str] = None,
         hs_mode: str = "best",
         selected_code: Optional[str] = None,
         compare_codes: Optional[list] = None,
-        require_period_for_trade: bool = True,
     ) -> Dict[str, Any]:
         """
-        Main retrieval endpoint business logic.
-        
-        UPDATED: Now detects ambiguous queries and returns all viable candidates
-        grouped by missing specifications instead of forcing a single answer.
-        
+        Main retrieval endpoint business logic — HS code classification only.
+
+        General/FAQ/definition/policy queries are handled by the separate
+        general retrieval service (port 8005) and never reach this method;
+        this service always targets the gdce_hs_code collection.
+
+        Detects ambiguous queries and returns all viable candidates grouped
+        by missing specifications instead of forcing a single answer.
+
         Args:
             query: User query
             top_k: Number of results (uses config default if None)
             session_id: Optional session identifier
-            collection: Optional collection name (gdce_docs, gdce_hs_code). Uses default if None.
             hs_mode: "best" (default), "select", or "compare"
             selected_code: For select mode
             compare_codes: For compare mode
-            require_period_for_trade: Whether to require time period for trade queries
-            
+
         Returns:
             Retrieval results with ambiguity analysis if applicable
         """
-        logger.info(f"Retrieve request: {query[:100]}... (session: {session_id}, collection: {collection})")
+        logger.info(f"Retrieve request: {query[:100]}... (session: {session_id})")
         
         try:
+            collection = self.config.qdrant_hs_code_collection if self.config else "gdce_hs_code"
+
             # Use config defaults if not specified
             if top_k is None:
                 top_k = self.config.top_k_default if self.config else 10
 
             # If user explicitly mentions an HS code (e.g., "what is 8471.30.00"),
             # force exact-code selection behavior even when caller used hs_mode=best.
-            explicit_query_hs_code = None
-            if collection == "gdce_hs_code":
-                explicit_query_hs_code = self._extract_explicit_hs_code(query)
-                if explicit_query_hs_code and hs_mode == "best" and not selected_code:
-                    hs_mode = "select"
-                    selected_code = explicit_query_hs_code
+            explicit_query_hs_code = self._extract_explicit_hs_code(query)
+            if explicit_query_hs_code and hs_mode == "best" and not selected_code:
+                hs_mode = "select"
+                selected_code = explicit_query_hs_code
             
             # Validate top_k limits
             top_k = min(
                 top_k,
                 self.config.top_k_max if self.config else 50
             )
-            
-            # Prompt for time period when request looks like trade-data analytics.
-            if require_period_for_trade and self._is_trade_data_query(query) and not self._has_time_period(query):
-                return {
-                    "query": query,
-                    "documents": [],
-                    "status": "clarification_required",
-                    "session_id": session_id,
-                    "missing_parameters": ["period"],
-                    "clarification": "Please provide a time period (month, quarter, or year) for trade data queries.",
-                    "api_visibility": {
-                        "api_called": "/retrieval/retrieve",
-                        "collection_used": collection or (self.orchestrator.vector_store.collection_name if self.orchestrator and self.orchestrator.vector_store else "gdce_docs"),
-                        "processing_path": "period_guard",
-                    },
-                }
 
             # Use a product-focused subquery for HS collection lookups to reduce prompt-noise
             # from phrase wrappers such as "What is the HS code for ...?".
-            retrieval_query = query
-            if collection == "gdce_hs_code":
-                # For compare/select, retrieve by the provided code(s) directly.
-                if hs_mode == "select" and selected_code:
-                    retrieval_query = selected_code
-                elif hs_mode == "compare" and compare_codes:
-                    retrieval_query = " ".join(compare_codes)
-                else:
-                    retrieval_query = self._expand_hs_lookup_query(self._extract_hs_lookup_subject(query))
+            if hs_mode == "select" and selected_code:
+                retrieval_query = selected_code
+            elif hs_mode == "compare" and compare_codes:
+                retrieval_query = " ".join(compare_codes)
+            else:
+                retrieval_query = self._expand_hs_lookup_query(self._extract_hs_lookup_subject(query))
 
-            retrieval_top_k = top_k
-            if collection == "gdce_hs_code":
-                # Keep a broader candidate pool for HS ranking, then collapse to best match.
-                # UPDATED: Increase this to capture more candidates for ambiguity detection
-                retrieval_top_k = max(top_k, 30)  # Increased from 15 to 30
+            # Keep a broader candidate pool for HS ranking, then collapse to best match.
+            retrieval_top_k = max(top_k, 30)
 
             # Process query
             processed = self.query_processor.process(retrieval_query)
@@ -688,12 +666,12 @@ class RetrievalService:
                     "status": "invalid_query",
                     "api_visibility": {
                         "api_called": "/retrieval/retrieve",
-                        "collection_used": collection or "gdce_docs",
+                        "collection_used": collection,
                         "processing_path": "query_validation",
                     },
                 }
             
-            # Retrieve documents with optional collection override.
+            # Retrieve documents from the HS code collection.
             result = await self.orchestrator.retrieve(
                 processed,
                 top_k=retrieval_top_k,
@@ -702,142 +680,135 @@ class RetrievalService:
                 collection_name=collection,
             )
 
-            collection_used = collection or (self.orchestrator.vector_store.collection_name if self.orchestrator and self.orchestrator.vector_store else "gdce_docs")
-
-            # For non-HS retrieval, apply lexical reranking to keep exact FAQ/definition/policy matches on top.
-            if collection_used != "gdce_hs_code":
-                reranked_docs = self._rerank_general_documents_by_query(query=query, documents=result.get("documents", []))
-                result["documents"] = reranked_docs[:top_k]
-                result["total_count"] = len(result.get("documents", []))
+            collection_used = collection
 
             # Apply HS-focused post-processing strategy.
-            if collection_used == "gdce_hs_code":
-                forced_code = None
-                if hs_mode == "best":
-                    # Prefer exact rules first, then data-driven matching from the embedded HS corpus.
-                    forced_code = self._rule_based_hs_code(query)
-                    if not forced_code:
-                        forced_code = self._data_driven_hs_code(
-                        query=query,
-                        collection_name=collection_used,
-                        seed_documents=result.get("documents", []),
-                    )
-
-                # For compare/select flows, augment with direct exact HS code fetch.
-                if hs_mode == "select" and selected_code:
-                    direct_docs = self._direct_fetch_hs_documents([selected_code], collection_used)
-                    result["documents"] = self._merge_hs_documents(result.get("documents", []), direct_docs)
-                elif hs_mode == "compare" and compare_codes:
-                    direct_docs = self._direct_fetch_hs_documents(compare_codes, collection_used)
-                    result["documents"] = self._merge_hs_documents(result.get("documents", []), direct_docs)
-                elif forced_code:
-                    direct_docs = self._direct_fetch_hs_documents([forced_code], collection_used)
-                    result["documents"] = self._merge_hs_documents(result.get("documents", []), direct_docs)
-
-                # ==================== NEW: AMBIGUITY DETECTION ====================
-                # Detect if query is ambiguous BEFORE selecting documents
-                ambiguity_analysis = self._detect_hs_ambiguity(
+            forced_code = None
+            if hs_mode == "best":
+                # Prefer exact rules first, then data-driven matching from the embedded HS corpus.
+                forced_code = self._rule_based_hs_code(query)
+                if not forced_code:
+                    forced_code = self._data_driven_hs_code(
                     query=query,
-                    documents=result.get("documents", [])
+                    collection_name=collection_used,
+                    seed_documents=result.get("documents", []),
                 )
-                
-                # If ambiguous and requires clarification, prepare multi-candidate response
-                if ambiguity_analysis["requires_clarification"] and hs_mode == "best":
-                    logger.info(f"Ambiguous query detected: {query}")
-                    logger.info(f"Missing dimensions: {[d['name'] for d in ambiguity_analysis['missing_dimensions']]}")
-                    
-                    # Group candidates by missing dimensions
-                    grouped_candidates = self._group_hs_candidates_by_dimensions(
-                        query=query,
-                        documents=result.get("documents", []),
-                        missing_dimensions=ambiguity_analysis["missing_dimensions"]
-                    )
-                    
-                    # Format for LLM
-                    llm_instruction = self._format_ambiguity_response_for_llm(
-                        query=query,
-                        ambiguity=ambiguity_analysis,
-                        grouped_candidates=grouped_candidates
-                    )
-                    
-                    # Return ALL candidates grouped, not just top one
-                    result["status"] = "multiple_candidates"
-                    result["ambiguity_analysis"] = ambiguity_analysis
-                    result["grouped_candidates"] = grouped_candidates
-                    result["llm_instruction"] = llm_instruction
-                    result["clarification"] = (
-                        f"Multiple HS codes are possible. "
-                        f"Please specify: {', '.join([d['name'] for d in ambiguity_analysis['missing_dimensions']])}"
-                    )
-                    
-                    # Keep all documents for LLM to explain, don't filter
-                    # Sort by score but keep diversity
-                    all_candidates = []
-                    for group_key, group_data in grouped_candidates.get("groups", {}).items():
-                        all_candidates.extend(group_data["candidates"])
-                    all_candidates.extend(grouped_candidates.get("ungrouped", []))
-                    
-                    # Convert back to original document format
-                    result["documents"] = result.get("documents", [])[:50]  # Keep top 50 for diversity
-                    result["total_count"] = len(result.get("documents", []))
-                    
-                    # Add metadata
-                    result["session_id"] = session_id
-                    result["language"] = processed.language
-                    result["api_visibility"] = {
-                        "api_called": "/retrieval/retrieve",
-                        "collection_used": collection_used,
-                        "processing_path": "semantic+structured+ambiguity_detection",
-                    }
-                    result["keywords"] = processed.tokens
-                    result["hs_mode"] = "multiple_candidates"
-                    
-                    logger.info(f"Returning {len(result['documents'])} candidates across {len(grouped_candidates.get('groups', {}))} groups")
-                    
-                    return result
-                # ==================== END NEW: AMBIGUITY DETECTION ====================
 
-                # Original flow: if not ambiguous or user provided specific mode
-                hs_selection = select_hs_documents(
+            # For compare/select flows, augment with direct exact HS code fetch.
+            if hs_mode == "select" and selected_code:
+                direct_docs = self._direct_fetch_hs_documents([selected_code], collection_used)
+                result["documents"] = self._merge_hs_documents(result.get("documents", []), direct_docs)
+            elif hs_mode == "compare" and compare_codes:
+                direct_docs = self._direct_fetch_hs_documents(compare_codes, collection_used)
+                result["documents"] = self._merge_hs_documents(result.get("documents", []), direct_docs)
+            elif forced_code:
+                direct_docs = self._direct_fetch_hs_documents([forced_code], collection_used)
+                result["documents"] = self._merge_hs_documents(result.get("documents", []), direct_docs)
+
+            # ==================== AMBIGUITY DETECTION ====================
+            # Detect if query is ambiguous BEFORE selecting documents
+            ambiguity_analysis = self._detect_hs_ambiguity(
+                query=query,
+                documents=result.get("documents", [])
+            )
+            
+            # If ambiguous and requires clarification, prepare multi-candidate response
+            if ambiguity_analysis["requires_clarification"] and hs_mode == "best":
+                logger.info(f"Ambiguous query detected: {query}")
+                logger.info(f"Missing dimensions: {[d['name'] for d in ambiguity_analysis['missing_dimensions']]}")
+                
+                # Group candidates by missing dimensions
+                grouped_candidates = self._group_hs_candidates_by_dimensions(
                     query=query,
                     documents=result.get("documents", []),
-                    mode="select" if forced_code else hs_mode,
-                    selected_code=forced_code or selected_code,
-                    compare_codes=compare_codes,
+                    missing_dimensions=ambiguity_analysis["missing_dimensions"]
                 )
+                
+                # Format for LLM
+                llm_instruction = self._format_ambiguity_response_for_llm(
+                    query=query,
+                    ambiguity=ambiguity_analysis,
+                    grouped_candidates=grouped_candidates
+                )
+                
+                # Return ALL candidates grouped, not just top one
+                result["status"] = "multiple_candidates"
+                result["ambiguity_analysis"] = ambiguity_analysis
+                result["grouped_candidates"] = grouped_candidates
+                result["llm_instruction"] = llm_instruction
+                result["clarification"] = (
+                    f"Multiple HS codes are possible. "
+                    f"Please specify: {', '.join([d['name'] for d in ambiguity_analysis['missing_dimensions']])}"
+                )
+                
+                # Keep all documents for LLM to explain, don't filter
+                # Sort by score but keep diversity
+                all_candidates = []
+                for group_key, group_data in grouped_candidates.get("groups", {}).items():
+                    all_candidates.extend(group_data["candidates"])
+                all_candidates.extend(grouped_candidates.get("ungrouped", []))
+                
+                # Convert back to original document format
+                result["documents"] = result.get("documents", [])[:50]  # Keep top 50 for diversity
+                result["total_count"] = len(result.get("documents", []))
+                
+                # Add metadata
+                result["session_id"] = session_id
+                result["language"] = processed.language
+                result["api_visibility"] = {
+                    "api_called": "/retrieval/retrieve",
+                    "collection_used": collection_used,
+                    "processing_path": "semantic+structured+ambiguity_detection",
+                }
+                result["keywords"] = processed.tokens
+                result["hs_mode"] = "multiple_candidates"
+                
+                logger.info(f"Returning {len(result['documents'])} candidates across {len(grouped_candidates.get('groups', {}))} groups")
+                
+                return result
+            # ==================== END AMBIGUITY DETECTION ====================
 
-                if hs_mode == "best" and hs_selection.heading_4_digit and not forced_code:
-                    heading_docs = self._fetch_hs_documents_by_heading(
-                        heading=hs_selection.heading_4_digit,
-                        collection_name=collection_used,
-                        limit=300,
+            # Original flow: if not ambiguous or user provided specific mode
+            hs_selection = select_hs_documents(
+                query=query,
+                documents=result.get("documents", []),
+                mode="select" if forced_code else hs_mode,
+                selected_code=forced_code or selected_code,
+                compare_codes=compare_codes,
+            )
+
+            if hs_mode == "best" and hs_selection.heading_4_digit and not forced_code:
+                heading_docs = self._fetch_hs_documents_by_heading(
+                    heading=hs_selection.heading_4_digit,
+                    collection_name=collection_used,
+                    limit=300,
+                )
+                if heading_docs:
+                    merged_docs = self._merge_hs_documents(result.get("documents", []), heading_docs)
+                    merged_docs = self._score_hs_candidates_by_query(
+                        query=query,
+                        documents=merged_docs,
+                        target_heading=hs_selection.heading_4_digit,
                     )
-                    if heading_docs:
-                        merged_docs = self._merge_hs_documents(result.get("documents", []), heading_docs)
-                        merged_docs = self._score_hs_candidates_by_query(
-                            query=query,
-                            documents=merged_docs,
-                            target_heading=hs_selection.heading_4_digit,
-                        )
-                        hs_selection = select_hs_documents(
-                            query=query,
-                            documents=merged_docs,
-                            mode=hs_mode,
-                            selected_code=selected_code,
-                            compare_codes=compare_codes,
-                        )
+                    hs_selection = select_hs_documents(
+                        query=query,
+                        documents=merged_docs,
+                        mode=hs_mode,
+                        selected_code=selected_code,
+                        compare_codes=compare_codes,
+                    )
 
-                result["documents"] = hs_selection.documents
-                result["total_count"] = len(hs_selection.documents)
-                result["missing_parameters"] = hs_selection.missing_parameters
-                result["heading_4_digit"] = hs_selection.heading_4_digit
-                result["hs_mode"] = hs_selection.mode
-                if hs_selection.clarification:
-                    result["clarification"] = hs_selection.clarification
-                if hs_selection.missing_parameters:
-                    result["status"] = "clarification_required"
-                    if not result.get("clarification"):
-                        result["clarification"] = "HS workflow requires additional parameters."
+            result["documents"] = hs_selection.documents
+            result["total_count"] = len(hs_selection.documents)
+            result["missing_parameters"] = hs_selection.missing_parameters
+            result["heading_4_digit"] = hs_selection.heading_4_digit
+            result["hs_mode"] = hs_selection.mode
+            if hs_selection.clarification:
+                result["clarification"] = hs_selection.clarification
+            if hs_selection.missing_parameters:
+                result["status"] = "clarification_required"
+                if not result.get("clarification"):
+                    result["clarification"] = "HS workflow requires additional parameters."
             
             # Add metadata
             result["status"] = result.get("status", "success")
@@ -852,7 +823,7 @@ class RetrievalService:
             
             logger.info(
                 f"Retrieved {len(result.get('documents', []))} documents "
-                f"for query: {query[:50]}... from collection: {collection or 'default'}"
+                f"for query: {query[:50]}... from collection: {collection}"
             )
             
             return result
@@ -867,33 +838,10 @@ class RetrievalService:
                 "session_id": session_id,
                 "api_visibility": {
                     "api_called": "/retrieval/retrieve",
-                    "collection_used": collection or "gdce_docs",
+                    "collection_used": self.config.qdrant_hs_code_collection if self.config else "gdce_hs_code",
                     "processing_path": "exception",
                 },
             }
-
-    @staticmethod
-    def _is_trade_data_query(query: str) -> bool:
-        q = (query or "").lower()
-        flow_terms = ["trade", "import", "export"]
-        analytics_terms = ["statistics", "trend", "volume", "value", "data", "compare", "comparison"]
-        has_flow = any(term in q for term in flow_terms)
-        has_analytics = any(term in q for term in analytics_terms)
-        # Require both dimensions to avoid false positives for procedural import questions.
-        return has_flow and has_analytics
-
-    @staticmethod
-    def _has_time_period(query: str) -> bool:
-        q = (query or "").lower()
-        patterns = [
-            r"\b(19|20)\d{2}\b",
-            r"\bq[1-4]\b",
-            r"\bquarter\s+[1-4]\b",
-            r"\b(january|february|march|april|may|june|july|august|september|october|november|december)\b",
-            r"\b(last|this|next)\s+(month|quarter|year)\b",
-            r"\b\d{4}\s*[-/]\s*\d{1,2}\b",
-        ]
-        return any(re.search(pattern, q) for pattern in patterns)
 
     @staticmethod
     def _extract_hs_lookup_subject(query: str) -> str:
@@ -1535,85 +1483,6 @@ class RetrievalService:
         ]
         return " ".join(parts).lower()
 
-    @staticmethod
-    def _query_keywords(query: str) -> list[str]:
-        tokens = re.findall(r"[a-z0-9]+", (query or "").lower())
-        stop_words = {
-            "what", "is", "the", "how", "to", "a", "an", "for", "of", "in", "on", "and", "or", "with", "against",
-            "i", "we", "you", "my", "our", "please", "can", "could", "should", "would", "do", "does", "did",
-        }
-        return [t for t in tokens if t not in stop_words and len(t) > 1]
-
-    @staticmethod
-    def _normalize_phrase(text: str) -> str:
-        cleaned = re.sub(r"[^a-z0-9\s]", " ", (text or "").lower())
-        cleaned = re.sub(r"\s+", " ", cleaned).strip()
-        return cleaned
-
-    @staticmethod
-    def _is_metadata_heavy_chunk(doc: dict, text_blob: str) -> bool:
-        metadata = doc.get("metadata") if isinstance(doc.get("metadata"), dict) else {}
-        chunk_idx = doc.get("chunk_idx", metadata.get("chunk_idx"))
-        text = (text_blob or "").strip().lower()
-        return bool(
-            (chunk_idx == 0 and "doc_id" in text and "title" in text and "effective_date" in text)
-            or text.startswith("--- doc_id:")
-            or text.startswith("doc_id:")
-        )
-
-    def _rerank_general_documents_by_query(self, query: str, documents: list[dict]) -> list[dict]:
-        if not documents:
-            return []
-
-        q = (query or "").strip().lower()
-        keywords = self._query_keywords(query)
-        query_phrase = " ".join(keywords)
-        normalized_query = self._normalize_phrase(query)
-
-        ranked: list[dict] = []
-        for doc in documents:
-            text = self._doc_text_blob(doc)
-            if not text:
-                ranked.append(dict(doc))
-                continue
-
-            base = float(doc.get("score", 0.0) or 0.0)
-            overlap = sum(1 for k in keywords if k in text)
-            overlap_ratio = overlap / max(1, len(keywords))
-
-            # Strong boost when the cleaned phrase appears directly in the document/FAQ heading.
-            exact_phrase_boost = 0.0
-            if query_phrase and query_phrase in text:
-                exact_phrase_boost += 0.45
-
-            # Very strong boost for exact FAQ-style question heading match.
-            normalized_text = self._normalize_phrase(text)
-            exact_question_boost = 0.0
-            if normalized_query and normalized_query in normalized_text:
-                exact_question_boost += 0.40
-
-            # Special boost for complaint/confiscation-like dispute questions.
-            dispute_boost = 0.0
-            if "complaint" in q and "complaint" in text:
-                dispute_boost += 0.18
-            if "confiscation" in q and "confiscation" in text:
-                dispute_boost += 0.22
-
-            # Penalize frontmatter/metadata chunks that frequently pollute top results.
-            metadata_penalty = 0.0
-            if self._is_metadata_heavy_chunk(doc, text):
-                metadata_penalty = 0.30
-
-            adjusted = base + (overlap_ratio * 0.35) + exact_phrase_boost + exact_question_boost + dispute_boost - metadata_penalty
-            adjusted = max(0.0, min(1.0, adjusted))
-
-            updated = dict(doc)
-            updated["score"] = adjusted
-            ranked.append(updated)
-
-        ranked.sort(key=lambda item: float(item.get("score", 0.0) or 0.0), reverse=True)
-        return ranked
-    
     async def health_check(self) -> Dict[str, Any]:
         """
         Check health of all components.

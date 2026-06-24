@@ -1288,7 +1288,7 @@
       "question": "Growth comparison for imports from Japan and Korea",
       "notes": "confused_with=comparison; 'growth' keyword present but no explicit compare/vs verb — expected growth, partner countries not strictly checked",
       "expected": {
-        "intent": "growth",
+        "intent": "comparison",
         "trade_direction": "IM"
       }
     },

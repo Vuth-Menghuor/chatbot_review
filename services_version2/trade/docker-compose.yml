@@ -1,0 +1,11 @@
+services:
+  trade-service:
+    build: .
+    container_name: trade-service
+    env_file:
+      - .env
+    ports:
+      - "8004:8004"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

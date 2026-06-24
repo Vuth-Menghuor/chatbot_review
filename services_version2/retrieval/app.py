@@ -1,22 +1,25 @@
 """
-FastAPI Application Factory - Retrieval service v2
+FastAPI Application Factory - Retrieval service v2 (HS code classification only)
 Creates and configures the FastAPI application
 
 Port: 8003 (see GDCE services architecture)
 
-Service Role (from ORCHESTRATOR_V2_ARCHITECTURE.md):
-  This service handles retrieval-based intents from the Orchestrator:
-  - Intent.HS_CODE_LOOKUP    → /hs-code-lookup
-  - Intent.DEFINITION        → /definition
-  - Intent.POLICY_INQUIRY    → /policy-inquiry
-  - Intent.GENERAL           → /general
+Service Role:
+  This service handles HS code classification exclusively, against the
+  gdce_hs_code collection:
+  - Intent.HS_CODE_LOOKUP    → /retrieval/retrieve (hs_mode=best/select/compare)
+  - HS candidate explanation → /hs-code-candidates
+  - HS ranked candidate list → /hs-code-ranked
+
+  General/FAQ/definition/policy-style queries (Intent.DEFINITION,
+  Intent.POLICY_INQUIRY, Intent.GENERAL) are handled by the separate
+  general retrieval service (port 8005), which runs against its own
+  dedicated Qdrant instance and the gdce_docs collection.
 
 Service Architecture (GDCE v2):
   Orchestrator (8001)
-    ├─ Routes HS_CODE_LOOKUP → Retrieval Service (8003)
-    ├─ Routes DEFINITION → Retrieval Service (8003)
-    ├─ Routes POLICY_INQUIRY → Retrieval Service (8003)
-    ├─ Routes GENERAL → Retrieval Service (8003)
+    ├─ Routes HS_CODE_LOOKUP → Retrieval Service (8003, gdce_hs_code)
+    ├─ Routes DEFINITION / POLICY_INQUIRY / GENERAL → General Service (8005, gdce_docs)
     ├─ Routes CALCULATION → Calculator Service (8002)
     └─ Routes TRADE_QUERY → Trade Data Service (8004)
 
@@ -29,7 +32,7 @@ Data Flow:
     ↓
   Retrieval Service (8003)
     ├─ Query Processing
-    ├─ Qdrant Vector Search (172.25.3.243:6333)
+    ├─ Qdrant Vector Search — gdce_hs_code collection (172.25.3.243:6333)
     ├─ OpenSearch BM25 Search (172.25.3.243:9200)
     ↓
   Response to Orchestrator → User
@@ -70,8 +73,8 @@ def create_app() -> FastAPI:
     
     # Create app
     app = FastAPI(
-        title="Retrieval Service",
-        description="Retrieval service for RAG pipeline",
+        title="Retrieval Service (HS Code Classification)",
+        description="HS code classification service — semantic + structured retrieval against gdce_hs_code",
         version="2.0.0",
         servers=[{"url": "http://localhost:8003", "description": "Local server"}],
     )
@@ -85,14 +88,16 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     
-    # Initialize infrastructure components
+    # Initialize infrastructure components.
+    # Default collection is now the HS code collection — this service never
+    # queries gdce_docs anymore (that lives on the general service, port 8005).
     vector_store = VectorStoreClient(
         host=config.qdrant_host,
         port=config.qdrant_port,
-      collection_name=config.qdrant_collection,
+      collection_name=config.qdrant_hs_code_collection,
       timeout=config.qdrant_timeout,
       api_key=config.qdrant_api_key,
-      default_score_threshold=0.1,  # Changed from config.similarity_threshold (was 0.5) - must be low to allow results through!
+      default_score_threshold=0.1,
     )
     
     embeddings = EmbeddingClient(

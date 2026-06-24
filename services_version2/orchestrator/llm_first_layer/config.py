@@ -92,4 +92,8 @@ class LLMFirstLayerConfig:
         self.gemini_api_key = self.gemini_api_key or os.getenv("GEMINI_API_KEY", "")
         
         if self.skip_rewrite_for_intents is None:
-            self.skip_rewrite_for_intents = ["hs_code_lookup", "trade_query"]
+            # Only the "general" catch-all intent goes through LLM rewriting.
+            # hs_code_lookup, trade_query, and calculation must receive the raw
+            # query unchanged so their downstream services can do their own
+            # structured parsing / keyword matching without interference.
+            self.skip_rewrite_for_intents = ["hs_code_lookup", "trade_query", "calculation"]

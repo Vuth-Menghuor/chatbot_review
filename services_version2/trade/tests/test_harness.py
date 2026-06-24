@@ -234,7 +234,7 @@ def run(base_url: str, bank_path: Path, out_dir: Path) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="Run extraction test bank against /extract-params")
-    parser.add_argument("--base-url", default="http://localhost:8005", help="Base URL of the trade_query service")
+    parser.add_argument("--base-url", default="http://localhost:8004", help="Base URL of the trade_query service")
     parser.add_argument("--bank", default="question_bank.json", help="Path to question_bank.json")
     parser.add_argument("--out", default="results", help="Output directory for results")
     args = parser.parse_args()

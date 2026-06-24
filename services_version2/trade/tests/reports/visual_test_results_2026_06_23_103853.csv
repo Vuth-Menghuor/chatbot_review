@@ -1,0 +1,125 @@
+id,question,expected_intent,status,title,chart_type,message
+summary-01,What was Cambodia's total export value in 2025?,summary,PASS,Export Trade Summary,pie,Passed
+summary-02,Total trade with Vietnam last year,summary,PASS,Trade Summary,pie,Passed
+summary-03,How much did Cambodia import in 2024?,summary,PASS,Import Trade Summary,pie,Passed
+summary-04,Give me a summary of exports to Thailand in Q1 2024,summary,PASS,Export Trade Summary,pie,Passed
+summary-05,Overall trade volume for 2024,summary,PASS,Trade Summary,pie,Passed
+summary-06,What is the total import value from China in 2025?,summary,PASS,Import Trade Summary,pie,Passed
+summary-07,Cambodia trade with Japan in semester 1 2025,summary,PASS,Trade Summary,pie,Passed
+summary-08,Summary of air exports in 2025,summary,PASS,Export Trade Summary,pie,Passed
+summary-09,How much rice did Cambodia export in 2025?,summary,PASS,Export Trade Summary,pie,Passed
+summary-10,What's our total trade this year?,summary,PASS,Trade Summary,pie,Passed
+summary-11,Exports to the US in March 2025,summary,ERROR,,,API HTTP Error 502
+summary-12,Total imports by sea in 2024,summary,ERROR,,,API HTTP Error 502
+summary-13,Trade value with Singapore,summary,ERROR,,,API HTTP Error 502
+summary-14,How much footwear was exported to the EU in 2025?,summary,ERROR,,,API HTTP Error 502
+summary-15,What is Cambodia's total export value for H2 2024?,summary,PASS,Export Trade Summary,pie,Passed
+summary-16,What was the net weight in kilograms of exports to China in 2025?,summary,PASS,Export Trade Summary,pie,Passed
+summary-17,Total export value of SITC division 02 in 2025,summary,PASS,Export Trade Summary,pie,Passed
+summary-18,Summary of exports to Vietnam by air in March 2025,summary,FAIL,,,Visualization object is missing or null. (Might be a NoResultsError from DAL)
+ranking-01,Top 10 export partners in 2025,ranking,PASS,Top Export Partners,bar,Passed
+ranking-02,Bottom 5 import countries in 2024,ranking,PASS,Top Import Partners,bar,Passed
+ranking-03,Which countries does Cambodia export the most to?,ranking,PASS,Top Export Partners,bar,Passed
+ranking-04,Top 5 products exported in 2025,ranking,PASS,Top Export Products,bar,Passed
+ranking-05,What are the leading import sources for 2024?,ranking,PASS,Top Import Partners,bar,Passed
+ranking-06,Top 3 transport modes used for imports in 2025,ranking,PASS,Top Import Transport Modes,bar,Passed
+ranking-07,Highest export value countries last year,ranking,ERROR,,,API HTTP Error 502
+ranking-08,Top 10 partners by trade volume,ranking,ERROR,,,API HTTP Error 502
+ranking-09,Lowest 5 export destinations in 2025,ranking,ERROR,,,API HTTP Error 502
+ranking-10,Best performing export markets in Q2 2025,ranking,PASS,Top Export Partners,bar,Passed
+ranking-11,Top 20 HS chapters for imports in 2025,ranking,PASS,Top Import Products,bar,Passed
+ranking-12,Which 10 countries import the most rice from Cambodia?,ranking,PASS,Top Export Partners,bar,Passed
+ranking-13,Top air freight export destinations in 2025,ranking,PASS,Top Export Partners,bar,Passed
+ranking-14,Smallest 5 trading partners by import value,ranking,PASS,Top Import Partners,bar,Passed
+ranking-15,Top 10 partner countries for both imports and exports in 2025,ranking,PASS,Top Partners,bar,Passed
+ranking-16,Top 5 export partners by weight in 2025,ranking,PASS,Top Export Partners,bar,Passed
+ranking-17,Top 5 SITC divisions for imports in 2025,ranking,PASS,Top Import Partners,bar,Passed
+ranking-18,Which mode of transport had the highest import value in 2025?,ranking,PASS,Top Import Transport Modes,bar,Passed
+trend-01,Show the monthly export trend in 2025,trend,FAIL,,,Visualization object is missing or null. (Might be a NoResultsError from DAL)
+trend-02,How has trade with Vietnam changed over the past 5 years?,trend,ERROR,,,API HTTP Error 502
+trend-03,Quarterly import trend for 2024,trend,ERROR,,,API HTTP Error 502
+trend-04,Trade trend with China from 2024 to 2026,trend,ERROR,,,API HTTP Error 502
+trend-05,Show me export trends over time,trend,PASS,Export Trade Trend over Time,line,Passed
+trend-06,Monthly trend of rice exports in 2025,trend,FAIL,,,Visualization object is missing or null. (Might be a NoResultsError from DAL)
+trend-07,How did imports from Thailand evolve between 2024 and 2026?,trend,PASS,Import Trade Trend over Time,line,Passed
+trend-08,Yearly trade trend for the last decade,trend,PASS,Trade Trend over Time,line,Passed
+trend-09,Trend of air transport exports in 2025,trend,PASS,Export Trade Trend over Time,line,Passed
+trend-10,Compare this year's exports to last year,trend,PASS,Export Trade Trend over Time,line,Passed
+trend-11,Semester trend for 2024 and 2025,trend,PASS,Trade Trend over Time,line,Passed
+trend-12,Historical trade balance trend with Japan,trade_balance,PASS,Trade Balance Summary,bar,Passed
+trend-13,Show import trend for Q1 each year from 2024-2026,trend,PASS,Import Trade Trend over Time,line,Passed
+trend-14,Track Cambodia's export performance monthly in 2024,trend,PASS,Export Trade Trend over Time,line,Passed
+trend-15,Trend of trade with Malaysia,trend,ERROR,,,API HTTP Error 502
+trend-16,Show the trend of export weight for rice over time,trend,ERROR,,,API HTTP Error 502
+trend-17,Track the monthly trend of imports from Thailand by sea between 2024 and 2026,trend,FAIL,,,Visualization object is missing or null. (Might be a NoResultsError from DAL)
+trend-18,Quarterly trend of SITC Section 7 exports since 2024,trend,PASS,Export Trade Trend over Time,line,Passed
+comparison-01,Compare exports to Vietnam vs Thailand in 2025,comparison,PASS,Export Trade Comparison,bar,Passed
+comparison-02,Compare imports from China and Japan,comparison,PASS,Import Trade Comparison,bar,Passed
+comparison-03,Trade comparison between USA and EU in 2024,comparison,PASS,Trade Comparison,bar,Passed
+comparison-04,How does trade with Singapore compare to Malaysia?,comparison,PASS,Trade Comparison,bar,Passed
+comparison-05,"Compare Cambodia's exports to Vietnam, Thailand, and Laos in 2025",comparison,PASS,Export Trade Comparison,bar,Passed
+comparison-06,"Versus China, how much do we trade with India?",comparison,PASS,Trade Comparison,bar,Passed
+comparison-07,Compare import value of China against South Korea in 2024,comparison,PASS,Import Trade Comparison,bar,Passed
+comparison-08,Difference in export value between Japan and Germany,comparison,PASS,Export Trade Comparison,bar,Passed
+comparison-09,Compare exports vs imports with Vietnam in 2025,trade_balance,ERROR,,,API HTTP Error 502
+comparison-10,China vs Vietnam: which is a bigger trade partner in 2025?,comparison,ERROR,,,API HTTP Error 502
+comparison-11,Compare monthly export trend between Thailand and Vietnam,comparison,ERROR,,,API HTTP Error 502
+comparison-12,Imports: Japan compared to South Korea in 2024,comparison,PASS,Import Trade Comparison,bar,Passed
+comparison-13,Compare Cambodia's top 2 trade partners,ranking,PASS,Top Partners,bar,Passed
+comparison-14,Trade value with US relative to UK,comparison,PASS,Trade Comparison,bar,Passed
+comparison-15,How do exports to Vietnam stack up against exports to Indonesia in 2024?,comparison,PASS,Export Trade Comparison,bar,Passed
+comparison-16,Compare exports of SITC division 02 between Thailand and Vietnam,comparison,PASS,Export Trade Comparison,bar,Passed
+comparison-17,Compare the volume of exports to Vietnam vs Thailand in 2025,comparison,PASS,Export Trade Comparison,bar,Passed
+comparison-18,"Comparison of exports to China, Japan, and India in 2025",comparison,PASS,Export Trade Comparison,bar,Passed
+breakdown-01,Breakdown of exports by product in 2025,breakdown,PASS,Export Trade Breakdown by Product,pie,Passed
+breakdown-02,Show imports broken down by transport mode in 2025,breakdown,PASS,Import Trade Breakdown by Product,pie,Passed
+breakdown-03,Breakdown of trade by economic sector in 2024,breakdown,PASS,Trade Breakdown by Product,pie,Passed
+breakdown-04,What's the distribution of exports to Vietnam by HS chapter in 2025?,breakdown,ERROR,,,API HTTP Error 502
+breakdown-05,Breakdown imports by mode of transport for 2024,breakdown,ERROR,,,API HTTP Error 502
+breakdown-06,Show export breakdown by product category for Q1 2025,breakdown,ERROR,,,API HTTP Error 502
+breakdown-07,Sector breakdown of imports in 2025,breakdown,PASS,Import Trade Breakdown by Product,pie,Passed
+breakdown-08,How is trade with China broken down by transport mode?,breakdown,PASS,Trade Breakdown by Product,pie,Passed
+breakdown-09,Breakdown of rice exports by destination country in 2025,breakdown,PASS,Export Trade Breakdown by Product,pie,Passed
+breakdown-10,Distribution of imports by product chapter in 2024,breakdown,PASS,Import Trade Breakdown by Product,pie,Passed
+breakdown-11,Show me the industry breakdown of exports in 2025,breakdown,PASS,Export Trade Breakdown by Product,pie,Passed
+breakdown-12,Breakdown by HS heading for garment exports in 2025,breakdown,PASS,Export Trade Breakdown by Product,pie,Passed
+breakdown-13,Transport mode breakdown for trade with Thailand,breakdown,PASS,Trade Breakdown by Product,pie,Passed
+breakdown-14,Product breakdown of imports from Japan in 2025,breakdown,PASS,Import Trade Breakdown by Product,pie,Passed
+breakdown-15,Breakdown of exports by partner country in 2024,breakdown,PASS,Export Trade Breakdown by Product,pie,Passed
+breakdown-16,How are imports from Thailand distributed by mode of transport in 2025?,breakdown,PASS,Import Trade Breakdown by Product,pie,Passed
+breakdown-17,Economic sector breakdown of imports in 2025,breakdown,ERROR,,,API HTTP Error 502
+growth-01,What was the export growth rate in 2025 compared to 2024?,growth,ERROR,,,API HTTP Error 502
+growth-02,How much did imports from China grow year-over-year?,growth,ERROR,,,API HTTP Error 502
+growth-03,Export growth for Vietnam from 2024 to 2026,growth,PASS,Import Trade Growth,bar,Passed
+growth-04,Which products had the fastest growth in exports in 2025?,growth,PASS,Export Trade Growth,bar,Passed
+growth-05,Did imports increase or decrease in 2025 vs 2024?,growth,PASS,Import Trade Growth,bar,Passed
+growth-06,YoY growth of trade with Thailand,growth,PASS,Trade Growth,bar,Passed
+growth-07,Show the growth rate of rice exports,growth,PASS,Export Trade Growth,bar,Passed
+growth-08,How fast did exports to the US grow between 2024 and 2026?,growth,PASS,Export Trade Growth,bar,Passed
+growth-09,Growth comparison for imports from Japan and Korea,comparison,PASS,Import Trade Comparison,bar,Passed
+growth-10,Did Cambodia's trade with the EU grow last year?,growth,PASS,Trade Growth,bar,Passed
+growth-11,Month over month growth in exports for 2025,growth,PASS,Export Trade Growth,bar,Passed
+growth-12,Decline in imports from Vietnam in 2025,growth,PASS,Import Trade Growth,bar,Passed
+growth-13,Growth rate of air transport exports in 2025,growth,ERROR,,,API HTTP Error 502
+growth-14,How has Cambodia's overall trade grown since 2024?,growth,ERROR,,,API HTTP Error 502
+growth-15,Export growth for the garment sector in the past 3 years,growth,ERROR,,,API HTTP Error 502
+growth-16,Did the weight of exports to Vietnam increase or decrease in 2025 vs 2024?,growth,PASS,Export Trade Growth,bar,Passed
+growth-17,YoY growth of the SITC division 02 sector in 2025,growth,PASS,Trade Growth,bar,Passed
+tradebalance-01,What is Cambodia's trade balance with Vietnam in 2025?,trade_balance,PASS,Trade Balance Summary,bar,Passed
+tradebalance-02,Trade surplus or deficit with China?,trade_balance,PASS,Trade Balance Summary,bar,Passed
+tradebalance-03,Show the trade balance for 2024,trade_balance,PASS,Trade Balance Summary,bar,Passed
+tradebalance-04,Does Cambodia have a trade deficit with Thailand?,trade_balance,PASS,Trade Balance Summary,bar,Passed
+tradebalance-05,Net trade with Japan in 2025,trade_balance,PASS,Trade Balance Summary,bar,Passed
+tradebalance-06,Export-import balance with the US in Q1 2025,trade_balance,PASS,Trade Balance Summary,bar,Passed
+tradebalance-07,What's our overall trade balance over the years?,trade_balance,PASS,Trade Balance Summary,bar,Passed
+tradebalance-08,Balance of trade with South Korea,trade_balance,PASS,Trade Balance Summary,bar,Passed
+tradebalance-09,Is Cambodia importing more than exporting from Vietnam?,trade_balance,ERROR,,,API HTTP Error 502
+tradebalance-10,Trade balance with the EU in 2025,trade_balance,ERROR,,,API HTTP Error 502
+tradebalance-11,Cambodia's net trade position with Singapore,trade_balance,ERROR,,,API HTTP Error 502
+tradebalance-12,Surplus or deficit with Malaysia in 2024,trade_balance,PASS,Trade Balance Summary,bar,Passed
+tradebalance-13,What is the trade balance for semester 1 2025 with China?,trade_balance,PASS,Trade Balance Summary,bar,Passed
+tradebalance-14,How much more does Cambodia export than import to Indonesia?,trade_balance,PASS,Trade Balance Summary,bar,Passed
+tradebalance-15,Total trade balance for 2024,trade_balance,PASS,Trade Balance Summary,bar,Passed
+tradebalance-16,What is the trade surplus or deficit of HS chapter 10 with Thailand?,trade_balance,PASS,Trade Balance Summary,bar,Passed
+tradebalance-17,Cambodia's net trade balance by air in 2025,trade_balance,PASS,Trade Balance Summary,bar,Passed
+tradebalance-18,Track the trade balance with Vietnam monthly in 2025,trade_balance,FAIL,,,Visualization object is missing or null. (Might be a NoResultsError from DAL)

@@ -131,6 +131,19 @@ async def process_query(
                 f"[{request_id}] ⚡ Cache HIT for intent '{cached_result.get('intent')}' "
                 f"— skipping downstream services"
             )
+            
+            # --- Update session context on Cache HIT ---
+            if req.session_id:
+                try:
+                    coordinator.update_session_for_query(
+                        session_id=req.session_id,
+                        query=question,
+                        intent_value=cached_result.get("intent"),
+                        answer_summary=cached_result.get("answer", "Query processed")[:200]
+                    )
+                except Exception as e:
+                    logger.warning(f"[{request_id}] Failed to update session context on cache hit: {e}")
+            
             latency_ms = (time.time() - start_time) * 1000
             cached_result.setdefault("metadata", {})["cache_hit"] = True
             response = QueryResponse(

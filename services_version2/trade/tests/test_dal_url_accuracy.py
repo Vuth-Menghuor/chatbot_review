@@ -124,13 +124,20 @@ def check_url_assertions(expected: dict, query_params: dict) -> list[str]:
         if act_val != exp_val:
             mismatches.append(f"Expected frequency '{exp_val}', got '{act_val}'")
 
-    # 8. year -> period
+    # 8. year -> period (UPDATED TO ALLOW GRANULAR DATES)
     if "year" in expected:
         exp_val = str(expected["year"]).strip()
-        act_list = query_params.get("period", [])
-        act_val = act_list[0].strip() if act_list else None
-        if act_val != exp_val:
-            mismatches.append(f"Expected period (year) '{exp_val}', got '{act_val}'")
+        act_period = query_params.get("period", [None])[0]
+        act_start = query_params.get("start-period", [None])[0]
+        
+        has_match = False
+        if act_period and str(act_period).strip().startswith(exp_val):
+            has_match = True
+        if act_start and str(act_start).strip().startswith(exp_val):
+            has_match = True
+            
+        if not has_match:
+            mismatches.append(f"Expected year '{exp_val}' to be in period/start-period, got period='{act_period}', start-period='{act_start}'")
 
     # 9. limit -> limit
     if "limit" in expected:

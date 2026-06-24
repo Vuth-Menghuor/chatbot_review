@@ -100,8 +100,57 @@ class TradeService:
         return result
 
     def extract_params_only(self, question: str) -> dict[str, Any]:
-        """Debug helper: return extracted params without hitting DAL."""
-        return extract_parameters(question)
+        """Debug helper: return extracted params without hitting DAL.
+        Now properly uses the full pipeline and LLM repair loop.
+        """
+        # Use the full pipeline WITH the repair loop
+        scoped, final = self._build_validated_plan(question)
+        
+        # Build the structured dictionary expected by the test script
+        res = {
+            "intent": final.intent,
+            "version": final.version,
+            "filters": final.filters,
+            "metrics": final.metrics,
+            "group_by": scoped.group_by,
+            "dimensions": scoped.dimensions,
+            "period": final.period,
+            "start_period": final.start_period,
+            "end_period": final.end_period,
+            "frequency": final.frequency,
+            "sort": final.sort,
+            "limit": final.limit,
+            "offset": final.offset,
+            "sort_order": scoped.sort_order,
+            "sort_metric": scoped.sort_metric,
+            "year": scoped.year,
+            "years": scoped.years,
+            "month": scoped.month,
+            "quarter": scoped.quarter,
+            "semester": scoped.semester,
+            "trade_direction": final.filters.get("FLOW"),
+            "mode_of_transport": final.filters.get("MODE_OF_TRANSPORT"),
+            "hs_chapter": final.filters.get("HS_CHAPTER"),
+            "hs_code": final.filters.get("HS_HEADING") or final.filters.get("HS_CODE"),
+            "sitc_section": final.filters.get("SITC_SECTION"),
+            "sitc_division": final.filters.get("SITC_DIVISION"),
+            "origin_country": scoped.origin_country,
+            "destination_country": scoped.destination_country,
+        }
+        
+        # Flatten partner countries so the test script can easily read them
+        partners = final.filters.get("PARTNER_COUNTRY")
+        if isinstance(partners, list):
+            res["partner_countries"] = partners
+            res["partner_country"] = partners[0] if len(partners) == 1 else None
+        elif isinstance(partners, str):
+            res["partner_countries"] = [partners]
+            res["partner_country"] = partners
+        else:
+            res["partner_countries"] = None
+            res["partner_country"] = None
+
+        return res
 
     def _build_validated_plan(self, question: str, extracted_params: Optional[dict[str, Any]] = None):
         """Stage 1-5 pipeline with a validation-feedback repair loop.

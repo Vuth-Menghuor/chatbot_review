@@ -6,7 +6,38 @@ currency detection, and query rewriting.
 """
 
 import logging
-from typing import Optional, Any
+from typing import Optional, Any, List, Dict
+
+class AskBackResult:
+    def __init__(
+        self,
+        should_ask_back: bool,
+        question: str,
+        candidate_intents: List[str],
+        trigger_reason: str,
+    ):
+        self.should_ask_back = should_ask_back
+        self.question = question
+        self.candidate_intents = candidate_intents
+        self.trigger_reason = trigger_reason
+
+
+class AskBackTemplate:
+    def generate(self, query: str, candidate_intents: List[str], session: Any) -> str:
+        intent_map = {
+            "trade": "trade data",
+            "trade_query": "trade data",
+            "hs_code_lookup": "hs code lookup",
+            "general": "general question",
+            "calculation": "calculation",
+        }
+        options = [intent_map.get(c, c) for c in candidate_intents]
+        if len(options) > 1:
+            options_str = ", ".join(options[:-1]) + ", or " + options[-1]
+        else:
+            options_str = options[0] if options else ""
+        return f"Would that be related to {options_str}?"
+
 
 from .config import LLMFirstLayerConfig
 from .models import FirstLayerResult
@@ -58,6 +89,7 @@ class LLMFirstLayerService:
         # Initialize session manager
         from ..core.input_rewriter import SessionManager
         self.session_manager = SessionManager()
+        self._template = AskBackTemplate()
         
         logger.info("LLM First Layer Service initialized")
 
@@ -194,6 +226,74 @@ class LLMFirstLayerService:
             session_context=session_context,
             session_id=session_id,
         )
+
+    async def get_clarification_async(
+        self,
+        query: str,
+        intent_label: str,
+        confidence: float,
+        session: Any,
+        candidate_scores: Optional[Dict[str, float]] = None,
+        turn_number: int = 1,
+    ) -> AskBackResult:
+        """Assess if query is ambiguous and requires ask-back clarification."""
+        if not candidate_scores:
+            from ..core.workflow import WorkflowExecutor
+            executor = WorkflowExecutor(use_llm_intent=False)
+            candidate_scores = executor._estimate_candidate_scores(query)
+
+        # We present the core candidates
+        candidates = ["trade_query", "hs_code_lookup", "general", "calculation"]
+        
+        question_text = self._template.generate(query, candidates, session)
+        
+        # A turn-2+ fragment (e.g. low confidence or non-core) triggers ask-back
+        q_lower = query.lower().strip()
+        is_followup = any(q_lower.startswith(pat) for pat in ["what about", "how about", "and for", "for"])
+        should_ask_back = is_followup or confidence < 0.75 or intent_label in {"small_talk", "unclassified"}
+        
+        return AskBackResult(
+            should_ask_back=should_ask_back,
+            question=question_text,
+            candidate_intents=candidates,
+            trigger_reason="followup_fragment" if is_followup else "low_confidence_fragment" if should_ask_back else "none"
+        )
+
+    def resolve_from_user_response(
+        self, user_text: str, candidate_intents: List[str]
+    ) -> Optional[str]:
+        """Map user's choice back to one of the candidate intents."""
+        text = user_text.lower().strip()
+        
+        mapping = {
+            "trade": "trade_query",
+            "trade data": "trade_query",
+            "statistics": "trade_query",
+            "volume": "trade_query",
+            "hs": "hs_code_lookup",
+            "hs code": "hs_code_lookup",
+            "code": "hs_code_lookup",
+            "lookup": "hs_code_lookup",
+            "classify": "hs_code_lookup",
+            "general": "general",
+            "general question": "general",
+            "policy": "general",
+            "procedure": "general",
+            "calculation": "calculation",
+            "tax": "calculation",
+            "duty": "calculation",
+            "calculate": "calculation"
+        }
+        
+        for key, val in mapping.items():
+            if key in text and val in candidate_intents:
+                return val
+                
+        for candidate in candidate_intents:
+            if candidate.lower() in text:
+                return candidate
+                
+        return None
 
 
 # Singleton management

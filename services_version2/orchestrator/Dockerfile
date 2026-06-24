@@ -1,45 +1,24 @@
+# Use an official Python runtime as a parent image
 FROM python:3.11-slim
 
-# Set working directory
+# Set the working directory in the container
 WORKDIR /app
 
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
 # Copy requirements
-COPY requirements.txt .
+COPY requirements.txt ./
 
 # Install dependencies
-RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY . .
+# Copy the rest of the application code inside the package structure
+COPY . ./services_version2/orchestrator
 
-# Create non-root user
-RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
-USER appuser
+# Expose the port this service runs on
+EXPOSE 8001
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:${ORCHESTRATOR_PORT:-8001}/health || exit 1
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
 
-# Expose port
-EXPOSE ${ORCHESTRATOR_PORT:-8001}
-
-# Run application
-CMD ["python", "main.py"]
-
-# Build: docker build -t orchestrator:v2 .
-# Run:   docker run -p 8001:8001 \
-#        -e ORCHESTRATOR_HOST=0.0.0.0 \
-#        -e ORCHESTRATOR_PORT=8001 \
-#        -e RETRIEVAL_SERVICE_URL=http://retrieval:8000 \
-#        orchestrator:v2
+# Command to run the FastAPI app as a module
+CMD ["python", "-m", "services_version2.orchestrator.main"]

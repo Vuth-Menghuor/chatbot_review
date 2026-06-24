@@ -18,18 +18,18 @@ else:
     load_dotenv()
 
 from fastapi.middleware.cors import CORSMiddleware
-from .config import get_settings
-from .api.endpoints import router, set_service
-from .api.exceptions import (
+from config import get_settings
+from api.endpoints import router, set_service
+from api.exceptions import (
     InvalidInputError,
     NotFoundError,
     DALServiceError,
     QueryTimeoutError,
 )
-from .core.exceptions import ValidationError, UnknownIntentError, NoResultsError
-from .dal.exceptions import DALError
-from .core.normaliser import NormalisationError
-from .core.service import TradeService
+from core.exceptions import ValidationError, UnknownIntentError, NoResultsError
+from dal.exceptions import DALError
+from core.normaliser import NormalisationError
+from core.service import TradeService
 
 settings = get_settings()
 

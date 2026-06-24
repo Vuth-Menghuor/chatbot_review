@@ -53,6 +53,7 @@ async def query_trade_data(request: QueryRequest) -> dict[str, Any]:
     except NoResultsError as e:
         logger.info(f"No results: {e}")
         
+        q_params = getattr(e, "query_params", {}) or {}
         dal_url = getattr(e, "dal_source_url", None) or getattr(e, "query_params", {}).get("dal_source_url", "")
         raw_params = getattr(e, "query_params", None)
         filtered_params = None

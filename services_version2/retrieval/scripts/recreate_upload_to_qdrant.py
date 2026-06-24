@@ -23,7 +23,7 @@ class RAGDocumentLoaderRemote:
         self.qdrant_url = "https://172.25.3.243:6333"  # Remote Qdrant server
         self.collection_name = "gdce_docs"
         # Use same embedding model as retrieval service - from environment variable
-        self.embedding_model = os.getenv("QUERY_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+        self.embedding_model = os.getenv("QUERY_EMBEDDING_MODEL", "BAAI/bge-m3")
         self.chunk_size = 200
         self.chunk_overlap = 50
         
@@ -33,7 +33,7 @@ class RAGDocumentLoaderRemote:
     
     def load_documents(self):
         """Load all markdown documents"""
-        docs_dir = Path("data/processed/rag_text/cleaned_docs")
+        docs_dir = Path("data/")
         documents = []
         
         for md_file in sorted(docs_dir.glob("*.md")):

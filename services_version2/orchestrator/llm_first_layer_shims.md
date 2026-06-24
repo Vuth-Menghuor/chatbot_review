@@ -27,15 +27,17 @@ Because each task operated as a standalone class invoking the LLM independently,
 
 ## 2. The Solution: Unified `llm_first_layer`
 
-To optimize performance, the system consolidated these front-door NLP tasks under the [`llm_first_layer`](file:///home/gdce/gdce-chatbot/services_version2/orchestrator/llm_first_layer) package.
+To optimize performance, the system consolidated these front-door NLP tasks under the [`llm_first_layer`](file:///e:/GDCE-Intern/Repo/services_version2/orchestrator/llm_first_layer) package.
 
 This unified layer coordinates:
 * Input validation (safety, injection, scope checks).
 * Intent classification (Gemini classification with fallback).
 * Currency detection.
 * Conversational query rewriting.
+* Multi-turn session context tracking (managing state like `last_intent`, `last_entity`, `last_raw_query`, and `last_normalized_query` for context resolution).
+* Ask-back clarification (checking ambiguity via rule-based thresholds and generating clarification prompts).
 
-Instead of three isolated LLM round-trips, the subsystem handles validations and query cleaning in a unified pipeline (`llm_first_layer/pipeline.py`), drastically reducing processing overhead.
+Instead of three isolated LLM round-trips, the subsystem handles validations and query cleaning in a unified pipeline ([pipeline.py](file:///e:/GDCE-Intern/Repo/services_version2/orchestrator/llm_first_layer/pipeline.py)), drastically reducing processing overhead.
 
 ---
 
@@ -77,7 +79,7 @@ def get_intent_service(config=None) -> Any:
 ```
 * **Why it exists:** Keeps `WorkflowExecutor` (which expects a standalone `llm_detector` with a `detect_intent()` method) working without modifications.
 
-### B. Rewriter Service Shim ([`shims/rewriter_service.py`](file:///home/gdce/gdce-chatbot/services_version2/orchestrator/llm_first_layer/shims/rewriter_service.py))
+### B. Rewriter Service Shim ([`shims/rewriter_service.py`](file:///e:/GDCE-Intern/Repo/services_version2/orchestrator/llm_first_layer/shims/rewriter_service.py))
 ```python
 class RewriterServiceConfig:
     def __init__(self, **kwargs):
@@ -88,10 +90,13 @@ def get_rewriter_service(config=None) -> Any:
     # Routes to the consolidated first-layer service
     return get_llm_first_layer_service()
 ```
-* **Why it exists:** `ServiceCoordinator` still calls `self.rewriter_service.rewrite_input(...)`. The shim ensures this call maps directly to the unified service instance.
+* **Why it exists:** `ServiceCoordinator` still calls `self.rewriter_service.rewrite_input(...)`. The shim ensures this call maps directly to the unified service instance, allowing the coordinator to resolve conversational context using the unified session manager.
 
-### C. Validator Service Shim ([`shims/validator_service.py`](file:///home/gdce/gdce-chatbot/services_version2/orchestrator/llm_first_layer/shims/validator_service.py))
+### C. Validator Service Shim ([`shims/validator_service.py`](file:///e:/GDCE-Intern/Repo/services_version2/orchestrator/llm_first_layer/shims/validator_service.py))
 * **Why it exists:** This contains the main validation class structure (`InputValidator` / `ValidatorService`) and standalone utility wrappers like `extract_certificate_type()` or `is_short_rate_reply()`. It enables rule-based local fast-passes and handles async Gemini calls for prompt-driven scope/injection evaluations.
+
+### D. Ask-Back Service Fallback
+* **Why it exists:** The coordinator or other legacy components expect a standalone `ask_back_service` to generate clarification prompts and resolve user replies. In the unified system, the import of `get_ask_back_service` falls back to `get_llm_first_layer_service()`. The service directly handles async ambiguity and clarification checks through `get_clarification_async()` and maps candidate selections back to system intents using `resolve_from_user_response()`.
 
 ---
 

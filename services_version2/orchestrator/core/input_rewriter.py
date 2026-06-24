@@ -30,6 +30,26 @@ class SessionContext:
     pending_rewritten_query: Optional[str] = None
     ask_back_count: int = 0
 
+    # ------------------------------------------------------------------ #
+    # Turn-to-turn state (required for two-turn rewriting / ask-back)     #
+    # ------------------------------------------------------------------ #
+    # Intent value string (e.g. "hs_code_lookup") from the previous turn
+    last_intent: Optional[str] = None
+
+    # Core subject entity extracted from the previous turn's query
+    # (e.g. "car" from "what is the hs code of car?").
+    # Populated via utils.extract_entity() – kept as a pure field, no logic here.
+    last_entity: Optional[str] = None
+
+    # The raw user text from the previous turn BEFORE HS-code standardization.
+    # Kept for audit/logging purposes only.  Do NOT use for entity merging.
+    last_raw_query: Optional[str] = None
+
+    # The query text from the previous turn AFTER HS-code standardization.
+    # This is what _merge_pending_with_clarification should read for entity
+    # fallback, because it is the canonical form that was actually processed.
+    last_normalized_query: Optional[str] = None
+
     def add_turn(self, user: str = "", bot: str = "", user_input: str = "", bot_response: str = ""):
         user_val = user or user_input
         bot_val = bot or bot_response

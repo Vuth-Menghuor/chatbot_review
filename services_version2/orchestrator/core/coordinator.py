@@ -11,6 +11,8 @@ from typing import Optional, Dict, Any, List
 import uuid
 import re
 
+from ..utils import extract_entity
+
 from ..infrastructure.cache_service import get_cache_service
 from ..llm_service import OrchestratorLLMService, LLMServiceConfig, get_llm_service
 from ..llm_first_layer.shims.intent_service import OrchestratorIntentService, IntentServiceConfig
@@ -224,8 +226,25 @@ class ServiceCoordinator:
             normalized_question = self._light_normalize_query(question)
             context.metadata["normalized_input"] = normalized_question
             
+            # Load session history context early if session tracking and rewriter are enabled
+            if self.use_input_rewriter and session_id:
+                try:
+                    session_context = self.rewriter_service.get_or_create_session(session_id)
+                    context.session_context = session_context
+                except Exception as e:
+                    logger.warning(f"[{request_id}] Session context unavailable: {e}")
+
             # Step 3: Fast-path check for predefined/casual small talk (greetings, gratitude, etc.)
-            small_talk_response = await detect_small_talk(normalized_question, self.llm_service)
+            # If it is turn 2 or more, we skip LLM small talk check (by passing llm_service=None)
+            # so follow-up fragments can go through rewrite/ask-back logic.
+            is_turn_2_or_more = False
+            if context.session_context and len(getattr(context.session_context, 'turns', [])) > 0:
+                is_turn_2_or_more = True
+
+            small_talk_response = await detect_small_talk(
+                normalized_question, 
+                llm_service=None if is_turn_2_or_more else self.llm_service
+            )
             if small_talk_response:
                 context.intent = WorkflowIntent.SMALL_TALK
                 context.status = WorkflowStatus.COMPLETED
@@ -233,11 +252,10 @@ class ServiceCoordinator:
                 context.finalize()
                 
                 # Update session history with the small talk exchange if session context is active
-                if self.use_input_rewriter and session_id:
+                if self.use_input_rewriter and session_id and context.session_context:
                     try:
                         self.rewriter_service.update_session_context(session_id, last_intent="small_talk")
-                        session_context = self.rewriter_service.get_or_create_session(session_id)
-                        session_context.add_turn(user_input=question, bot_response=small_talk_response)
+                        context.session_context.add_turn(user_input=question, bot_response=small_talk_response)
                     except Exception as e:
                         logger.warning(f"[{request_id}] Failed to update session for small talk: {e}")
                 
@@ -315,13 +333,8 @@ class ServiceCoordinator:
             context.metadata["validation_passed"] = True
             context.metadata["scope_keywords_detected"] = validation_result.scope_keywords_matched
             
-            # Step 6: Load session history context if session tracking and rewriter are enabled
-            if self.use_input_rewriter and session_id:
-                try:
-                    session_context = self.rewriter_service.get_or_create_session(session_id)
-                    context.session_context = session_context
-                except Exception as e:
-                    logger.warning(f"[{request_id}] Session context unavailable: {e}")
+            # Step 6: Session context already loaded early.
+            pass
 
             # Step 7: Clarification Resolution (Handling user reply to a previous ask-back question)
             if context.session_context and context.session_context.is_awaiting_clarification():
@@ -337,17 +350,30 @@ class ServiceCoordinator:
                         try: locked_intent = WorkflowIntent(resolved_intent)
                         except ValueError: locked_intent = None
                         
-                        # Retrieve the original pending query and merge it with the new clarification details
+                        # Retrieve the original pending query and merge it with the new clarification details.
+                        # Pass session_last_entity so _merge_pending_with_clarification can fall back
+                        # to the turn-1 entity if the turn-2 fragment carried no entity of its own.
+                        session_last_entity = getattr(context.session_context, 'last_entity', None)
                         pending_query = context.session_context.resolve_clarification(resolved_intent)
                         merged_query = self._merge_pending_with_clarification(
                             pending_query=pending_query,
                             clarification_response=question,
                             resolved_intent=resolved_intent,
+                            session_last_entity=session_last_entity,
+                            session_context=context.session_context,
+                        )
+                        logger.info(
+                            f"[{request_id}] [MERGE] Merged pending query '{pending_query}' with "
+                            f"clarification '{question}' (resolved intent: '{resolved_intent}') -> '{merged_query}'"
                         )
                         context.clarification_confidence = 0.90
                         
                         # Validate the merged query; if invalid, fall back to using the user's latest message only
                         if not self._validate_merged_query(merged_query, resolved_intent):
+                            logger.warning(
+                                f"[{request_id}] [MERGE] Merged query '{merged_query}' failed validation for intent '{resolved_intent}'. "
+                                f"Falling back to latest clarification response: '{question}'"
+                            )
                             merged_query = question
                         
                         # Update the context query and clean/normalize it
@@ -355,6 +381,10 @@ class ServiceCoordinator:
                         normalized_question = self._light_normalize_query(context.question)
                         original_query = self.workflow_executor.cleanup_query(context.question)
                         context.cleaned_input = original_query
+                        
+                        logger.info(
+                            f"[{request_id}] [MERGE] Cleaned/rewritten merged query -> '{original_query}'"
+                        )
                         
                         # Set intent flags to lock the resolved intent and skip subsequent intent detection
                         context.clarification_locked_intent = locked_intent
@@ -416,6 +446,51 @@ class ServiceCoordinator:
                 # Run security check safety gate to prevent malformed or risky intent transitions
                 context.intent = self._apply_intent_safety_gate(context, original_query)
 
+            # Step 10: Dynamic Clarification (Ask-Back) Triggering
+            # Only fire on turn 2+ AND only when the query is NOT self-sufficient.
+            # A self-sufficient query states its own intent clearly (high confidence OR
+            # explicit intent keywords) and should be routed directly without interruption.
+            # This prevents ask-back from firing on queries like
+            # "what's the import duty for boat?" which are unambiguous on their own.
+            _already_resolved = bool(context.metadata.get("clarification_resolved"))
+            _turn_number = len(getattr(context.session_context, 'turns', [])) + 1 if context.session_context else 1
+            if (
+                context.session_context
+                and _turn_number >= 2
+                and not _already_resolved
+                and not self._is_self_sufficient_query(
+                    normalized_question, context.intent, _intent_confidence
+                )
+            ):
+                try:
+                    from ..llm_first_layer import get_llm_first_layer_service as get_ask_back_service
+                    ask_back_svc = get_ask_back_service()
+                    candidate_scores = self.workflow_executor._estimate_candidate_scores(normalized_question)
+                    ask_back_result = await ask_back_svc.get_clarification_async(
+                        query=normalized_question,
+                        intent_label=context.intent.value,
+                        confidence=_intent_confidence,
+                        session=context.session_context,
+                        candidate_scores=candidate_scores,
+                        turn_number=_turn_number,
+                    )
+                    if ask_back_result.should_ask_back:
+                        # Set session state to await clarification from user
+                        context.session_context.set_pending_clarification(
+                            candidate_intents=ask_back_result.candidate_intents,
+                            rewritten_query=normalized_question,
+                        )
+                        context.finalize()
+                        return self._build_ask_back_response(
+                            context,
+                            question=normalized_question,
+                            clarification_question=ask_back_result.question,
+                            candidate_intents=ask_back_result.candidate_intents,
+                            trigger_reason=ask_back_result.trigger_reason,
+                        )
+                except Exception as e:
+                    logger.warning(f"[{request_id}] Ask-back check failed: {e}")
+
             # Step 9: Core Intent Filtering (Directing non-core/refusal intents to small talk fallback)
             if context.intent not in {
                 WorkflowIntent.CALCULATION,
@@ -453,50 +528,22 @@ class ServiceCoordinator:
                     }
                 }
 
-            # Step 10: Dynamic Clarification (Ask-Back) Triggering
-            # If the user is engaged in a multi-turn session and the classification confidence is ambiguous,
-            # proactively trigger a clarification flow to align user intent.
-            _already_resolved = bool(context.metadata.get("clarification_resolved"))
-            _turn_number = len(getattr(context.session_context, 'turns', [])) + 1 if context.session_context else 1
-            if (context.session_context and _turn_number >= 2 and not _already_resolved):
-                try:
-                    from ..llm_first_layer import get_llm_first_layer_service as get_ask_back_service
-                    ask_back_svc = get_ask_back_service()
-                    candidate_scores = self.workflow_executor._estimate_candidate_scores(normalized_question)
-                    ask_back_result = await ask_back_svc.get_clarification_async(
-                        query=normalized_question,
-                        intent_label=context.intent.value,
-                        confidence=_intent_confidence,
-                        session=context.session_context,
-                        candidate_scores=candidate_scores,
-                        turn_number=_turn_number,
-                    )
-                    if ask_back_result.should_ask_back:
-                        # Set session state to await clarification from user
-                        context.session_context.set_pending_clarification(
-                            candidate_intents=ask_back_result.candidate_intents,
-                            rewritten_query=normalized_question,
-                        )
-                        context.finalize()
-                        return self._build_ask_back_response(
-                            context,
-                            question=normalized_question,
-                            clarification_question=ask_back_result.question,
-                            candidate_intents=ask_back_result.candidate_intents,
-                            trigger_reason=ask_back_result.trigger_reason,
-                        )
-                except Exception as e:
-                    logger.warning(f"[{request_id}] Ask-back check failed: {e}")
-
             # Step 11: Context-Aware Query Rewriting
             # Use conversation history to resolve pronouns or implied context in the query.
-            # Skipping rewriting for TRADE_QUERY and HS_CODE_LOOKUP to ensure original keyword matching is preserved.
+            # Skipping rewriting for TRADE_QUERY, HS_CODE_LOOKUP, and CALCULATION so their
+            # downstream services receive the raw query for structured parsing / keyword matching.
+            # Only GENERAL (the catch-all NLU intent) goes through the LLM rewrite step.
             context.rewritten_input = original_query
             rewrite_status = "skipped"
             rewrite_skip_reason = self._get_rewrite_skip_reason(intent=context.intent, rewriter_enabled=self.use_input_rewriter)
             context.rewrite_metadata = context.rewrite_metadata or {"rewrite_reason": "not_applied", "reason": "rewrite_disabled_or_skipped"}
 
-            if (self.use_input_rewriter and raw_detected_intent != WorkflowIntent.TRADE_QUERY and raw_detected_intent != WorkflowIntent.HS_CODE_LOOKUP):
+            if (
+                self.use_input_rewriter
+                and raw_detected_intent != WorkflowIntent.TRADE_QUERY
+                and raw_detected_intent != WorkflowIntent.HS_CODE_LOOKUP
+                and raw_detected_intent != WorkflowIntent.CALCULATION  # calculation takes raw query as-is
+            ):
                 intent_hint = context.intent.value if context.intent else None
                 try:
                     rewritten_question, rewrite_metadata = await self.rewriter_service.rewrite_input(
@@ -543,6 +590,7 @@ class ServiceCoordinator:
                     "reason": (
                         "trade_query rule" if context.intent == WorkflowIntent.TRADE_QUERY
                         else "hs_code_lookup rule" if context.intent == WorkflowIntent.HS_CODE_LOOKUP
+                        else "calculation rule" if context.intent == WorkflowIntent.CALCULATION
                         else "input_rewriter_disabled"
                     ),
                     "intent": context.intent.value if context.intent else None,
@@ -573,9 +621,18 @@ class ServiceCoordinator:
                     from .hs_classifier import detect_simple_product_category
                     category = detect_simple_product_category(context.original_input)
                     mode = "import" if "import" in context.original_input.lower() else "export" if "export" in context.original_input.lower() else None
-                    
+
+                    # ---- Two-turn state: populate last_intent / last_entity / last_*_query ----
+                    # last_raw_query: pre-standardization text (for audit/logging only)
+                    # last_normalized_query: post-standardization canonical form used by merge logic
+                    # last_entity: core subject noun phrase extracted via shared utility
+                    last_entity_val = extract_entity(context.cleaned_input or context.original_input)
+
                     update_kwargs = {
                         "last_intent": context.intent.value if context.intent else None,
+                        "last_raw_query": question,          # original pre-standardization input
+                        "last_normalized_query": original_query,  # post-standardization canonical form
+                        "last_entity": last_entity_val,
                     }
                     if context.detected_currency:
                         update_kwargs["currency"] = context.detected_currency
@@ -583,7 +640,7 @@ class ServiceCoordinator:
                         update_kwargs["product_category"] = category
                     if mode:
                         update_kwargs["import_export_mode"] = mode
-                        
+
                     self.rewriter_service.update_session_context(session_id, **update_kwargs)
                     answer_summary = "Query processed"
                     if context.retrieval_result and context.retrieval_result.get("documents"):
@@ -625,28 +682,74 @@ class ServiceCoordinator:
         return "retrieval"
 
     # Merge the pending query with the clarification query.
-    def _merge_pending_with_clarification(self, pending_query: str, clarification_response: str, resolved_intent: str) -> str:
+    def _merge_pending_with_clarification(
+        self,
+        pending_query: str,
+        clarification_response: str,
+        resolved_intent: str,
+        session_last_entity: Optional[str] = None,
+        session_context: Optional[Any] = None,
+    ) -> str:
+        """
+        Assemble a usable query out of an incomplete fragment + the user's
+        chosen intent from the ask-back round-trip.
+
+        Entity resolution priority:
+        1. extract_entity(pending_query)    — entity named in turn-2 fragment
+        2. session_last_entity              — entity from turn-1 (SessionContext.last_entity)
+        3. fall back to pending_query as-is
+
+        This is intentionally separate from the turn-1 rewrite rule: we are
+        just assembling a usable query from an incomplete fragment, regardless
+        of which intent was selected.
+        """
         try:
-            # Store the main topic/entity from the previous unanswered question
-            entity = None
-            
-            # Extract entity from the pending query if it contains "what about" or "about"
-            if pending_query:
-                pending_lower = pending_query.lower()
-                # Case 1: What about toyota -> Extract "toyota"
-                if "what about" in pending_lower:
-                    entity = pending_lower.split("what about")[1].rstrip("?").strip()
-                # Case 2: Tell me about rice -> Extract "rice"
-                elif "about" in pending_lower:
-                    entity = pending_lower.split("about")[1].rstrip("?").strip()
-                else:
-                    words = pending_lower.split()
-                    entity = words[-1].rstrip("?").strip() if words else None
-                if entity in ["a", "the", "an", ""]:
-                    entity = None
-                    
-            # List of words that refer to previous context
-            # Example: User: "its HS code", "its" refers to the previous entity
+            # For calculation queries, preserve and reapply contextual state (CIF, currency, origin)
+            if resolved_intent == "calculation" and session_context:
+                last_query = getattr(session_context, 'last_normalized_query', None)
+                last_intent = getattr(session_context, 'last_intent', None)
+                if last_query and last_intent == "calculation":
+                    try:
+                        from ..infrastructure.clients import CalculatorServiceClient
+                        params = CalculatorServiceClient._parse_question_for_calculation(last_query)
+                        cif_val = params.get("cif_value")
+                        currency = params.get("currency")
+                        origin = params.get("origin_country")
+                        
+                        # Extract the new entity (product) from the pending query
+                        entity = extract_entity(pending_query) if pending_query else None
+                        if not entity and session_last_entity:
+                            entity = session_last_entity
+                        
+                        if entity and cif_val is not None and origin:
+                            cif_display = int(cif_val) if cif_val == int(cif_val) else cif_val
+                            sym_map = {
+                                "USD": "$",
+                                "KHR": "៛",
+                                "EUR": "€",
+                                "GBP": "£",
+                                "CNY": "¥",
+                                "JPY": "¥",
+                                "THB": "฿",
+                                "VND": "₫",
+                                "KRW": "₩",
+                                "INR": "₹"
+                            }
+                            cur_str = sym_map.get(currency, f"{currency} ")
+                            return f"Calculate import tax for {entity} {cur_str}{cif_display} from {origin}"
+                    except Exception as e:
+                        logger.error(f"[MERGE] Error extracting calculation context: {e}")
+
+            # ---- Step 1: extract entity from the pending (turn-2) fragment ----
+            entity = extract_entity(pending_query) if pending_query else None
+
+            # ---- Step 2: fall back to turn-1 entity held in session state ----
+            if entity is None and session_last_entity:
+                entity = session_last_entity
+
+            # ---- Step 3: pronoun replacement ("its HS code" → "car HS code") ----
+            # Example: Previous query "What about Toyota?", clarification: "its HS code"
+            # → entity="toyota", pronoun_match="its" → "Toyota HS code"
             pronouns = ["its", "it", "that", "this", "these", "those"]
             response_lower = clarification_response.strip().lower()
             pronoun_match = None
@@ -654,25 +757,27 @@ class ServiceCoordinator:
                 if response_lower.startswith(pronoun):
                     pronoun_match = pronoun
                     break
-            
-            
-            # If user says: Previous: "What about Toyota?, then: "its HS code",  "its" in this case mean "Toyota"
-            # Result: "Toyota HS code"
+
             if pronoun_match and entity:
                 return clarification_response.replace(pronoun_match, entity, 1).strip()
-            
+
+            # ---- Step 4: prepend entity to clarification response if missing ----
             if clarification_response and clarification_response.strip() and entity:
                 if entity.lower() not in clarification_response.lower():
                     return f"{entity} {clarification_response}"
-            
-            # If clarification looks longer than the old query, assume user provided a complete new query
+
+            # ---- Step 5: complete new query provided by user ----
+            # If clarification looks longer than the old query, assume the user
+            # provided a full replacement query.
             if clarification_response and clarification_response.strip():
-                if len(clarification_response) > len(pending_query):
+                if len(clarification_response) > len(pending_query or ""):
                     merged = clarification_response
-                    if resolved_intent == "calculation" and not any(phrase in merged.lower() for phrase in ["calculate", "import tax", "duty", "tariff"]):
+                    if resolved_intent == "calculation" and not any(
+                        phrase in merged.lower() for phrase in ["calculate", "import tax", "duty", "tariff"]
+                    ):
                         merged = f"Calculate {merged}"
                     return merged
-            
+
             return pending_query if pending_query and pending_query.strip() else clarification_response or ""
         except Exception as e:
             logger.error(f"[MERGE] Unexpected error during merge: {str(e)}", exc_info=True)
@@ -757,6 +862,44 @@ class ServiceCoordinator:
         # Return True if at least 2 out of 3 indicators are present
         return sum([has_spec, has_model, descriptor_hits >= 1]) >= 2
 
+    def update_session_for_query(
+        self,
+        session_id: str,
+        query: str,
+        intent_value: str,
+        normalized_query: Optional[str] = None,
+        detected_currency: Optional[str] = None,
+        answer_summary: str = "Query processed",
+    ):
+        """Updates session state for cache hit queries to preserve context on subsequent turns."""
+        if not self.use_input_rewriter or not session_id:
+            return
+        try:
+            session_context = self.rewriter_service.get_or_create_session(session_id)
+            from .hs_classifier import detect_simple_product_category
+            
+            cleaned_query = self.workflow_executor.cleanup_query(query)
+            category = detect_simple_product_category(query)
+            mode = "import" if "import" in query.lower() else "export" if "export" in query.lower() else None
+            last_entity_val = extract_entity(cleaned_query or query)
+
+            update_kwargs = {
+                "last_intent": intent_value,
+                "last_raw_query": query,
+                "last_normalized_query": cleaned_query,
+                "last_entity": last_entity_val,
+            }
+            if detected_currency:
+                update_kwargs["currency"] = detected_currency
+            if category and category != "other":
+                update_kwargs["product_category"] = category
+            if mode:
+                update_kwargs["import_export_mode"] = mode
+
+            self.rewriter_service.update_session_context(session_id, **update_kwargs)
+            session_context.add_turn(user_input=query, bot_response=answer_summary[:200])
+        except Exception as e:
+            logger.warning(f"Failed to update session for query {query}: {e}")
 
     def _apply_intent_safety_gate(self, context: WorkflowContext, original_query: str) -> WorkflowIntent:
         """
@@ -850,14 +993,51 @@ class ServiceCoordinator:
         """
         Determines the reason for skipping query rewriting based on intent and rewriter status.
         """
-        if not rewriter_enabled: 
+        if not rewriter_enabled:
             return "input_rewriter_disabled"
-        if intent == WorkflowIntent.TRADE_QUERY: 
+        if intent == WorkflowIntent.TRADE_QUERY:
             return "trade_query rule"
-        if intent == WorkflowIntent.HS_CODE_LOOKUP: 
-            return "hs_code_lookup skip_rewrite - retrieval service has own LLM spec extraction"
+        if intent == WorkflowIntent.HS_CODE_LOOKUP:
+            return "hs_code_lookup rule — retrieval service has own LLM spec extraction"
+        if intent == WorkflowIntent.CALCULATION:
+            return "calculation rule — calculator service parses raw query directly"
         return "rewrite_allowed"
     
+    def _is_self_sufficient_query(
+        self, query: str, intent: WorkflowIntent, confidence: float
+    ) -> bool:
+        """
+        Return True when a turn-2 query states its own intent clearly enough
+        that ask-back clarification should be skipped and the query routed
+        directly.
+
+        Two independent criteria — either one is enough:
+        1. Confidence >= turn2_self_sufficiency_threshold (0.75).
+           Intentionally STRICTER than the pipeline-level ambiguity_confidence_
+           threshold (0.65) for two reasons:
+           (a) Turn-2 fragments are noisier inputs than full turn-1 queries.
+           (b) A wrong routing decision here silently produces a complete-
+               looking but wrong-context query, which is harder for the user
+               to catch than an ordinary low-confidence result.
+        2. The query contains explicit intent-signalling keywords (independent
+           of model confidence).
+        """
+        # Conversational followups (e.g., "what about", "how about", "and for", "for")
+        # are fragments and are never self-sufficient.
+        q_lower = query.lower().strip()
+        followup_prefixes = ["what about", "how about", "and for", "for"]
+        if any(q_lower.startswith(prefix) for prefix in followup_prefixes):
+            return False
+
+        # Intentionally separate and stricter than ambiguity_confidence_threshold.
+        TURN2_SELF_SUFFICIENCY_THRESHOLD = 0.75
+
+        if confidence >= TURN2_SELF_SUFFICIENCY_THRESHOLD:
+            return True
+
+        # Explicit-keyword check: high-confidence keywords override model score
+        return self._query_has_explicit_intent(query)
+
     def _is_rewrite_valid(self, original_query: str, rewritten_query: str, intent: Optional[WorkflowIntent] = None) -> bool:
         """
         Validates that a rewritten query preserves the essential structure and meaning
@@ -1136,6 +1316,8 @@ class ServiceCoordinator:
                 "total_count": context.retrieval_result.get("total_count", 0),
                 "answer_source": context.retrieval_result.get("answer_source", "unknown")
             }
+            if isinstance(context.retrieval_result.get("metadata"), dict):
+                response["metadata"].update(context.retrieval_result["metadata"])
             if context.metadata:
                 response["metadata"].update(context.metadata)
         

@@ -300,10 +300,14 @@ class FirstLayerPipeline:
         clarification_q = None
         candidates = []
 
-        # Rule: Low confidence
-        if confidence < self.config.ambiguity_confidence_threshold:
+        # Rule: Low confidence or followup fragment on Turn 2+
+        is_turn_2_plus = session_context and len(getattr(session_context, 'turns', [])) > 0
+        q_lower = query.lower().strip()
+        is_followup = is_turn_2_plus and any(q_lower.startswith(prefix) for prefix in ["what about", "how about", "and for", "for"])
+
+        if confidence < self.config.ambiguity_confidence_threshold or is_followup:
             should_ask = True
-            trigger_reason = "low_confidence"
+            trigger_reason = "followup_fragment" if is_followup else "low_confidence"
 
         if should_ask:
             # Generate clarification question using ask_back service
