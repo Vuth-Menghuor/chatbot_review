@@ -7,9 +7,9 @@ or intent/flow decisions.
 from __future__ import annotations
 
 from typing import Any, Mapping, Optional, Tuple, Union
-from .dal_models import DALRequest
-from ..core.query_plan import FinalQueryPlan
-from ..core.semantic_registry import STRUCTURE
+from dal.dal_models import DALRequest
+from core.query_plan import FinalQueryPlan
+from core.semantic_registry import STRUCTURE
 
 
 class DALRequestBuilder:

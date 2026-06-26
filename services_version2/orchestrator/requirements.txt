@@ -16,8 +16,6 @@ orjson==3.9.15
 redis>=5.0.0
 
 # NLP & Embeddings (for MiniLM intent detection)
-sentence-transformers>=2.2.2
-torch>=2.0.0
 numpy>=1.24.0
 
 # Testing

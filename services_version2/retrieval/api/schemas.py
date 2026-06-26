@@ -29,9 +29,8 @@ class QueryRequest(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "query": "What is the HS code for cotton fabric?",
+                "query": "Iphone 14 promax",
                 "session_id": "session-123",
-                "collection": "gdce_hs_code",
                 "generate_answer": True
             }
         }

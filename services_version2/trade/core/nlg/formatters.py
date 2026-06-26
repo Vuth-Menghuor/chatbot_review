@@ -268,11 +268,18 @@ def extract_facts(payload: Dict[str, Any], query_params: Dict[str, Any]) -> Dict
     total_trade_value = summary.get("total_trade_value") or payload.get("total_trade_value") or 0.0
 
     records = payload.get("records") or []
-    if not total_trade_value and records:
-        total_trade_value = sum(float(r.get("VALUE_USD", 0.0)) for r in records)
+    
+    # Calculate sum of returned records (subset total)
+    subset_trade_value = sum(float(r.get("VALUE_USD", r.get("trade_value", 0.0)) or 0.0) for r in records)
+    subset_weight = sum(float(r.get("NET_WEIGHT", r.get("net_weight", 0.0)) or 0.0) for r in records)
+
+    is_global_total = bool(summary.get("total_trade_value") or payload.get("total_trade_value"))
+    if not total_trade_value and intent == "summary" and records:
+        total_trade_value = subset_trade_value
+        is_global_total = True
 
     total_weight = 0.0
-    if records:
+    if is_global_total:
         total_weight = sum(float(r.get("NET_WEIGHT", 0.0)) for r in records)
 
     # 2. Dimensions from filters or parameters
@@ -320,8 +327,13 @@ def extract_facts(payload: Dict[str, Any], query_params: Dict[str, Any]) -> Dict
         "partner_country": partner_country,
         "mode_of_transport": mode_of_transport,
         "period": time_context,
-        "total_trade_value_usd": float(total_trade_value),
-        "total_weight_kg": float(total_weight),
+        "total_trade_value_usd": float(total_trade_value) if is_global_total else None,
+        "total_weight_kg": float(total_weight) if is_global_total else None,
+        "subset_trade_value_usd": float(subset_trade_value),
+        "subset_weight_kg": float(subset_weight),
+        "sort_order": query_params.get("sort_order", "desc"),
+        "limit": query_params.get("limit"),
+        "metrics": query_params.get("metrics") or ["VALUE_USD"],
     }
 
     # Add product code context
@@ -373,33 +385,64 @@ def extract_facts(payload: Dict[str, Any], query_params: Dict[str, Any]) -> Dict
             country_code = r.get("PARTNER_COUNTRY")
             country_name = COUNTRY_NAMES.get(str(country_code).upper(), country_code) if country_code else "Unknown"
             val = float(r.get("VALUE_USD", 0.0))
-            country_comparison.append({"country": country_name, "trade_value_usd": val})
+            weight = float(r.get("NET_WEIGHT", 0.0))
+            country_comparison.append({"country": country_name, "trade_value_usd": val, "weight_kg": weight})
         facts["comparison_records"] = country_comparison
 
     # If ranking, list top records
     elif intent == "ranking" and records:
         top_records = []
-        for r in records[:5]:
+        for r in records:
             lbl_key = "PARTNER_COUNTRY"
             if "HS_CHAPTER" in r:
                 lbl_key = "HS_CHAPTER"
             elif "HS_HEADING" in r:
                 lbl_key = "HS_HEADING"
+            elif "MODE_OF_TRANSPORT" in r:
+                lbl_key = "MODE_OF_TRANSPORT"
+            
             lbl_val = r.get(lbl_key)
             if lbl_key == "PARTNER_COUNTRY" and lbl_val:
                 lbl_val = COUNTRY_NAMES.get(str(lbl_val).upper(), lbl_val)
-            val = float(r.get("VALUE_USD", 0.0))
-            top_records.append({"label": lbl_val, "trade_value_usd": val})
+            elif lbl_key == "MODE_OF_TRANSPORT" and lbl_val:
+                lbl_val = TRANSPORT_NAMES.get(str(lbl_val), lbl_val)
+            
+            val = float(r.get("VALUE_USD", r.get("trade_value", 0.0)) or 0.0)
+            weight = float(r.get("NET_WEIGHT", r.get("net_weight", 0.0)) or 0.0)
+            top_records.append({"label": lbl_val, "trade_value_usd": val, "weight_kg": weight})
         facts["ranking_records"] = top_records
 
     # If growth, compute and attach rates
     elif intent == "growth" and records:
         growth_records = []
         for r in records:
-            p = r.get("PERIOD")
-            val = float(r.get("VALUE_USD", 0.0))
+            p = r.get("PERIOD") or r.get("period")
+            val = float(r.get("VALUE_USD", r.get("trade_value", 0.0)) or 0.0)
+            weight = float(r.get("NET_WEIGHT", r.get("net_weight", 0.0)) or 0.0)
             growth_rate = float(r.get("growth_rate_pct", 0.0))
-            growth_records.append({"period": p, "trade_value_usd": val, "growth_rate_pct": growth_rate})
+            growth_records.append({"period": p, "trade_value_usd": val, "growth_rate_pct": growth_rate, "weight_kg": weight})
         facts["growth_records"] = growth_records
+
+    # If trend, list chronological values
+    elif intent == "trend" and records:
+        trend_records = []
+        for r in records:
+            p = r.get("PERIOD") or r.get("period")
+            val = float(r.get("VALUE_USD", r.get("trade_value", 0.0)) or 0.0)
+            weight = float(r.get("NET_WEIGHT", r.get("net_weight", 0.0)) or 0.0)
+            trend_records.append({"period": p, "trade_value_usd": val, "weight_kg": weight})
+        # Sort chronologically
+        trend_records.sort(key=lambda x: str(x["period"]))
+        facts["trend_records"] = trend_records
+
+    # If trade_balance, list all records
+    elif intent == "trade_balance" and records:
+        tb_records = []
+        for r in records:
+            p = r.get("PERIOD") or r.get("period")
+            flow = r.get("FLOW") or r.get("flow")
+            val = float(r.get("VALUE_USD", r.get("trade_value", 0.0)) or 0.0)
+            tb_records.append({"period": p, "flow": flow, "value_usd": val})
+        facts["trade_balance_records"] = tb_records
 
     return facts

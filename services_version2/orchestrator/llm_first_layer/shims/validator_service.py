@@ -35,6 +35,10 @@ class ValidationResult:
     def is_in_scope(self) -> bool:
         return self.decision == ValidationDecision.IN_SCOPE
 
+    @property
+    def scope_reason(self) -> str:
+        return self.reason or ""
+
     @classmethod
     def in_scope(cls, reason: Optional[str] = None, keywords: Optional[List[str]] = None, provider: Optional[str] = None):
         return cls(decision=ValidationDecision.IN_SCOPE, is_valid=True, reason=reason, scope_keywords_matched=keywords or [], provider=provider)

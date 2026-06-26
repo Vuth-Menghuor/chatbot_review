@@ -26,7 +26,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import httpx
 
-from .countries import COUNTRY_TO_CODE_MAP, VALID_COUNTRY_CODES
+from core.countries import COUNTRY_TO_CODE_MAP, VALID_COUNTRY_CODES
 
 logger = logging.getLogger(__name__)
 

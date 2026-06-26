@@ -9,9 +9,9 @@ import re
 import logging
 from typing import Any, Dict, List, Optional
 
-from .countries import COUNTRY_TO_CODE_MAP, VALID_COUNTRY_CODES
-from .query_plan import RawQueryPlan, EnrichedQueryPlan, ScopedQueryPlan, FinalQueryPlan
-from .semantic_registry import (
+from core.countries import COUNTRY_TO_CODE_MAP, VALID_COUNTRY_CODES
+from core.query_plan import RawQueryPlan, EnrichedQueryPlan, ScopedQueryPlan, FinalQueryPlan
+from core.semantic_registry import (
     normalize_intent,
     find_dimension_by_synonym,
     find_measure_by_synonym,
@@ -163,7 +163,7 @@ def resolve_entities(raw_plan: RawQueryPlan) -> Dict[str, Any]:
             else:
                 resolved["hs_code"] = prod_str
         else:
-            from .product_resolver import resolve_product_to_hs
+            from product_resolver import resolve_product_to_hs
             resolved_hs = resolve_product_to_hs(prod_str)
             if resolved_hs:
                 if len(resolved_hs) == 2:
@@ -320,7 +320,7 @@ def orchestrate_query_plan(scoped_plan: ScopedQueryPlan) -> FinalQueryPlan:
     frequency: Optional[str] = scoped_plan.frequency
 
     # Apply frequency default for range queries
-    from ..handlers.strategies import STRATEGIES
+    from handlers.strategies import STRATEGIES
     strategy = STRATEGIES.get(scoped_plan.intent)
     default_frequency = strategy.default_frequency if strategy else None
 
@@ -446,8 +446,8 @@ def convert_legacy_params(raw_params: dict[str, Any]) -> dict[str, Any]:
 
     Returns the formatted FinalQueryPlan as a flat dictionary.
     """
-    from .query_plan import RawQueryPlan
-    from ..handlers.scopes import apply_intent_scoping
+    from core.query_plan import RawQueryPlan
+    from handlers.scopes import apply_intent_scoping
 
     raw_plan = RawQueryPlan(
         intent=raw_params.get("intent", "summary"),

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..handlers.scopes import get_scope_config
-from .exceptions import NormalisationError
+from handlers.scopes import get_scope_config
+from core.exceptions import NormalisationError
 
 
 def compute_growth_rates(records: list[dict[str, Any]], query_params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
@@ -115,7 +115,7 @@ def normalise(
     metadata["count"] = count
 
     # Generate frontend-ready visualization payloads
-    from ..visualization import generate_visualizations
+    from visualization import generate_visualizations
     viz_payload = generate_visualizations(records, intent, query_params)
 
     return {

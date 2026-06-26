@@ -49,7 +49,8 @@ class ValuationModel(BaseModel):
         description=(
             "ISO 4217 currency code (e.g., 'USD', 'KHR'), symbol (e.g., '$', '៛'), "
             "or currency name (e.g., 'dollar', 'baht'). "
-            "If omitted, inferred from origin_country or defaults to KHR."
+            "If omitted and origin_country is provided, inferred from the origin country. "
+            "If both are omitted, defaults to KHR."
         ),
     )
     exchange_rate_to_khr: Optional[float] = Field(None, gt=0)
@@ -157,7 +158,7 @@ class CalculateImportTaxesRequest(BaseModel):
         return v
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "calculation_date": "2026-03-04",
                 "regime": "import",
@@ -315,7 +316,7 @@ class CalculateImportTaxesResponse(BaseModel):
     )
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "calculation_id": "calc_2026-03-04_001234",
                 "currency": "KHR",

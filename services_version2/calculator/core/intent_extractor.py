@@ -405,7 +405,7 @@ class IntentExtractor:
 
         valuation: Dict[str, Any] = {
             "customs_value": customs_value,
-            "currency": (cur or "USD").upper(),
+            "currency": cur.upper() if cur else None,
             "declared_value_basis": "total",
         }
         if dv is not None:
@@ -588,7 +588,7 @@ Schema fields you MUST extract:
 Rules:
 1. Return ONLY a JSON object. No markdown, no explanation outside JSON.
 2. If a field is missing in the text, omit it from the JSON (do not guess).
-3. For currency, default to USD if not specified.
+3. For currency, if not specified, set to null. Do NOT default to USD.
 4. For origin, default to General (omit) if not specified.
 5. For regime, default to import unless "export" is explicitly stated.
 6. For numbers with K/M/B suffixes, expand them (2.2M → 2200000).

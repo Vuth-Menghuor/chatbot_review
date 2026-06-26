@@ -32,8 +32,11 @@ from .timeout_config import (
     get_timeout_config,
 )
 
-from ..llm_first_layer.shims.validator_service import extract_certificate_type
-from .validators import get_validator, ValidationResult
+from ..llm_first_layer.shims.validator_service import (
+    extract_certificate_type,
+    get_validator,
+    ValidationResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -278,7 +281,7 @@ class ServiceCoordinator:
 
             # Step 5: Validate query formatting and check domain/safety scope boundaries
             validator = get_validator()
-            validation_result = validator.validate_input(normalized_question)
+            validation_result = validator.validate_input_full(normalized_question)
             
             # If the query fails basic validation rules (e.g. policy checks), fail early
             if not validation_result.is_valid:
@@ -1221,12 +1224,12 @@ class ServiceCoordinator:
     
     async def _handle_definition(self, context: WorkflowContext):
         try:
-            if not self.retrieval_client:
-                context.add_error("Retrieval service not configured")
+            if not self.general_client:
+                context.add_error("General service not configured")
                 context.status = WorkflowStatus.FAILED
                 return
             
-            timeout_sec = min(self.timeout_config.get_intent_timeout(context.intent), self.timeout_config.get_service_timeout("retrieval"))
+            timeout_sec = min(self.timeout_config.get_intent_timeout(context.intent), self.timeout_config.get_service_timeout("general"))
             cache = get_cache_service()
             intent_key = "general"
             service_query = self._get_service_query(context)
@@ -1238,16 +1241,16 @@ class ServiceCoordinator:
             
             try:
                 result = await asyncio.wait_for(
-                    self.retrieval_client.general(query=service_query, top_k=5, generate_answer=True, session_id=context.session_id), timeout=timeout_sec
+                    self.general_client.definition(query=service_query, top_k=5, generate_answer=True, session_id=context.session_id), timeout=timeout_sec
                 )
-                cache.cache_response(question=service_query, response=result, intent=intent_key, ttl_seconds=48*3600, source="retrieval")
+                cache.cache_response(question=service_query, response=result, intent=intent_key, ttl_seconds=48*3600, source="general")
                 context.set_result("retrieval", result)
                 context.status = WorkflowStatus.COMPLETED
             except asyncio.TimeoutError:
-                context.add_error(f"Retrieval service timed out after {timeout_sec}s")
+                context.add_error(f"General service timed out after {timeout_sec}s")
                 context.status = WorkflowStatus.FAILED
         except Exception as e:
-            context.add_error(f"Retrieval service error: {str(e)}")
+            context.add_error(f"General service error: {str(e)}")
             context.status = WorkflowStatus.FAILED
     
     async def _handle_default(self, context: WorkflowContext):

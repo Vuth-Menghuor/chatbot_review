@@ -19,18 +19,18 @@ class TimeoutConfig:
     
     # Default timeout values per intent
     INTENT_TIMEOUTS = {
-        WorkflowIntent.CALCULATION: 10,         # Calculation is relatively quick
-        WorkflowIntent.HS_CODE_LOOKUP: 45,      # HS lookup: Gemini spec extraction + semantic search + LLM explanation (extended for multi-step LLM)
-        WorkflowIntent.GENERAL: 35,             # General lookup from retrieval service with LLM
-        WorkflowIntent.TRADE_QUERY: 20,         # Trade queries might need aggregation
+        WorkflowIntent.CALCULATION: 20,         # Calculation is relatively quick
+        WorkflowIntent.HS_CODE_LOOKUP: 60,      # HS lookup: Gemini spec extraction + semantic search + LLM explanation (extended for multi-step LLM)
+        WorkflowIntent.GENERAL: 50,             # General lookup from retrieval service with LLM
+        WorkflowIntent.TRADE_QUERY: 40,         # Trade queries might need aggregation
     }
     
     # Service-specific timeout overrides (in seconds)
     SERVICE_TIMEOUTS = {
-        "calculator": 10,       # Calculator service should be fast
-        "retrieval": 45,        # Retrieval might need semantic search + LLM answer generation
-        "trade_data": 20,       # Trade data queries might be complex
-        "general": 35,          # General service queries
+        "calculator": 20,       # Calculator service should be fast
+        "retrieval": 60,        # Retrieval might need semantic search + LLM answer generation
+        "trade_data": 40,       # Trade data queries might be complex
+        "general": 50,          # General service queries
     }
     
     # Default timeout if intent is None

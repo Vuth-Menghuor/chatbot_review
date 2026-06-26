@@ -1,7 +1,7 @@
 """Visualization transformers: converting raw DAL rows to Table and Chart JSON formats."""
 
 from typing import Any, Dict, List, Optional
-from .base import COLUMN_MAP
+from visualization.base import COLUMN_MAP
 
 
 def transform_to_table(rows: List[Dict[str, Any]]) -> Dict[str, Any]:

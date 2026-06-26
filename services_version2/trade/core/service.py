@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from ..dal import DALClient, DALRequestBuilder
-from .exceptions import ValidationError, NoResultsError
-from .normaliser import normalise
+from dal import DALClient, DALRequestBuilder
+from core.exceptions import ValidationError, NoResultsError
+from core.normaliser import normalise
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ class TradeService:
 
         # Stage 6: Natural Language Generation (NLG)
         logger.info(f"[TradeService] Stage 6: Generating conversational NLG summary and suggestions...")
-        from .nlg import generate_nlg_response
+        from core.nlg import generate_nlg_response
         result = generate_nlg_response(result, dal_params)
 
         # Ensure only the 10 allowed keys are returned in the result
@@ -164,11 +164,11 @@ class TradeService:
         Returns:
             (scoped, final) tuple — the ScopedQueryPlan and FinalQueryPlan.
         """
-        from .query_plan import RawQueryPlan
-        from .enrichment import enrich_query_plan, orchestrate_query_plan
-        from ..handlers.scopes import apply_intent_scoping
-        from .validation import validate_question, validate_query_plan
-        from .llm_extractor import extract_parameters_llm
+        from core.query_plan import RawQueryPlan
+        from core.enrichment import enrich_query_plan, orchestrate_query_plan
+        from handlers.scopes import apply_intent_scoping
+        from core.validation import validate_question, validate_query_plan
+        from core.llm_extractor import extract_parameters_llm
 
         owns_extraction = extracted_params is None
         llm_params = extracted_params
@@ -245,10 +245,10 @@ class TradeService:
 
 def post_resolve_parameters(llm_params: dict[str, Any], question: str) -> dict[str, Any]:
     """Resolve product mappings, apply defaults, and validate structured params (legacy pipeline coordinator)."""
-    from .query_plan import RawQueryPlan
-    from .enrichment import enrich_query_plan, orchestrate_query_plan
-    from ..handlers.scopes import apply_intent_scoping
-    from .validation import validate_query_plan
+    from core.query_plan import RawQueryPlan
+    from core.enrichment import enrich_query_plan, orchestrate_query_plan
+    from handlers.scopes import apply_intent_scoping
+    from core.validation import validate_query_plan
 
     raw_params = dict(llm_params)
 
@@ -285,7 +285,7 @@ def post_resolve_parameters(llm_params: dict[str, Any], question: str) -> dict[s
 
     validate_query_plan(final)
 
-    from .semantic_registry import find_dimension_by_synonym
+    from semantic_registry import find_dimension_by_synonym
 
     raw_group_by = raw_params.get("group_by")
     if raw_group_by:
@@ -396,12 +396,12 @@ def post_resolve_parameters(llm_params: dict[str, Any], question: str) -> dict[s
 
 def extract_parameters(question: str) -> dict[str, Any]:
     """Master extraction: detect intent + extract entities from NL question."""
-    from .validation import validate_question
+    from core.validation import validate_question
     question = validate_question(question)
     logger.info(f"[extract_parameters] Question: {question}")
 
     try:
-        from .llm_extractor import extract_parameters_llm
+        from llm_extractor import extract_parameters_llm
         llm_params = extract_parameters_llm(question)
         if llm_params is None:
             raise ValidationError("LLM parameter extraction returned no parameters", field="question")

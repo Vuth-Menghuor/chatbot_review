@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .scopes import INTENT_VISUALIZATIONS, INTENT_MEASURES
+from handlers.scopes import INTENT_VISUALIZATIONS, INTENT_MEASURES
 
 
 @dataclass

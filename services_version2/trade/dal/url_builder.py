@@ -6,7 +6,7 @@ import os
 from typing import Any, Mapping
 from urllib.parse import urlencode
 
-from .dal_models import DALRequest
+from dal.dal_models import DALRequest
 
 
 class DALUrlBuilder:

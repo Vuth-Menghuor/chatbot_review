@@ -1,7 +1,7 @@
 """Handler layer for trade_query."""
 
-from .strategies import IntentStrategy, STRATEGIES
-from .scopes import (
+from handlers.strategies import IntentStrategy, STRATEGIES
+from handlers.scopes import (
     ScopeConfig,
     get_scope_config,
     QUERY_INTENTS,

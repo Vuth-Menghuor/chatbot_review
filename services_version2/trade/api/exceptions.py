@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from fastapi import HTTPException, status
 
-from ..core.exceptions import (
+from core.exceptions import (
     ValidationError,
     UnknownIntentError,
     NoResultsError,
     NormalisationError,
 )
-from ..dal.exceptions import DALError
+from dal.exceptions import DALError
 
 
 class InvalidInputError(HTTPException):

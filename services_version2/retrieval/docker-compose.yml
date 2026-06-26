@@ -25,3 +25,8 @@ volumes:
   qdrant_data:
     external: true
     name: retrieval_version2_qdrant_data
+
+networks:
+  gdce-network:
+    name: gdce-network
+    driver: bridge

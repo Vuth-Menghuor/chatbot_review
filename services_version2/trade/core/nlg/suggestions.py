@@ -13,6 +13,9 @@ def get_suggestions(facts: Dict[str, Any], query_params: Dict[str, Any]) -> List
     partner_name = partner if isinstance(partner, str) else partner[0] if isinstance(partner, list) and partner else None
     partner_suffix = f" with {partner_name}" if partner_name else ""
 
+    # Pluralization resolution (fixes "trades" grammatical bug)
+    flow_plural = "exports" if flow == "export" else "imports" if flow == "import" else "trade"
+
     suggestions = []
 
     # NEW: if the query was grouped by a dimension (e.g. MODE_OF_TRANSPORT),
@@ -28,7 +31,7 @@ def get_suggestions(facts: Dict[str, Any], query_params: Dict[str, Any]) -> List
         ]
         if len(top_labels) >= 2:
             suggestions.append(
-                f"Show the monthly trend comparing {top_labels[0]} vs {top_labels[1]} {flow_str}s{partner_suffix}"
+                f"Show the monthly trend comparing {top_labels[0]} vs {top_labels[1]} {flow_plural}{partner_suffix}"
             )
         suggestions.append(f"What were the top products moved by {grouped_by} in {period}?")
         if partner_name:
@@ -38,13 +41,13 @@ def get_suggestions(facts: Dict[str, Any], query_params: Dict[str, Any]) -> List
 
     elif intent == "summary":
         if partner_name:
-            suggestions.append(f"Show the trend of {flow_str}s{partner_suffix} over the years")
-            suggestions.append(f"What were the top products in {flow_str}s{partner_suffix} for {period}?")
-            suggestions.append(f"Compare {flow_str}s{partner_suffix} against another partner country")
+            suggestions.append(f"Show the trend of {flow_plural}{partner_suffix} over the years")
+            suggestions.append(f"What were the top products in {flow_plural}{partner_suffix} for {period}?")
+            suggestions.append(f"Compare {flow_plural}{partner_suffix} against another partner country")
         else:
-            suggestions.append(f"Show the breakdown of {flow_str}s by partner country for {period}")
+            suggestions.append(f"Show the breakdown of {flow_plural} by partner country for {period}")
             suggestions.append(f"What were the top partners by {flow_str} value in {period}?")
-            suggestions.append(f"Show the trend of total {flow_str}s over the years")
+            suggestions.append(f"Show the trend of total {flow_plural} over the years")
 
     elif intent == "ranking":
         metric_label = "products" if facts.get("hs_code") or facts.get("hs_chapter") else "partners"
@@ -54,7 +57,7 @@ def get_suggestions(facts: Dict[str, Any], query_params: Dict[str, Any]) -> List
             suggestions.append(f"Compare imports and exports{partner_suffix} for {period}")
 
     elif intent == "trend":
-        suggestions.append(f"Show the breakdown of {flow_str}s by product category for {period}")
+        suggestions.append(f"Show the breakdown of {flow_plural} by product category for {period}")
         if partner_name:
             suggestions.append(f"Compare this trend{partner_suffix} against imports from China")
         else:
@@ -71,13 +74,13 @@ def get_suggestions(facts: Dict[str, Any], query_params: Dict[str, Any]) -> List
         group_by = query_params.get("group_by") or []
         is_transport = any("transport" in str(g).lower() for g in group_by)
         if is_transport:
-            suggestions.append(f"Show the trend of total {flow_str}s by transport mode over the years")
+            suggestions.append(f"Show the trend of total {flow_plural} by transport mode over the years")
         else:
-            suggestions.append(f"Show the trend of total {flow_str}s for the largest product sector")
+            suggestions.append(f"Show the trend of total {flow_plural} for the largest product sector")
         suggestions.append(f"What were the top partners by {flow_str} value in {period}?")
 
     elif intent == "growth":
-        suggestions.append(f"Show the trend of total {flow_str}s for {period}")
+        suggestions.append(f"Show the trend of total {flow_plural} for {period}")
         if partner_name:
             suggestions.append(f"What is the trade balance with {partner_name} for {period}?")
         else:

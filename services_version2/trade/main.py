@@ -12,8 +12,8 @@ Or use uvicorn directly:
 
 import logging
 import uvicorn
-from .app import app  # Export app for uvicorn module loading
-from .config import get_settings
+from app import app  # Export app for uvicorn module loading
+from config import get_settings
 
 # Setup logging
 logging.basicConfig(

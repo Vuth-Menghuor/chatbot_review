@@ -7,9 +7,9 @@ from typing import Any, Mapping
 
 import httpx
 
-from .dal_models import DALRequest
-from .url_builder import DALUrlBuilder
-from .exceptions import DALError
+from dal.dal_models import DALRequest
+from dal.url_builder import DALUrlBuilder
+from dal.exceptions import DALError
 
 
 class DALClient:

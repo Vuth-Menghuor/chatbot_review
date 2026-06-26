@@ -10,6 +10,15 @@ from services_version2.calculator_version2.app import create_app
 from services_version2.calculator_version2.api.deps import get_db
 from services_version2.calculator_version2.core.calculator import DatabaseInterface
 
+# Deterministic tests: force IntentExtractor to always fall back to regex
+# (LLM extraction is non-deterministic and may return stale USD defaults)
+from services_version2.calculator_version2.core.intent_extractor import IntentExtractor
+
+async def _mock_extract_llm(self, text: str):
+    return None
+
+IntentExtractor._extract_llm = _mock_extract_llm
+
 
 class FakeDB(DatabaseInterface):
     def get_duty_rates(self, hs_code: str, origin_country: str, effective_date: str):
@@ -332,3 +341,92 @@ def test_diplomatic_exemption_returns_ask_back(client: TestClient):
     assert body.get("preferential_rate_missing") is True
     assert body.get("requested_agreement") == "Diplomatic"
     assert body["total"] == 0
+
+
+# ================================================================
+# Currency Fallback Chain Tests
+# ================================================================
+
+def test_currency_explicitly_provided_uses_it(client: TestClient):
+    """Explicit currency 'EUR' is used directly; no inference assumptions."""
+    payload = {
+        "calculation_date": "2026-03-25",
+        "regime": "import",
+        "goods": {"description": "Wine", "hs_code": "2204", "origin_country": "FR"},
+        "valuation": {"customs_value": 10000, "currency": "EUR"},
+    }
+    resp = client.post("/calculate_import_taxes", json=payload)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] > 0
+    assumptions = body.get("assumptions", [])
+    assert not any("inferred as" in a for a in assumptions)
+    assert not any("defaulting to KHR" in a for a in assumptions)
+
+
+def test_no_currency_infers_from_origin(client: TestClient):
+    """No currency provided but origin_country is Thailand → inferred as THB."""
+    payload = {
+        "calculation_date": "2026-03-25",
+        "regime": "import",
+        "goods": {"description": "Rice", "hs_code": "1006", "origin_country": "Thailand"},
+        "valuation": {"customs_value": 5000},  # currency omitted
+    }
+    resp = client.post("/calculate_import_taxes", json=payload)
+    assert resp.status_code == 200
+    body = resp.json()
+    assumptions = body.get("assumptions", [])
+    assert any("inferred as THB" in a for a in assumptions)
+    assert body["total"] > 0
+
+
+def test_no_currency_no_origin_defaults_khr(client: TestClient):
+    """No currency and no origin_country → defaults to KHR."""
+    payload = {
+        "calculation_date": "2026-03-25",
+        "regime": "import",
+        "goods": {"description": "Rice", "hs_code": "1006"},  # no origin_country
+        "valuation": {"customs_value": 5000},  # currency omitted
+    }
+    resp = client.post("/calculate_import_taxes", json=payload)
+    assert resp.status_code == 200
+    body = resp.json()
+    assumptions = body.get("assumptions", [])
+    assert any("defaulting to KHR" in a for a in assumptions)
+    assert body["total"] > 0
+
+
+def test_garbage_origin_defaults_khr(client: TestClient):
+    """No currency and garbage origin_country → defaults to KHR."""
+    payload = {
+        "calculation_date": "2026-03-25",
+        "regime": "import",
+        "goods": {"description": "Rice", "hs_code": "1006", "origin_country": "XYZ"},
+        "valuation": {"customs_value": 5000},  # currency omitted
+    }
+    resp = client.post("/calculate_import_taxes", json=payload)
+    assert resp.status_code == 200
+    body = resp.json()
+    assumptions = body.get("assumptions", [])
+    assert any("defaulting to KHR" in a for a in assumptions)
+    assert body["total"] > 0
+
+
+def test_nl_no_currency_infers_from_origin(client: TestClient):
+    """NL query with no currency but origin 'Thailand' → endpoint infers THB."""
+    resp = client.post("/query", json={"question": "import tax for 847130 from Thailand value 10000"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["success"] is True
+    assumptions = body["result"]["assumptions"]
+    assert any("inferred as THB" in a for a in assumptions)
+
+
+def test_nl_no_currency_no_origin_defaults_khr(client: TestClient):
+    """NL query with no currency and no origin → endpoint defaults to KHR."""
+    resp = client.post("/query", json={"question": "import tax for 847130 value 10000"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["success"] is True
+    assumptions = body["result"]["assumptions"]
+    assert any("defaulting to KHR" in a for a in assumptions)

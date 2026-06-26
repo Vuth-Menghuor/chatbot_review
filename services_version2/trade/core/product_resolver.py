@@ -91,7 +91,7 @@ def _get_product_keyword_map() -> dict[str, str]:
         )
         resp.raise_for_status()
     except Exception as exc:
-        from ..dal.exceptions import DALError
+        from dal.exceptions import DALError
         status_code = getattr(getattr(exc, "response", None), "status_code", 502)
         logger.error(f"[_get_product_keyword_map] Could not fetch DAL metadata ({metadata_url}): {exc}")
         raise DALError(f"Could not fetch DAL metadata from {metadata_url}: {exc}", status_code=status_code) from exc

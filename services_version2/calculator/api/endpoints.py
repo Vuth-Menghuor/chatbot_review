@@ -485,7 +485,7 @@ def _build_calc_request(
 
     # --- Currency resolution ---
     if not resolved_currency:
-        origin = request.goods.origin_country
+        origin = request.goods.origin_country.strip() if request.goods.origin_country else None
         if origin:
             inferred = calculator.currency_handler.infer_currency_from_country(origin)
             if inferred:

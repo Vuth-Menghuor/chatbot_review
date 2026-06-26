@@ -1,8 +1,8 @@
 """Visualization mapper: dynamically resolves, formats, and transforms DAL rows to UI targets."""
 
 from typing import Any, Dict, List, Optional
-from .registry import VISUALIZATION_REGISTRY
-from .transformers import (
+from visualization.registry import VISUALIZATION_REGISTRY
+from visualization.transformers import (
     transform_to_table,
     transform_to_bar_chart,
     transform_to_line_chart,
@@ -44,7 +44,7 @@ def _resolve_group_by_column(first_row: Dict[str, Any], group_by: List[str]) -> 
     trend-intent secondary series resolution. Returns None if no group_by
     dimension can be matched against the row's keys.
     """
-    from ..core.semantic_registry import find_dimension_by_synonym
+    from core.semantic_registry import find_dimension_by_synonym
 
     for g in group_by:
         mapped_g = find_dimension_by_synonym(str(g)) or str(g)
@@ -58,57 +58,6 @@ def _resolve_group_by_column(first_row: Dict[str, Any], group_by: List[str]) -> 
     return None
 
 
-def _build_dynamic_title(intent: str, config_title: str, query_params: Dict[str, Any], label_col: str = "") -> str:
-    """Build a contextual, human-friendly title based on query filters and intent."""
-    from ..core.nlg.formatters import COUNTRY_NAMES
-
-    # 1. Resolve flow (Export / Import / Trade)
-    raw_flow = query_params.get("flow") or query_params.get("trade_direction") or "trade"
-    if str(raw_flow).upper() in ("EX", "EXPORT"):
-        flow = "Export"
-    elif str(raw_flow).upper() in ("IM", "IMPORT"):
-        flow = "Import"
-    else:
-        flow = str(raw_flow).capitalize()
-
-    # 2. Resolve year
-    year = query_params.get("year") or query_params.get("period") or ""
-
-    # 3. Resolve partner
-    partner = query_params.get("partner") or query_params.get("partner_country") or ""
-    # Support list of partner countries (like in comparison/ranking)
-    if not partner:
-        partners_list = query_params.get("partner_countries")
-        if isinstance(partners_list, list) and len(partners_list) == 1:
-            partner = partners_list[0]
-            
-    if partner and len(str(partner)) == 2:
-        partner = COUNTRY_NAMES.get(str(partner).upper(), partner)
-
-    # 4. Construct scope
-    scope = f" with {partner}" if partner else ""
-    if year:
-        scope += f" in {year}"
-
-    # 5. Templates mapping
-    templates = {
-        "summary": f"{flow} Summary{scope}",
-        "ranking": f"Top {flow} Partners{scope}",
-        "trend": f"{flow} Trend Over Time{scope}",
-        "comparison": f"{flow} Comparison{scope}",
-        "breakdown": f"{flow} Breakdown by Product{scope}",
-        "growth": f"{flow} Growth Rate{scope}",
-        "trade_balance": f"Trade Balance Summary{scope}"
-    }
-
-    # For ranking, check sorting order to see if it's "Bottom"
-    if intent == "ranking":
-        sort_order = query_params.get("sort_order") or ""
-        prefix = "Bottom" if "asc" in str(sort_order).lower() else "Top"
-        templates["ranking"] = f"{prefix} {flow} Partners{scope}"
-
-    title = templates.get(intent, f"{flow} Analysis{scope}")
-    return title
 
 
 def generate_visualizations(
@@ -172,8 +121,8 @@ def generate_visualizations(
         if series_col and series_col.upper() == str(label_col).upper():
             series_col = None
 
-    # Build dynamic contextual title
-    title = _build_dynamic_title(intent, config["title"], params, label_col)
+    # Use static title directly from registry config
+    title = config["title"]
     dataset_label = config.get("dataset_label", "Trade Value (USD)")
 
     # Resolve target metric labels

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import re
 
-from .exceptions import InvalidInputError
+from api.exceptions import InvalidInputError
 
 MIN_YEAR = 2000
 MAX_YEAR = 2100
 
-from ..core.countries import VALID_COUNTRY_CODES
+from core.countries import VALID_COUNTRY_CODES
 
 
 def validate_question(question: str | None) -> str:

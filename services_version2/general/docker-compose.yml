@@ -33,3 +33,8 @@ services:
 volumes:
   qdrant_general_data:
     # Removed 'external: true' and 'name' - Docker will create this automatically
+
+networks:
+  gdce-network:
+    name: gdce-network
+    driver: bridge

@@ -197,14 +197,7 @@ def create_app() -> FastAPI:
             cache_service = get_cache_service(level=cache_level, max_size=5000)
             app.state.cache = cache_service
             logger.info(f"[OK] Cache service initialized (Level: {cache_level}, Memory: 5000 max entries)")
-            
-            # Initialize health check service
-            # Initialize cache service
-            logger.info("[5.5/7] Initializing cache service...")
-            cache_level = config.cache_level if hasattr(config, 'cache_level') else os.getenv("CACHE_LEVEL", "hybrid")
-            cache_service = get_cache_service(level=cache_level, max_size=5000)
-            app.state.cache = cache_service
-            logger.info(f"[OK] Cache service initialized (Level: {cache_level}, Memory: 5000 max entries)")
+    
             
             # Initialize health check service
             logger.info("[7/7] Initializing health check service...")

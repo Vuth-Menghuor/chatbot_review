@@ -1,0 +1,12 @@
+# Build context for general/Dockerfile (services_version2/)
+
+.git
+**/.env
+**/.env.*
+!**/.env.example
+**/__pycache__
+**/.pytest_cache
+**/tests/
+calculator/
+orchestrator/
+trade/

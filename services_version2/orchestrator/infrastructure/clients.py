@@ -513,12 +513,8 @@ class HttpxServiceClient(BaseServiceClient):
 
 class RetrievalServiceClient(HttpxServiceClient):
     """
-    Client for retrieval service v2.
-    Implements API calls to retrieval service endpoints.
-    
-    Endpoints:
-    - POST /v1/hs-code-candidates     — HS classification/discovery
-    - POST /v1/retrieval/retrieve     — Definition/FAQ/Policy/General retrieval
+    Client for HS retrieval service (port 8003).
+    Endpoints: POST /hs/candidates, POST /hs/ranked
     """
     
     async def hs_code_lookup(
@@ -561,7 +557,7 @@ class RetrievalServiceClient(HttpxServiceClient):
             if session_id:
                 payload["session_id"] = session_id
             
-            result = await self._post("hs-code-candidates", payload)
+            result = await self._post("hs/candidates", payload)
             
             # Log key result fields for debugging
             status = result.get("status", "unknown")
@@ -577,165 +573,92 @@ class RetrievalServiceClient(HttpxServiceClient):
             logger.error(f"[HS Lookup] Error: {e}")
             raise
     
+    async def health(self) -> Dict[str, Any]:
+        """Check health of HS retrieval service."""
+        try:
+            return await self._get("health")
+        except Exception as e:
+            logger.error(f"Retrieval service health check failed: {e}")
+            raise
+
+
+class GeneralServiceClient(HttpxServiceClient):
+    """
+    Client for general ask/generate service (port 8005).
+    Endpoint: POST /ask
+    """
+
+    async def _ask(
+        self,
+        query: str,
+        top_k: int = 5,
+        generate_answer: bool = True,
+        session_id: Optional[str] = None,
+        intent: str = "general",
+    ) -> Dict[str, Any]:
+        payload = {
+            "query": query,
+            "top_k": top_k,
+            "generate_answer": generate_answer,
+            "intent": intent,
+        }
+        if session_id:
+            payload["session_id"] = session_id
+        return await self._post("ask", payload)
+
+    async def ask(
+        self,
+        query: str,
+        top_k: int = 5,
+        generate_answer: bool = True,
+        session_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        logger.info(f"[Ask] Querying: {query[:80]}... (top_k={top_k})")
+        try:
+            result = await self._ask(query, top_k, generate_answer, session_id, intent="general")
+            logger.info(
+                f"[Ask] Result: status={result.get('status', 'unknown')}, "
+                f"final_answer_present={'final_answer' in result}"
+            )
+            return result
+        except Exception as e:
+            logger.error(f"[Ask] Error: {e}")
+            raise
+
     async def definition(
         self,
         query: str,
         top_k: int = 5,
         generate_answer: bool = True,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        Definition/FAQ/Policy retrieval endpoint.
-        Returns natural-language final_answer via LLM.
-        
-        Args:
-            query: The search query
-            top_k: Number of retrieval candidates
-            generate_answer: Whether to generate final_answer via LLM (recommended: true)
-            session_id: Optional session identifier
-            
-        Returns:
-            Documents + final_answer + metadata
-        """
         logger.info(f"[Definition] Querying: {query[:80]}... (top_k={top_k})")
-        
-        try:
-            payload = {
-                "query": query,
-                "top_k": top_k,
-                "generate_answer": generate_answer,
-                "intent": "definition"  # Sync with orchestrator's WorkflowIntent.DEFINITION
-            }
-            
-            if session_id:
-                payload["session_id"] = session_id
-            
-            result = await self._post("retrieval/retrieve", payload)
-            
-            status = result.get("status", "unknown")
-            has_answer = "final_answer" in result
-            logger.info(f"[Definition] Result: status={status}, final_answer_present={has_answer}")
-            
-            return result
-        except Exception as e:
-            logger.error(f"[Definition] Error: {e}")
-            raise
-    
+        return await self._ask(query, top_k, generate_answer, session_id, intent="definition")
+
     async def policy_inquiry(
         self,
         query: str,
         top_k: int = 5,
         generate_answer: bool = True,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        Policy/procedural query endpoint.
-        Returns natural-language final_answer via LLM.
-        
-        Args:
-            query: The policy/procedure question
-            top_k: Number of retrieval candidates
-            generate_answer: Whether to generate final_answer via LLM (recommended: true)
-            session_id: Optional session identifier
-            
-        Returns:
-            Documents + final_answer + metadata
-        """
         logger.info(f"[Policy] Querying: {query[:80]}... (top_k={top_k})")
-        
-        try:
-            payload = {
-                "query": query,
-                "top_k": top_k,
-                "generate_answer": generate_answer,
-                "intent": "policy_query"  # Sync with orchestrator's WorkflowIntent.POLICY_QUERY
-            }
-            
-            if session_id:
-                payload["session_id"] = session_id
-            
-            result = await self._post("retrieval/retrieve", payload)
-            
-            status = result.get("status", "unknown")
-            has_answer = "final_answer" in result
-            logger.info(f"[Policy] Result: status={status}, final_answer_present={has_answer}")
-            
-            return result
-        except Exception as e:
-            logger.error(f"[Policy] Error: {e}")
-            raise
-    
+        return await self._ask(query, top_k, generate_answer, session_id, intent="policy_query")
+
     async def general(
         self,
         query: str,
         top_k: int = 5,
         generate_answer: bool = True,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        General free-form retrieval endpoint.
-        Returns natural-language final_answer via LLM for non-HS queries.
-        
-        Args:
-            query: The search query
-            top_k: Number of retrieval candidates
-            generate_answer: Whether to generate final_answer via LLM (recommended: true)
-            session_id: Optional session identifier
-            
-        Returns:
-            Documents + final_answer + metadata
-        """
-        logger.info(f"[General] Querying: {query[:80]}... (top_k={top_k})")
-        
-        try:
-            payload = {
-                "query": query,
-                "top_k": top_k,
-                "generate_answer": generate_answer,
-                "intent": "general"  # Sync with orchestrator's WorkflowIntent.GENERAL (from models.py)
-            }
-            
-            if session_id:
-                payload["session_id"] = session_id
-            
-            result = await self._post("retrieval/retrieve", payload)
-            
-            status = result.get("status", "unknown")
-            has_answer = "final_answer" in result
-            logger.info(f"[General] Result: status={status}, final_answer_present={has_answer}")
-            
-            return result
-        except Exception as e:
-            logger.error(f"[General] Error: {e}")
-            raise
-    
-    async def retrieve(self, question: str, collection: str = None) -> Dict[str, Any]:
-        """
-        Legacy retrieve method for backward compatibility.
-        Routes to appropriate endpoint based on collection.
-        
-        Args:
-            question: User question
-            collection: Optional collection to search (gdce_docs, gdce_hs_code)
-            
-        Returns:
-            Retrieval results
-        """
-        logger.debug(f"[Retrieve] Using legacy method for: {question[:80]}... (collection={collection})")
-        
-        if collection == "gdce_hs_code":
-            return await self.hs_code_lookup(question, hs_mode="best")
-        else:
-            # Default to general retrieval
-            return await self.general(question)
-    
+        return await self.ask(query, top_k, generate_answer, session_id)
+
     async def health(self) -> Dict[str, Any]:
-        """Check health of retrieval service."""
         try:
-            result = await self._get("health")
-            return result
+            return await self._get("health")
         except Exception as e:
-            logger.error(f"Retrieval service health check failed: {e}")
+            logger.error(f"General service health check failed: {e}")
             raise
 
 
@@ -1398,6 +1321,11 @@ class ServiceClientFactory:
         return RetrievalServiceClient(base_url, timeout=50)
     
     @staticmethod
+    def create_general_client(base_url: str) -> GeneralServiceClient:
+        """Create general ask/generate service client."""
+        return GeneralServiceClient(base_url, timeout=50)
+
+    @staticmethod
     def create_calculator_client(base_url: str) -> CalculatorServiceClient:
         """Create calculator service client."""
         # Strip trailing slash if present
@@ -1477,7 +1405,7 @@ async def initialize_service_clients(config) -> ServiceRegistry:
         registry.register("retrieval", retrieval_client)
     
     if hasattr(config, "general_service_url") and config.general_service_url:
-        general_client = ServiceClientFactory.create_retrieval_client(
+        general_client = ServiceClientFactory.create_general_client(
             config.general_service_url
         )
         registry.register("general", general_client)

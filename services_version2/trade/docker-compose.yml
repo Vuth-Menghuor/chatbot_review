@@ -1,3 +1,5 @@
+version: "3.8"
+
 services:
   trade-service:
     build: .
@@ -8,4 +10,10 @@ services:
       - "8004:8004"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      - gdce-network
     restart: unless-stopped
+
+networks:
+  gdce-network:
+    external: true

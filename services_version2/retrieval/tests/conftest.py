@@ -151,7 +151,7 @@ def retrieval_service(query_processor, retrieval_orchestrator, mock_config) -> R
 @pytest.fixture
 def sample_query() -> str:
     """Sample query for testing."""
-    return "What is the HS code for cotton fabric?"
+    return "iphone 14 pro max?"
 
 
 @pytest.fixture

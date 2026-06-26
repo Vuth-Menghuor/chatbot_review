@@ -1,7 +1,7 @@
 from typing import Any, Dict
-from .formatters import extract_facts
-from .generator import generate_message
-from .suggestions import get_suggestions
+from core.nlg.formatters import extract_facts
+from core.nlg.generator import generate_message
+from core.nlg.suggestions import get_suggestions
 
 def generate_nlg_response(payload: Dict[str, Any], query_params: Dict[str, Any]) -> Dict[str, Any]:
     """

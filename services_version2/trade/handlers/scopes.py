@@ -8,8 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
-from ..core.query_plan import EnrichedQueryPlan, ScopedQueryPlan
-from ..core.semantic_registry import STRUCTURE, STRUCTURE_REGISTRY, INTENT_RULES
+from core.query_plan import EnrichedQueryPlan, ScopedQueryPlan
+from core.semantic_registry import STRUCTURE, STRUCTURE_REGISTRY, INTENT_RULES
 
 # Query Intents
 QUERY_INTENTS: list[str] = list(INTENT_RULES.keys())
@@ -225,7 +225,7 @@ def apply_intent_scoping(enriched_plan: EnrichedQueryPlan) -> ScopedQueryPlan:
             dest = None
 
     # 3. Resolve Metrics & Group By Constraints
-    from .strategies import STRATEGIES
+    from handlers.strategies import STRATEGIES
     strategy = STRATEGIES.get(intent)
 
     metrics = enriched_plan.metrics

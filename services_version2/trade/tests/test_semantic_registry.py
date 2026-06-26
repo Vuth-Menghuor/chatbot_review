@@ -3,7 +3,7 @@
 import json
 import pytest
 
-from services_version2.trade.core.exceptions import ValidationError
+from core.exceptions import ValidationError
 from services_version2.trade.core.semantic_registry import (
     STRUCTURE_REGISTRY,
     normalize_intent,

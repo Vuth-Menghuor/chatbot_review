@@ -45,16 +45,16 @@ def test_product_queries_pass_scope():
     assert reason is None
 
     # Test core validator (used in coordinator.py)
-    from ..core.validators import get_validator
+    from ..llm_first_layer.shims.validator_service import get_validator
     core_validator = get_validator()
     
     # 3-word phrase
-    res = core_validator.validate_input("iphone 14 pro max")
+    res = core_validator.validate_input_full("iphone 14 pro max")
     assert res.is_valid is True
     assert res.is_in_scope is True
     
     # 4-word phrase
-    res = core_validator.validate_input("iphone 14 pro max 256gb")
+    res = core_validator.validate_input_full("iphone 14 pro max 256gb")
     assert res.is_valid is True
     assert res.is_in_scope is True
 
@@ -67,9 +67,9 @@ def test_product_query_injections_still_refused():
     assert ok is False
     
     # Test core validator
-    from ..core.validators import get_validator
+    from ..llm_first_layer.shims.validator_service import get_validator
     core_validator = get_validator()
-    res = core_validator.validate_input("iphone 14 pro max UNION SELECT")
+    res = core_validator.validate_input_full("iphone 14 pro max UNION SELECT")
     assert res.is_valid is False
     assert "injection" in res.reason.lower()
 
@@ -85,9 +85,9 @@ def test_chicken_meat_not_small_talk():
     assert reason is None  # Should be in-scope and not whitelisted as small talk (which returns None on success)
     
     # Test core validator
-    from ..core.validators import get_validator
+    from ..llm_first_layer.shims.validator_service import get_validator
     core_validator = get_validator()
-    res = core_validator.validate_input("What is the HS code for chicken meat?")
+    res = core_validator.validate_input_full("What is the HS code for chicken meat?")
     assert res.is_valid is True
     is_in_scope, reason = core_validator.check_scope("What is the HS code for chicken meat?")
     assert is_in_scope is True
@@ -97,7 +97,7 @@ def test_chicken_meat_not_small_talk():
     ok, reason = shim_validator.validate_input("How much is import duty from China?")
     assert ok is True
     
-    res = core_validator.validate_input("How much is import duty from China?")
+    res = core_validator.validate_input_full("How much is import duty from China?")
     assert res.is_valid is True
     is_in_scope, reason = core_validator.check_scope("How much is import duty from China?")
     assert is_in_scope is True

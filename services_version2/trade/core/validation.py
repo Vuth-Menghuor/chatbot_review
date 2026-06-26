@@ -9,9 +9,9 @@ import json
 import logging
 from typing import Any
 
-from .exceptions import ValidationError
-from .query_plan import FinalQueryPlan
-from .semantic_registry import STRUCTURE, INTENT_RULES, DATASET_CONFIG
+from core.exceptions import ValidationError
+from core.query_plan import FinalQueryPlan
+from core.semantic_registry import STRUCTURE, INTENT_RULES, DATASET_CONFIG
 
 logger = logging.getLogger(__name__)
 

@@ -140,7 +140,8 @@ class LLMFirstLayerService:
             logger.warning("Recursion detected in detect_intent, falling back to keyword matching")
             from ..core.workflow import WorkflowExecutor
             executor = WorkflowExecutor(use_llm_intent=False)
-            return executor._keyword_based_intent_detection(question), 1.0, "Recursion fallback"
+            intent, confidence = executor.detect_intent_with_confidence(question)
+            return intent, confidence, "Recursion fallback"
             
         self._in_detect_intent = True
         try:
@@ -162,7 +163,8 @@ class LLMFirstLayerService:
             logger.warning("Recursion detected in detect_currency, falling back to pattern matching")
             from ..core.workflow import WorkflowExecutor
             executor = WorkflowExecutor(use_llm_intent=False)
-            return executor._pattern_based_currency_detection(question)
+            currency, confidence = executor._pattern_based_currency_detection(question)
+            return currency, confidence, "Recursion fallback"
 
         self._in_detect_currency = True
         try:
