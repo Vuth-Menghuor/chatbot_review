@@ -1,0 +1,3402 @@
+[
+  {
+    "question": "Top 10 export partners in 2025",
+    "status": "success",
+    "count": 10,
+    "records": [
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "United States",
+        "VALUE_USD": 12730704474.079483
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Viet Nam",
+        "VALUE_USD": 3729399743.453174
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "China",
+        "VALUE_USD": 1686588577.5000014
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Japan",
+        "VALUE_USD": 1576107136.6104352
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Canada",
+        "VALUE_USD": 1271528248.7600007
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Spain",
+        "VALUE_USD": 1161148801.3099985
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "United Kingdom",
+        "VALUE_USD": 1015422091.610003
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Netherlands",
+        "VALUE_USD": 967411673.6400015
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Singapore",
+        "VALUE_USD": 920245580.9000001
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Germany",
+        "VALUE_USD": 902822926.1897134
+      }
+    ],
+    "summary": {
+      "currency": "USD",
+      "subset_total_value": 25961379254.052814,
+      "subset_count": 10,
+      "subset_label": "top 10",
+      "total_weight_kg": null,
+      "data_quality": {
+        "is_partial_period": false,
+        "has_more": true,
+        "shown_count": 10,
+        "truncation_note": "Showing 10 results — the total shown may not represent the full market."
+      }
+    },
+    "metadata": {
+      "dal_source_url": "http://dal-app:8000/v1/query/trade_volume?dimensions=PARTNER_COUNTRY&measures=VALUE_USD&version=1.0&period=2025&frequency=A&sort=VALUE_USD%3Adesc&limit=10&offset=0&filter=FLOW%3Aeq%3AEX",
+      "intent": "ranking",
+      "count": 10
+    },
+    "query_params": {
+      "intent": "ranking",
+      "version": "trade_volume_1.0",
+      "filters": {
+        "FLOW": "EX"
+      },
+      "metrics": [
+        "VALUE_USD"
+      ],
+      "group_by": [
+        "PARTNER_COUNTRY"
+      ],
+      "dimensions": [
+        "PARTNER_COUNTRY"
+      ],
+      "period": "2025",
+      "frequency": "A",
+      "sort": "VALUE_USD:desc",
+      "limit": 10,
+      "offset": 0,
+      "extra": {
+        "consolidate_flows": false,
+        "user_limit": 10,
+        "period_was_defaulted": false,
+        "is_current_year_partial": false
+      },
+      "question": "Top 10 export partners in 2025",
+      "trade_direction": "EX"
+    },
+    "table": {
+      "columns": [
+        "frequency",
+        "period",
+        "partner_country",
+        "trade_value"
+      ],
+      "rows": [
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "United States",
+          "trade_value": 12730704474.079483
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Viet Nam",
+          "trade_value": 3729399743.453174
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "China",
+          "trade_value": 1686588577.5000014
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Japan",
+          "trade_value": 1576107136.6104352
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Canada",
+          "trade_value": 1271528248.7600007
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Spain",
+          "trade_value": 1161148801.3099985
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "United Kingdom",
+          "trade_value": 1015422091.610003
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Netherlands",
+          "trade_value": 967411673.6400015
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Singapore",
+          "trade_value": 920245580.9000001
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Germany",
+          "trade_value": 902822926.1897134
+        }
+      ]
+    },
+    "visualization": {
+      "type": "bar",
+      "title": "Trade Volume Ranking",
+      "labels": [
+        "United States",
+        "Viet Nam",
+        "China",
+        "Japan",
+        "Canada",
+        "Spain",
+        "United Kingdom",
+        "Netherlands",
+        "Singapore",
+        "Germany"
+      ],
+      "datasets": [
+        {
+          "label": "Trade Value (USD)",
+          "data": [
+            12730704474.079483,
+            3729399743.453174,
+            1686588577.5000014,
+            1576107136.6104352,
+            1271528248.7600007,
+            1161148801.3099985,
+            1015422091.610003,
+            967411673.6400015,
+            920245580.9000001,
+            902822926.1897134
+          ]
+        }
+      ]
+    },
+    "message": "In 2025, Cambodia's top 10 export partners were the United States ($12.73 billion), Viet Nam ($3.73 billion), China ($1.69 billion), Japan ($1.58 billion), Canada ($1.27 billion), Spain ($1.16 billion), the United Kingdom ($1.02 billion), the Netherlands ($0.97 billion), Singapore ($0.92 billion), and Germany ($0.90 billion). (Showing 10 results — the total shown may not represent the full market.)",
+    "suggestion": [
+      "Show the monthly trend comparing United states vs Viet nam exports",
+      "What were the top products moved by country in 2025?",
+      "Show the country breakdown by partner country for 2025"
+    ]
+  },
+  {
+    "question": "Bottom 5 import countries in 2024",
+    "status": "success",
+    "count": 5,
+    "records": [
+      {
+        "FREQ": "A",
+        "PERIOD": "2024",
+        "PARTNER_COUNTRY": "Afghanistan",
+        "VALUE_USD": 2.55
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2024",
+        "PARTNER_COUNTRY": "Zambia",
+        "VALUE_USD": 16.48
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2024",
+        "PARTNER_COUNTRY": "Montserrat",
+        "VALUE_USD": 31.990000000000002
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2024",
+        "PARTNER_COUNTRY": "Gabon",
+        "VALUE_USD": 117.66
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2024",
+        "PARTNER_COUNTRY": "Central African Republic",
+        "VALUE_USD": 135.89
+      }
+    ],
+    "summary": {
+      "currency": "USD",
+      "subset_total_value": 304.57,
+      "subset_count": 5,
+      "subset_label": "top 5",
+      "total_weight_kg": null,
+      "data_quality": {
+        "is_partial_period": false,
+        "has_more": true,
+        "shown_count": 5,
+        "truncation_note": "Showing 5 results — the total shown may not represent the full market."
+      }
+    },
+    "metadata": {
+      "dal_source_url": "http://dal-app:8000/v1/query/trade_volume?dimensions=PARTNER_COUNTRY&measures=VALUE_USD&version=1.0&period=2024&frequency=A&sort=VALUE_USD%3Aasc&limit=5&offset=0&filter=FLOW%3Aeq%3AIM",
+      "intent": "ranking",
+      "count": 5
+    },
+    "query_params": {
+      "intent": "ranking",
+      "version": "trade_volume_1.0",
+      "filters": {
+        "FLOW": "IM"
+      },
+      "metrics": [
+        "VALUE_USD"
+      ],
+      "group_by": [
+        "PARTNER_COUNTRY"
+      ],
+      "dimensions": [
+        "PARTNER_COUNTRY"
+      ],
+      "period": "2024",
+      "frequency": "A",
+      "sort": "VALUE_USD:asc",
+      "limit": 5,
+      "offset": 0,
+      "extra": {
+        "consolidate_flows": false,
+        "user_limit": 5,
+        "period_was_defaulted": false,
+        "is_current_year_partial": false
+      },
+      "question": "Bottom 5 import countries in 2024",
+      "trade_direction": "IM"
+    },
+    "table": {
+      "columns": [
+        "frequency",
+        "period",
+        "partner_country",
+        "trade_value"
+      ],
+      "rows": [
+        {
+          "frequency": "A",
+          "period": "2024",
+          "partner_country": "Afghanistan",
+          "trade_value": 2.55
+        },
+        {
+          "frequency": "A",
+          "period": "2024",
+          "partner_country": "Zambia",
+          "trade_value": 16.48
+        },
+        {
+          "frequency": "A",
+          "period": "2024",
+          "partner_country": "Montserrat",
+          "trade_value": 31.990000000000002
+        },
+        {
+          "frequency": "A",
+          "period": "2024",
+          "partner_country": "Gabon",
+          "trade_value": 117.66
+        },
+        {
+          "frequency": "A",
+          "period": "2024",
+          "partner_country": "Central African Republic",
+          "trade_value": 135.89
+        }
+      ]
+    },
+    "visualization": {
+      "type": "bar",
+      "title": "Trade Volume Ranking",
+      "labels": [
+        "Central African Republic",
+        "Gabon",
+        "Montserrat",
+        "Zambia",
+        "Afghanistan"
+      ],
+      "datasets": [
+        {
+          "label": "Trade Value (USD)",
+          "data": [
+            135.89,
+            117.66,
+            31.990000000000002,
+            16.48,
+            2.55
+          ]
+        }
+      ]
+    },
+    "message": "In 2024, Cambodia's bottom five import partners were Afghanistan at $2.55, Zambia at $16.48, Montserrat at $31.99, Gabon at $117.66, and the Central African Republic at $135.89. (Showing 5 results — the total shown may not represent the full market.)",
+    "suggestion": [
+      "Show the monthly trend comparing Central african republic vs Gabon imports",
+      "What were the top products moved by country in 2024?",
+      "Show the country breakdown by partner country for 2024"
+    ]
+  },
+  {
+    "question": "Which countries does Cambodia export the most to?",
+    "status": "success",
+    "count": 10,
+    "records": [
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "United States",
+        "VALUE_USD": 12730704474.079483
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Viet Nam",
+        "VALUE_USD": 3729399743.453174
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "China",
+        "VALUE_USD": 1686588577.5000014
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Japan",
+        "VALUE_USD": 1576107136.6104352
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Canada",
+        "VALUE_USD": 1271528248.7600007
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Spain",
+        "VALUE_USD": 1161148801.3099985
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "United Kingdom",
+        "VALUE_USD": 1015422091.610003
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Netherlands",
+        "VALUE_USD": 967411673.6400015
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Singapore",
+        "VALUE_USD": 920245580.9000001
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Germany",
+        "VALUE_USD": 902822926.1897134
+      }
+    ],
+    "summary": {
+      "currency": "USD",
+      "subset_total_value": 25961379254.052814,
+      "subset_count": 10,
+      "subset_label": "top 10",
+      "total_weight_kg": null,
+      "data_quality": {
+        "is_partial_period": false,
+        "has_more": true,
+        "shown_count": 10,
+        "truncation_note": "Showing 10 results — the total shown may not represent the full market.",
+        "period_mismatch": true,
+        "requested_period": "2026",
+        "returned_period": "2025",
+        "period_mismatch_note": "Note: Requested data for 2026, but displaying 2025 data."
+      }
+    },
+    "metadata": {
+      "dal_source_url": "http://dal-app:8000/v1/query/trade_volume?dimensions=PARTNER_COUNTRY&measures=VALUE_USD&version=1.0&period=2026&frequency=A&sort=VALUE_USD%3Adesc&limit=10&offset=0&filter=FLOW%3Aeq%3AEX",
+      "intent": "ranking",
+      "count": 10
+    },
+    "query_params": {
+      "intent": "ranking",
+      "version": "trade_volume_1.0",
+      "filters": {
+        "FLOW": "EX"
+      },
+      "metrics": [
+        "VALUE_USD"
+      ],
+      "group_by": [
+        "PARTNER_COUNTRY"
+      ],
+      "dimensions": [
+        "PARTNER_COUNTRY"
+      ],
+      "period": "2026",
+      "frequency": "A",
+      "sort": "VALUE_USD:desc",
+      "limit": 10,
+      "offset": 0,
+      "extra": {
+        "consolidate_flows": false,
+        "user_limit": 10,
+        "period_was_defaulted": true,
+        "is_current_year_partial": true,
+        "period_mismatch": true,
+        "requested_period": "2026",
+        "returned_period": "2025"
+      },
+      "question": "Which countries does Cambodia export the most to?",
+      "trade_direction": "EX"
+    },
+    "table": {
+      "columns": [
+        "frequency",
+        "period",
+        "partner_country",
+        "trade_value"
+      ],
+      "rows": [
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "United States",
+          "trade_value": 12730704474.079483
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Viet Nam",
+          "trade_value": 3729399743.453174
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "China",
+          "trade_value": 1686588577.5000014
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Japan",
+          "trade_value": 1576107136.6104352
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Canada",
+          "trade_value": 1271528248.7600007
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Spain",
+          "trade_value": 1161148801.3099985
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "United Kingdom",
+          "trade_value": 1015422091.610003
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Netherlands",
+          "trade_value": 967411673.6400015
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Singapore",
+          "trade_value": 920245580.9000001
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Germany",
+          "trade_value": 902822926.1897134
+        }
+      ]
+    },
+    "visualization": {
+      "type": "bar",
+      "title": "Trade Volume Ranking",
+      "labels": [
+        "United States",
+        "Viet Nam",
+        "China",
+        "Japan",
+        "Canada",
+        "Spain",
+        "United Kingdom",
+        "Netherlands",
+        "Singapore",
+        "Germany"
+      ],
+      "datasets": [
+        {
+          "label": "Trade Value (USD)",
+          "data": [
+            12730704474.079483,
+            3729399743.453174,
+            1686588577.5000014,
+            1576107136.6104352,
+            1271528248.7600007,
+            1161148801.3099985,
+            1015422091.610003,
+            967411673.6400015,
+            920245580.9000001,
+            902822926.1897134
+          ]
+        }
+      ]
+    },
+    "message": "Cambodia's top export destinations in 2025 are the United States at $12.73 billion, followed by Viet Nam at $3.73 billion, China at $1.69 billion, Japan at $1.58 billion, Canada at $1.27 billion, Spain at $1.16 billion, the United Kingdom at $1.02 billion, the Netherlands at $0.97 billion, Singapore at $0.92 billion, and Germany at $0.90 billion. Note: Requested data for 2026, but displaying 2025 data. (Showing 10 results — the total shown may not represent the full market.)",
+    "suggestion": [
+      "Show the monthly trend comparing United states vs Viet nam exports",
+      "Specify a year for more precise results (e.g. 'in 2025')",
+      "What were the top products moved by country in 2026?"
+    ]
+  },
+  {
+    "status": "error",
+    "error": "Max retries exceeded"
+  },
+  {
+    "question": "What are the leading import sources for 2024?",
+    "status": "success",
+    "count": 10,
+    "records": [
+      {
+        "FREQ": "A",
+        "PERIOD": "2024",
+        "PARTNER_COUNTRY": "China",
+        "VALUE_USD": 13436900690.199348
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2024",
+        "PARTNER_COUNTRY": "Viet Nam",
+        "VALUE_USD": 4167925261.1060047
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2024",
+        "PARTNER_COUNTRY": "Thailand",
+        "VALUE_USD": 3441956154.025439
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2024",
+        "PARTNER_COUNTRY": "Indonesia",
+        "VALUE_USD": 1008686014.87716
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2024",
+        "PARTNER_COUNTRY": "Singapore",
+        "VALUE_USD": 944385760.6262076
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2024",
+        "PARTNER_COUNTRY": "Japan",
+        "VALUE_USD": 752756701.8843868
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2024",
+        "PARTNER_COUNTRY": "Malaysia",
+        "VALUE_USD": 718087391.4227805
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2024",
+        "PARTNER_COUNTRY": "Taiwan, Province of China",
+        "VALUE_USD": 701719288.6641724
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2024",
+        "PARTNER_COUNTRY": "Korea, Republic of",
+        "VALUE_USD": 521021372.4827242
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2024",
+        "PARTNER_COUNTRY": "Hong Kong",
+        "VALUE_USD": 383834097.95626986
+      }
+    ],
+    "summary": {
+      "currency": "USD",
+      "subset_total_value": 26077272733.24449,
+      "subset_count": 10,
+      "subset_label": "top 10",
+      "total_weight_kg": null,
+      "data_quality": {
+        "is_partial_period": false,
+        "has_more": true,
+        "shown_count": 10,
+        "truncation_note": "Showing 10 results — the total shown may not represent the full market."
+      }
+    },
+    "metadata": {
+      "dal_source_url": "http://dal-app:8000/v1/query/trade_volume?dimensions=PARTNER_COUNTRY&measures=VALUE_USD&version=1.0&period=2024&frequency=A&sort=VALUE_USD%3Adesc&limit=10&offset=0&filter=FLOW%3Aeq%3AIM",
+      "intent": "ranking",
+      "count": 10
+    },
+    "query_params": {
+      "intent": "ranking",
+      "version": "trade_volume_1.0",
+      "filters": {
+        "FLOW": "IM"
+      },
+      "metrics": [
+        "VALUE_USD"
+      ],
+      "group_by": [
+        "PARTNER_COUNTRY"
+      ],
+      "dimensions": [
+        "PARTNER_COUNTRY"
+      ],
+      "period": "2024",
+      "frequency": "A",
+      "sort": "VALUE_USD:desc",
+      "limit": 10,
+      "offset": 0,
+      "extra": {
+        "consolidate_flows": false,
+        "user_limit": 10,
+        "period_was_defaulted": false,
+        "is_current_year_partial": false
+      },
+      "question": "What are the leading import sources for 2024?",
+      "trade_direction": "IM"
+    },
+    "table": {
+      "columns": [
+        "frequency",
+        "period",
+        "partner_country",
+        "trade_value"
+      ],
+      "rows": [
+        {
+          "frequency": "A",
+          "period": "2024",
+          "partner_country": "China",
+          "trade_value": 13436900690.199348
+        },
+        {
+          "frequency": "A",
+          "period": "2024",
+          "partner_country": "Viet Nam",
+          "trade_value": 4167925261.1060047
+        },
+        {
+          "frequency": "A",
+          "period": "2024",
+          "partner_country": "Thailand",
+          "trade_value": 3441956154.025439
+        },
+        {
+          "frequency": "A",
+          "period": "2024",
+          "partner_country": "Indonesia",
+          "trade_value": 1008686014.87716
+        },
+        {
+          "frequency": "A",
+          "period": "2024",
+          "partner_country": "Singapore",
+          "trade_value": 944385760.6262076
+        },
+        {
+          "frequency": "A",
+          "period": "2024",
+          "partner_country": "Japan",
+          "trade_value": 752756701.8843868
+        },
+        {
+          "frequency": "A",
+          "period": "2024",
+          "partner_country": "Malaysia",
+          "trade_value": 718087391.4227805
+        },
+        {
+          "frequency": "A",
+          "period": "2024",
+          "partner_country": "Taiwan, Province of China",
+          "trade_value": 701719288.6641724
+        },
+        {
+          "frequency": "A",
+          "period": "2024",
+          "partner_country": "Korea, Republic of",
+          "trade_value": 521021372.4827242
+        },
+        {
+          "frequency": "A",
+          "period": "2024",
+          "partner_country": "Hong Kong",
+          "trade_value": 383834097.95626986
+        }
+      ]
+    },
+    "visualization": {
+      "type": "bar",
+      "title": "Trade Volume Ranking",
+      "labels": [
+        "China",
+        "Viet Nam",
+        "Thailand",
+        "Indonesia",
+        "Singapore",
+        "Japan",
+        "Malaysia",
+        "Taiwan, Province of China",
+        "Korea, Republic of",
+        "Hong Kong"
+      ],
+      "datasets": [
+        {
+          "label": "Trade Value (USD)",
+          "data": [
+            13436900690.199348,
+            4167925261.1060047,
+            3441956154.025439,
+            1008686014.87716,
+            944385760.6262076,
+            752756701.8843868,
+            718087391.4227805,
+            701719288.6641724,
+            521021372.4827242,
+            383834097.95626986
+          ]
+        }
+      ]
+    },
+    "message": "The leading import sources for Cambodia in 2024 were China at $13.44 billion, followed by Viet Nam at $4.17 billion, Thailand at $3.44 billion, Indonesia at $1.01 billion, Singapore at $0.94 billion, Japan at $0.75 billion, Malaysia at $0.72 billion, Taiwan at $0.70 billion, the Republic of Korea at $0.52 billion, and Hong Kong at $0.38 billion. (Showing 10 results — the total shown may not represent the full market.)",
+    "suggestion": [
+      "Show the monthly trend comparing China vs Viet nam imports",
+      "What were the top products moved by country in 2024?",
+      "Show the country breakdown by partner country for 2024"
+    ]
+  },
+  {
+    "question": "Top 3 transport modes used for imports in 2025",
+    "status": "success",
+    "count": 3,
+    "records": [
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "MODE_OF_TRANSPORT": "Sea transport",
+        "VALUE_USD": 20370365243.790176
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "MODE_OF_TRANSPORT": "Road transport",
+        "VALUE_USD": 9171411147.337599
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "MODE_OF_TRANSPORT": "Inland waterways transport",
+        "VALUE_USD": 2760066077.909997
+      }
+    ],
+    "summary": {
+      "currency": "USD",
+      "subset_total_value": 32301842469.037773,
+      "subset_count": 3,
+      "subset_label": "top 3",
+      "total_weight_kg": null,
+      "data_quality": {
+        "is_partial_period": false,
+        "has_more": true,
+        "shown_count": 3,
+        "truncation_note": "Showing 3 results — the total shown may not represent the full market."
+      }
+    },
+    "metadata": {
+      "dal_source_url": "http://dal-app:8000/v1/query/trade_volume?dimensions=MODE_OF_TRANSPORT&measures=VALUE_USD&version=1.0&period=2025&frequency=A&sort=VALUE_USD%3Adesc&limit=3&offset=0&filter=FLOW%3Aeq%3AIM",
+      "intent": "ranking",
+      "count": 3
+    },
+    "query_params": {
+      "intent": "ranking",
+      "version": "trade_volume_1.0",
+      "filters": {
+        "FLOW": "IM"
+      },
+      "metrics": [
+        "VALUE_USD"
+      ],
+      "group_by": [
+        "MODE_OF_TRANSPORT"
+      ],
+      "dimensions": [
+        "MODE_OF_TRANSPORT"
+      ],
+      "period": "2025",
+      "frequency": "A",
+      "sort": "VALUE_USD:desc",
+      "limit": 3,
+      "offset": 0,
+      "extra": {
+        "consolidate_flows": false,
+        "user_limit": 3,
+        "period_was_defaulted": false,
+        "is_current_year_partial": false
+      },
+      "question": "Top 3 transport modes used for imports in 2025",
+      "trade_direction": "IM"
+    },
+    "table": {
+      "columns": [
+        "frequency",
+        "period",
+        "mode_of_transport",
+        "trade_value"
+      ],
+      "rows": [
+        {
+          "frequency": "A",
+          "period": "2025",
+          "mode_of_transport": "Sea transport",
+          "trade_value": 20370365243.790176
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "mode_of_transport": "Road transport",
+          "trade_value": 9171411147.337599
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "mode_of_transport": "Inland waterways transport",
+          "trade_value": 2760066077.909997
+        }
+      ]
+    },
+    "visualization": {
+      "type": "bar",
+      "title": "Trade Volume Ranking",
+      "labels": [
+        "Sea transport",
+        "Road transport",
+        "Inland waterways transport"
+      ],
+      "datasets": [
+        {
+          "label": "Trade Value (USD)",
+          "data": [
+            20370365243.790176,
+            9171411147.337599,
+            2760066077.909997
+          ]
+        }
+      ]
+    },
+    "message": "The top three transport modes for Cambodia's imports in 2025 were sea transport at $20.37 billion, road transport at $9.17 billion, and inland waterways transport at $2.76 billion. (Showing 3 results — the total shown may not represent the full market.)",
+    "suggestion": [
+      "Show the monthly trend comparing Sea transport vs Road transport imports",
+      "What were the top products moved by mode in 2025?",
+      "Show the mode breakdown by partner country for 2025"
+    ]
+  },
+  {
+    "question": "Highest export value countries last year",
+    "status": "success",
+    "count": 10,
+    "records": [
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "United States",
+        "VALUE_USD": 12730704474.079483
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Viet Nam",
+        "VALUE_USD": 3729399743.453174
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "China",
+        "VALUE_USD": 1686588577.5000014
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Japan",
+        "VALUE_USD": 1576107136.6104352
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Canada",
+        "VALUE_USD": 1271528248.7600007
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Spain",
+        "VALUE_USD": 1161148801.3099985
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "United Kingdom",
+        "VALUE_USD": 1015422091.610003
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Netherlands",
+        "VALUE_USD": 967411673.6400015
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Singapore",
+        "VALUE_USD": 920245580.9000001
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Germany",
+        "VALUE_USD": 902822926.1897134
+      }
+    ],
+    "summary": {
+      "currency": "USD",
+      "subset_total_value": 25961379254.052814,
+      "subset_count": 10,
+      "subset_label": "top 10",
+      "total_weight_kg": null,
+      "data_quality": {
+        "is_partial_period": false,
+        "has_more": true,
+        "shown_count": 10,
+        "truncation_note": "Showing 10 results — the total shown may not represent the full market."
+      }
+    },
+    "metadata": {
+      "dal_source_url": "http://dal-app:8000/v1/query/trade_volume?dimensions=PARTNER_COUNTRY&measures=VALUE_USD&version=1.0&period=2025&frequency=A&sort=VALUE_USD%3Adesc&limit=10&offset=0&filter=FLOW%3Aeq%3AEX",
+      "intent": "ranking",
+      "count": 10
+    },
+    "query_params": {
+      "intent": "ranking",
+      "version": "trade_volume_1.0",
+      "filters": {
+        "FLOW": "EX"
+      },
+      "metrics": [
+        "VALUE_USD"
+      ],
+      "group_by": [
+        "PARTNER_COUNTRY"
+      ],
+      "dimensions": [
+        "PARTNER_COUNTRY"
+      ],
+      "period": "2025",
+      "frequency": "A",
+      "sort": "VALUE_USD:desc",
+      "limit": 10,
+      "offset": 0,
+      "extra": {
+        "consolidate_flows": false,
+        "user_limit": 10,
+        "period_was_defaulted": false,
+        "is_current_year_partial": false
+      },
+      "question": "Highest export value countries last year",
+      "trade_direction": "EX"
+    },
+    "table": {
+      "columns": [
+        "frequency",
+        "period",
+        "partner_country",
+        "trade_value"
+      ],
+      "rows": [
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "United States",
+          "trade_value": 12730704474.079483
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Viet Nam",
+          "trade_value": 3729399743.453174
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "China",
+          "trade_value": 1686588577.5000014
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Japan",
+          "trade_value": 1576107136.6104352
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Canada",
+          "trade_value": 1271528248.7600007
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Spain",
+          "trade_value": 1161148801.3099985
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "United Kingdom",
+          "trade_value": 1015422091.610003
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Netherlands",
+          "trade_value": 967411673.6400015
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Singapore",
+          "trade_value": 920245580.9000001
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Germany",
+          "trade_value": 902822926.1897134
+        }
+      ]
+    },
+    "visualization": {
+      "type": "bar",
+      "title": "Trade Volume Ranking",
+      "labels": [
+        "United States",
+        "Viet Nam",
+        "China",
+        "Japan",
+        "Canada",
+        "Spain",
+        "United Kingdom",
+        "Netherlands",
+        "Singapore",
+        "Germany"
+      ],
+      "datasets": [
+        {
+          "label": "Trade Value (USD)",
+          "data": [
+            12730704474.079483,
+            3729399743.453174,
+            1686588577.5000014,
+            1576107136.6104352,
+            1271528248.7600007,
+            1161148801.3099985,
+            1015422091.610003,
+            967411673.6400015,
+            920245580.9000001,
+            902822926.1897134
+          ]
+        }
+      ]
+    },
+    "message": "In 2025, Cambodia's top export partners were the United States at $12.73 billion, Viet Nam at $3.73 billion, China at $1.69 billion, Japan at $1.58 billion, Canada at $1.27 billion, Spain at $1.16 billion, the United Kingdom at $1.02 billion, the Netherlands at $0.97 billion, Singapore at $0.92 billion, and Germany at $0.90 billion. (Showing 10 results — the total shown may not represent the full market.)",
+    "suggestion": [
+      "Show the monthly trend comparing United states vs Viet nam exports",
+      "What were the top products moved by country in 2025?",
+      "Show the country breakdown by partner country for 2025"
+    ]
+  },
+  {
+    "question": "Top 10 partners by trade volume",
+    "status": "success",
+    "count": 10,
+    "records": [
+      {
+        "PARTNER_COUNTRY": "China",
+        "VALUE_USD": 7172585964.89827,
+        "PERIOD": "2026",
+        "FREQUENCY": null,
+        "NET_WEIGHT": 3653810980.1049867
+      },
+      {
+        "PARTNER_COUNTRY": "United States",
+        "VALUE_USD": 4660633883.576278,
+        "PERIOD": "2026",
+        "FREQUENCY": null,
+        "NET_WEIGHT": 1059890222.4360023
+      },
+      {
+        "PARTNER_COUNTRY": "Viet Nam",
+        "VALUE_USD": 3365267283.84352,
+        "PERIOD": "2026",
+        "FREQUENCY": null,
+        "NET_WEIGHT": 32726632312.866077
+      },
+      {
+        "PARTNER_COUNTRY": "Singapore",
+        "VALUE_USD": 1675433293.4026666,
+        "PERIOD": "2026",
+        "FREQUENCY": null,
+        "NET_WEIGHT": 883136338.2559996
+      },
+      {
+        "PARTNER_COUNTRY": "Japan",
+        "VALUE_USD": 967144544.9177222,
+        "PERIOD": "2026",
+        "FREQUENCY": null,
+        "NET_WEIGHT": 175677163.1040004
+      },
+      {
+        "PARTNER_COUNTRY": "Thailand",
+        "VALUE_USD": 925445874.6213655,
+        "PERIOD": "2026",
+        "FREQUENCY": null,
+        "NET_WEIGHT": 554747483.5789999
+      },
+      {
+        "PARTNER_COUNTRY": "Malaysia",
+        "VALUE_USD": 535184319.4422102,
+        "PERIOD": "2026",
+        "FREQUENCY": null,
+        "NET_WEIGHT": 480298651.94200015
+      },
+      {
+        "PARTNER_COUNTRY": "Indonesia",
+        "VALUE_USD": 425531139.3290341,
+        "PERIOD": "2026",
+        "FREQUENCY": null,
+        "NET_WEIGHT": 2167228646.17
+      },
+      {
+        "PARTNER_COUNTRY": "Canada",
+        "VALUE_USD": 407510828.4110657,
+        "PERIOD": "2026",
+        "FREQUENCY": null,
+        "NET_WEIGHT": 61964941.699999966
+      },
+      {
+        "PARTNER_COUNTRY": "Spain",
+        "VALUE_USD": 381191837.6838749,
+        "PERIOD": "2026",
+        "FREQUENCY": null,
+        "NET_WEIGHT": 49988409.499999955
+      }
+    ],
+    "summary": {
+      "currency": "USD",
+      "subset_total_value": 20515928970.126007,
+      "subset_count": 10,
+      "subset_label": "top 10",
+      "subset_total_weight": 41813375149.658066,
+      "data_quality": {
+        "is_partial_period": true,
+        "partial_year": 2026,
+        "partial_year_note": "2026 data is year-to-date only and may understate the full-year figure.",
+        "has_more": true,
+        "shown_count": 10,
+        "truncation_note": "Showing 10 results — the total shown may not represent the full market."
+      }
+    },
+    "metadata": {
+      "dal_source_url": "http://dal-app:8000/v1/query/trade_volume?dimensions=PARTNER_COUNTRY&measures=VALUE_USD%2CNET_WEIGHT&version=1.0&period=2026&frequency=A&sort=VALUE_USD%3Adesc&limit=1000&offset=0",
+      "intent": "ranking",
+      "count": 10
+    },
+    "query_params": {
+      "intent": "ranking",
+      "version": "trade_volume_1.0",
+      "filters": {},
+      "metrics": [
+        "VALUE_USD",
+        "NET_WEIGHT"
+      ],
+      "group_by": [
+        "PARTNER_COUNTRY"
+      ],
+      "dimensions": [
+        "PARTNER_COUNTRY"
+      ],
+      "period": "2026",
+      "frequency": "A",
+      "sort": "VALUE_USD:desc",
+      "limit": 1000,
+      "offset": 0,
+      "extra": {
+        "consolidate_flows": true,
+        "user_limit": 10,
+        "period_was_defaulted": true,
+        "is_current_year_partial": true
+      },
+      "question": "Top 10 partners by trade volume"
+    },
+    "table": {
+      "columns": [
+        "partner_country",
+        "trade_value",
+        "period",
+        "frequency",
+        "net_weight"
+      ],
+      "rows": [
+        {
+          "partner_country": "China",
+          "trade_value": 7172585964.89827,
+          "period": "2026",
+          "frequency": null,
+          "net_weight": 3653810980.1049867
+        },
+        {
+          "partner_country": "United States",
+          "trade_value": 4660633883.576278,
+          "period": "2026",
+          "frequency": null,
+          "net_weight": 1059890222.4360023
+        },
+        {
+          "partner_country": "Viet Nam",
+          "trade_value": 3365267283.84352,
+          "period": "2026",
+          "frequency": null,
+          "net_weight": 32726632312.866077
+        },
+        {
+          "partner_country": "Singapore",
+          "trade_value": 1675433293.4026666,
+          "period": "2026",
+          "frequency": null,
+          "net_weight": 883136338.2559996
+        },
+        {
+          "partner_country": "Japan",
+          "trade_value": 967144544.9177222,
+          "period": "2026",
+          "frequency": null,
+          "net_weight": 175677163.1040004
+        },
+        {
+          "partner_country": "Thailand",
+          "trade_value": 925445874.6213655,
+          "period": "2026",
+          "frequency": null,
+          "net_weight": 554747483.5789999
+        },
+        {
+          "partner_country": "Malaysia",
+          "trade_value": 535184319.4422102,
+          "period": "2026",
+          "frequency": null,
+          "net_weight": 480298651.94200015
+        },
+        {
+          "partner_country": "Indonesia",
+          "trade_value": 425531139.3290341,
+          "period": "2026",
+          "frequency": null,
+          "net_weight": 2167228646.17
+        },
+        {
+          "partner_country": "Canada",
+          "trade_value": 407510828.4110657,
+          "period": "2026",
+          "frequency": null,
+          "net_weight": 61964941.699999966
+        },
+        {
+          "partner_country": "Spain",
+          "trade_value": 381191837.6838749,
+          "period": "2026",
+          "frequency": null,
+          "net_weight": 49988409.499999955
+        }
+      ]
+    },
+    "visualization": {
+      "type": "bar",
+      "title": "Trade Volume Ranking",
+      "labels": [
+        "China",
+        "United States",
+        "Viet Nam",
+        "Singapore",
+        "Japan",
+        "Thailand",
+        "Malaysia",
+        "Indonesia",
+        "Canada",
+        "Spain"
+      ],
+      "datasets": [
+        {
+          "label": "Trade Value (USD)",
+          "data": [
+            7172585964.89827,
+            4660633883.576278,
+            3365267283.84352,
+            1675433293.4026666,
+            967144544.9177222,
+            925445874.6213655,
+            535184319.4422102,
+            425531139.3290341,
+            407510828.4110657,
+            381191837.6838749
+          ]
+        }
+      ]
+    },
+    "message": "Cambodia's top 10 trade partners by value in 2026 are China ($7.17 billion), United States ($4.66 billion), Viet Nam ($3.37 billion), Singapore ($1.68 billion), Japan ($0.97 billion), Thailand ($0.93 billion), Malaysia ($0.54 billion), Indonesia ($0.43 billion), Canada ($0.41 billion), and Spain ($0.38 billion). (Showing 10 results — the total shown may not represent the full market; 2026 data is year-to-date only and may understate the full-year figure.)",
+    "suggestion": [
+      "Show the monthly trend comparing China vs United states trade",
+      "Specify a year for more precise results (e.g. 'in 2025')",
+      "What were the top products moved by country in 2026?"
+    ]
+  },
+  {
+    "question": "Lowest 5 export destinations in 2025",
+    "status": "success",
+    "count": 5,
+    "records": [
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Liechtenstein",
+        "VALUE_USD": 273.0
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Grenada",
+        "VALUE_USD": 900.0
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Botswana",
+        "VALUE_USD": 1630.85
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Solomon Islands",
+        "VALUE_USD": 1650.0
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Jersey",
+        "VALUE_USD": 2500.0
+      }
+    ],
+    "summary": {
+      "currency": "USD",
+      "subset_total_value": 6953.85,
+      "subset_count": 5,
+      "subset_label": "top 5",
+      "total_weight_kg": null,
+      "data_quality": {
+        "is_partial_period": false,
+        "has_more": true,
+        "shown_count": 5,
+        "truncation_note": "Showing 5 results — the total shown may not represent the full market."
+      }
+    },
+    "metadata": {
+      "dal_source_url": "http://dal-app:8000/v1/query/trade_volume?dimensions=PARTNER_COUNTRY&measures=VALUE_USD&version=1.0&period=2025&frequency=A&sort=VALUE_USD%3Aasc&limit=5&offset=0&filter=FLOW%3Aeq%3AEX",
+      "intent": "ranking",
+      "count": 5
+    },
+    "query_params": {
+      "intent": "ranking",
+      "version": "trade_volume_1.0",
+      "filters": {
+        "FLOW": "EX"
+      },
+      "metrics": [
+        "VALUE_USD"
+      ],
+      "group_by": [
+        "PARTNER_COUNTRY"
+      ],
+      "dimensions": [
+        "PARTNER_COUNTRY"
+      ],
+      "period": "2025",
+      "frequency": "A",
+      "sort": "VALUE_USD:asc",
+      "limit": 5,
+      "offset": 0,
+      "extra": {
+        "consolidate_flows": false,
+        "user_limit": 5,
+        "period_was_defaulted": false,
+        "is_current_year_partial": false
+      },
+      "question": "Lowest 5 export destinations in 2025",
+      "trade_direction": "EX"
+    },
+    "table": {
+      "columns": [
+        "frequency",
+        "period",
+        "partner_country",
+        "trade_value"
+      ],
+      "rows": [
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Liechtenstein",
+          "trade_value": 273.0
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Grenada",
+          "trade_value": 900.0
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Botswana",
+          "trade_value": 1630.85
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Solomon Islands",
+          "trade_value": 1650.0
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Jersey",
+          "trade_value": 2500.0
+        }
+      ]
+    },
+    "visualization": {
+      "type": "bar",
+      "title": "Trade Volume Ranking",
+      "labels": [
+        "Jersey",
+        "Solomon Islands",
+        "Botswana",
+        "Grenada",
+        "Liechtenstein"
+      ],
+      "datasets": [
+        {
+          "label": "Trade Value (USD)",
+          "data": [
+            2500.0,
+            1650.0,
+            1630.85,
+            900.0,
+            273.0
+          ]
+        }
+      ]
+    },
+    "message": "In 2025, Cambodia's five lowest export destinations were Liechtenstein at $273.00, Grenada at $900.00, Botswana at $1,630.85, Solomon Islands at $1,650.00, and Jersey at $2,500.00. (Showing 5 results — the total shown may not represent the full market.)",
+    "suggestion": [
+      "Show the monthly trend comparing Jersey vs Solomon islands exports",
+      "What were the top products moved by country in 2025?",
+      "Show the country breakdown by partner country for 2025"
+    ]
+  },
+  {
+    "question": "Best performing export markets in Q2 2025",
+    "status": "success",
+    "count": 10,
+    "records": [
+      {
+        "FREQ": "Q",
+        "PERIOD": "2025-Q2",
+        "PARTNER_COUNTRY": "United States",
+        "VALUE_USD": 3099997457.1238003
+      },
+      {
+        "FREQ": "Q",
+        "PERIOD": "2025-Q2",
+        "PARTNER_COUNTRY": "Viet Nam",
+        "VALUE_USD": 925983755.0376499
+      },
+      {
+        "FREQ": "Q",
+        "PERIOD": "2025-Q2",
+        "PARTNER_COUNTRY": "China",
+        "VALUE_USD": 402424725.31999946
+      },
+      {
+        "FREQ": "Q",
+        "PERIOD": "2025-Q2",
+        "PARTNER_COUNTRY": "Japan",
+        "VALUE_USD": 322935125.32904285
+      },
+      {
+        "FREQ": "Q",
+        "PERIOD": "2025-Q2",
+        "PARTNER_COUNTRY": "Canada",
+        "VALUE_USD": 322192861.6200008
+      },
+      {
+        "FREQ": "Q",
+        "PERIOD": "2025-Q2",
+        "PARTNER_COUNTRY": "United Kingdom",
+        "VALUE_USD": 268211807.52
+      },
+      {
+        "FREQ": "Q",
+        "PERIOD": "2025-Q2",
+        "PARTNER_COUNTRY": "Netherlands",
+        "VALUE_USD": 259989737.51999992
+      },
+      {
+        "FREQ": "Q",
+        "PERIOD": "2025-Q2",
+        "PARTNER_COUNTRY": "Spain",
+        "VALUE_USD": 250711233.0699999
+      },
+      {
+        "FREQ": "Q",
+        "PERIOD": "2025-Q2",
+        "PARTNER_COUNTRY": "Germany",
+        "VALUE_USD": 248261916.07000008
+      },
+      {
+        "FREQ": "Q",
+        "PERIOD": "2025-Q2",
+        "PARTNER_COUNTRY": "Singapore",
+        "VALUE_USD": 215863339.18999982
+      }
+    ],
+    "summary": {
+      "currency": "USD",
+      "subset_total_value": 6316571957.800492,
+      "subset_count": 10,
+      "subset_label": "top 10",
+      "total_weight_kg": null,
+      "data_quality": {
+        "is_partial_period": false,
+        "has_more": true,
+        "shown_count": 10,
+        "truncation_note": "Showing 10 results — the total shown may not represent the full market."
+      }
+    },
+    "metadata": {
+      "dal_source_url": "http://dal-app:8000/v1/query/trade_volume?dimensions=PARTNER_COUNTRY&measures=VALUE_USD&version=1.0&period=2025-Q2&frequency=Q&sort=VALUE_USD%3Adesc&limit=10&offset=0&filter=FLOW%3Aeq%3AEX",
+      "intent": "ranking",
+      "count": 10
+    },
+    "query_params": {
+      "intent": "ranking",
+      "version": "trade_volume_1.0",
+      "filters": {
+        "FLOW": "EX"
+      },
+      "metrics": [
+        "VALUE_USD"
+      ],
+      "group_by": [
+        "PARTNER_COUNTRY"
+      ],
+      "dimensions": [
+        "PARTNER_COUNTRY"
+      ],
+      "period": "2025-Q2",
+      "frequency": "Q",
+      "sort": "VALUE_USD:desc",
+      "limit": 10,
+      "offset": 0,
+      "extra": {
+        "consolidate_flows": false,
+        "user_limit": 10,
+        "period_was_defaulted": false,
+        "is_current_year_partial": false
+      },
+      "question": "Best performing export markets in Q2 2025",
+      "trade_direction": "EX"
+    },
+    "table": {
+      "columns": [
+        "frequency",
+        "period",
+        "partner_country",
+        "trade_value"
+      ],
+      "rows": [
+        {
+          "frequency": "Q",
+          "period": "2025-Q2",
+          "partner_country": "United States",
+          "trade_value": 3099997457.1238003
+        },
+        {
+          "frequency": "Q",
+          "period": "2025-Q2",
+          "partner_country": "Viet Nam",
+          "trade_value": 925983755.0376499
+        },
+        {
+          "frequency": "Q",
+          "period": "2025-Q2",
+          "partner_country": "China",
+          "trade_value": 402424725.31999946
+        },
+        {
+          "frequency": "Q",
+          "period": "2025-Q2",
+          "partner_country": "Japan",
+          "trade_value": 322935125.32904285
+        },
+        {
+          "frequency": "Q",
+          "period": "2025-Q2",
+          "partner_country": "Canada",
+          "trade_value": 322192861.6200008
+        },
+        {
+          "frequency": "Q",
+          "period": "2025-Q2",
+          "partner_country": "United Kingdom",
+          "trade_value": 268211807.52
+        },
+        {
+          "frequency": "Q",
+          "period": "2025-Q2",
+          "partner_country": "Netherlands",
+          "trade_value": 259989737.51999992
+        },
+        {
+          "frequency": "Q",
+          "period": "2025-Q2",
+          "partner_country": "Spain",
+          "trade_value": 250711233.0699999
+        },
+        {
+          "frequency": "Q",
+          "period": "2025-Q2",
+          "partner_country": "Germany",
+          "trade_value": 248261916.07000008
+        },
+        {
+          "frequency": "Q",
+          "period": "2025-Q2",
+          "partner_country": "Singapore",
+          "trade_value": 215863339.18999982
+        }
+      ]
+    },
+    "visualization": {
+      "type": "bar",
+      "title": "Trade Volume Ranking",
+      "labels": [
+        "United States",
+        "Viet Nam",
+        "China",
+        "Japan",
+        "Canada",
+        "United Kingdom",
+        "Netherlands",
+        "Spain",
+        "Germany",
+        "Singapore"
+      ],
+      "datasets": [
+        {
+          "label": "Trade Value (USD)",
+          "data": [
+            3099997457.1238003,
+            925983755.0376499,
+            402424725.31999946,
+            322935125.32904285,
+            322192861.6200008,
+            268211807.52,
+            259989737.51999992,
+            250711233.0699999,
+            248261916.07000008,
+            215863339.18999982
+          ]
+        }
+      ]
+    },
+    "message": "In Q2 2025, Cambodia's top export markets were led by the United States at $3.10 billion, followed by Viet Nam at $925.98 million, China at $402.42 million, Japan at $322.94 million, Canada at $322.19 million, the United Kingdom at $268.21 million, the Netherlands at $259.99 million, Spain at $250.71 million, Germany at $248.26 million, and Singapore at $215.86 million. (Showing 10 results — the total shown may not represent the full market.)",
+    "suggestion": [
+      "Show the monthly trend comparing United states vs Viet nam exports",
+      "What were the top products moved by country in 2025-Q2?",
+      "Show the country breakdown by partner country for 2025-Q2"
+    ]
+  },
+  {
+    "question": "Top 20 HS chapters for imports in 2025",
+    "status": "success",
+    "count": 20,
+    "records": [
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "HS_CHAPTER": "Mineral fuels, mineral oils and products of their distillation; bituminous substances;mineral waxes.",
+        "VALUE_USD": 3565048006.114381
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "HS_CHAPTER": "Knitted or crocheted fabrics.",
+        "VALUE_USD": 3255954573.579412
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "HS_CHAPTER": "Electrical machinery and equipment and parts thereof; sound recorders and reproducers, television image and sound recorders and reproducers, and parts and accessories of such articles.",
+        "VALUE_USD": 2898773326.42865
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "HS_CHAPTER": "Nuclear reactors, boilers, machinery and mechanical appliances; parts thereof.",
+        "VALUE_USD": 2654068689.978809
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "HS_CHAPTER": "Vehicles other than railway or tramway rolling-stock, and parts and accessories thereof.",
+        "VALUE_USD": 2587836909.029639
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "HS_CHAPTER": "Plastics and articles thereof.",
+        "VALUE_USD": 1569727602.3858957
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "HS_CHAPTER": "Man- made staple fibres.",
+        "VALUE_USD": 1352041777.1747675
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "HS_CHAPTER": "Articles of iron or steel.",
+        "VALUE_USD": 1201943978.651866
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "HS_CHAPTER": "Paper and paperboard; articles of paper pulp, of paper or of paperboard.",
+        "VALUE_USD": 993130119.9952984
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "HS_CHAPTER": "Iron and steel.",
+        "VALUE_USD": 921865913.1400484
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "HS_CHAPTER": "Aluminium and articles thereof",
+        "VALUE_USD": 900049556.2380604
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "HS_CHAPTER": "Cotton",
+        "VALUE_USD": 826122185.9452105
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "HS_CHAPTER": "Rubber and articles thereof.",
+        "VALUE_USD": 602120414.7979331
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "HS_CHAPTER": "Miscellaneous chemical products.",
+        "VALUE_USD": 540768303.0434314
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "HS_CHAPTER": "Raw hides and skins (other than furskins) and leather.",
+        "VALUE_USD": 510289059.2041284
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "HS_CHAPTER": "Wood and articles of wood; wood charcoal.",
+        "VALUE_USD": 483809842.8875613
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "HS_CHAPTER": "Fertilisers.",
+        "VALUE_USD": 419833904.58000004
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "HS_CHAPTER": "Miscellaneous articles of base metal.",
+        "VALUE_USD": 411022848.615531
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "HS_CHAPTER": "Footwear, gaiters and the like; parts of such articles.",
+        "VALUE_USD": 381356470.1166596
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "HS_CHAPTER": "Residues and waste from the food industries; prepared animal fodder.",
+        "VALUE_USD": 375995319.35
+      }
+    ],
+    "summary": {
+      "currency": "USD",
+      "subset_total_value": 26451758801.25728,
+      "subset_count": 20,
+      "subset_label": "top 20",
+      "total_weight_kg": null,
+      "data_quality": {
+        "is_partial_period": false,
+        "has_more": true,
+        "shown_count": 20,
+        "truncation_note": "Showing 20 results — the total shown may not represent the full market."
+      }
+    },
+    "metadata": {
+      "dal_source_url": "http://dal-app:8000/v1/query/trade_volume?dimensions=HS_CHAPTER&measures=VALUE_USD&version=1.0&period=2025&frequency=A&sort=VALUE_USD%3Adesc&limit=20&offset=0&filter=FLOW%3Aeq%3AIM",
+      "intent": "ranking",
+      "count": 20
+    },
+    "query_params": {
+      "intent": "ranking",
+      "version": "trade_volume_1.0",
+      "filters": {
+        "FLOW": "IM"
+      },
+      "metrics": [
+        "VALUE_USD"
+      ],
+      "group_by": [
+        "HS_CHAPTER"
+      ],
+      "dimensions": [
+        "HS_CHAPTER"
+      ],
+      "period": "2025",
+      "frequency": "A",
+      "sort": "VALUE_USD:desc",
+      "limit": 20,
+      "offset": 0,
+      "extra": {
+        "consolidate_flows": false,
+        "user_limit": 20,
+        "period_was_defaulted": false,
+        "is_current_year_partial": false
+      },
+      "question": "Top 20 HS chapters for imports in 2025",
+      "trade_direction": "IM"
+    },
+    "table": {
+      "columns": [
+        "frequency",
+        "period",
+        "hs_chapter",
+        "trade_value"
+      ],
+      "rows": [
+        {
+          "frequency": "A",
+          "period": "2025",
+          "hs_chapter": "Mineral fuels, mineral oils and products of their distillation; bituminous substances;mineral waxes.",
+          "trade_value": 3565048006.114381
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "hs_chapter": "Knitted or crocheted fabrics.",
+          "trade_value": 3255954573.579412
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "hs_chapter": "Electrical machinery and equipment and parts thereof; sound recorders and reproducers, television image and sound recorders and reproducers, and parts and accessories of such articles.",
+          "trade_value": 2898773326.42865
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "hs_chapter": "Nuclear reactors, boilers, machinery and mechanical appliances; parts thereof.",
+          "trade_value": 2654068689.978809
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "hs_chapter": "Vehicles other than railway or tramway rolling-stock, and parts and accessories thereof.",
+          "trade_value": 2587836909.029639
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "hs_chapter": "Plastics and articles thereof.",
+          "trade_value": 1569727602.3858957
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "hs_chapter": "Man- made staple fibres.",
+          "trade_value": 1352041777.1747675
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "hs_chapter": "Articles of iron or steel.",
+          "trade_value": 1201943978.651866
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "hs_chapter": "Paper and paperboard; articles of paper pulp, of paper or of paperboard.",
+          "trade_value": 993130119.9952984
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "hs_chapter": "Iron and steel.",
+          "trade_value": 921865913.1400484
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "hs_chapter": "Aluminium and articles thereof",
+          "trade_value": 900049556.2380604
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "hs_chapter": "Cotton",
+          "trade_value": 826122185.9452105
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "hs_chapter": "Rubber and articles thereof.",
+          "trade_value": 602120414.7979331
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "hs_chapter": "Miscellaneous chemical products.",
+          "trade_value": 540768303.0434314
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "hs_chapter": "Raw hides and skins (other than furskins) and leather.",
+          "trade_value": 510289059.2041284
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "hs_chapter": "Wood and articles of wood; wood charcoal.",
+          "trade_value": 483809842.8875613
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "hs_chapter": "Fertilisers.",
+          "trade_value": 419833904.58000004
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "hs_chapter": "Miscellaneous articles of base metal.",
+          "trade_value": 411022848.615531
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "hs_chapter": "Footwear, gaiters and the like; parts of such articles.",
+          "trade_value": 381356470.1166596
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "hs_chapter": "Residues and waste from the food industries; prepared animal fodder.",
+          "trade_value": 375995319.35
+        }
+      ]
+    },
+    "visualization": {
+      "type": "bar",
+      "title": "Trade Volume Ranking",
+      "labels": [
+        "Mineral fuels, mineral oils and products of their distill...",
+        "Knitted or crocheted fabrics.",
+        "Electrical machinery and equipment and parts thereof; sou...",
+        "Nuclear reactors, boilers, machinery and mechanical appli...",
+        "Vehicles other than railway or tramway rolling-stock, and...",
+        "Plastics and articles thereof.",
+        "Man- made staple fibres.",
+        "Articles of iron or steel.",
+        "Paper and paperboard; articles of paper pulp, of paper or...",
+        "Iron and steel.",
+        "Aluminium and articles thereof",
+        "Cotton",
+        "Rubber and articles thereof.",
+        "Miscellaneous chemical products.",
+        "Raw hides and skins (other than furskins) and leather.",
+        "Wood and articles of wood; wood charcoal.",
+        "Fertilisers.",
+        "Miscellaneous articles of base metal.",
+        "Footwear, gaiters and the like; parts of such articles.",
+        "Residues and waste from the food industries; prepared ani..."
+      ],
+      "datasets": [
+        {
+          "label": "Trade Value (USD)",
+          "data": [
+            3565048006.114381,
+            3255954573.579412,
+            2898773326.42865,
+            2654068689.978809,
+            2587836909.029639,
+            1569727602.3858957,
+            1352041777.1747675,
+            1201943978.651866,
+            993130119.9952984,
+            921865913.1400484,
+            900049556.2380604,
+            826122185.9452105,
+            602120414.7979331,
+            540768303.0434314,
+            510289059.2041284,
+            483809842.8875613,
+            419833904.58000004,
+            411022848.615531,
+            381356470.1166596,
+            375995319.35
+          ]
+        }
+      ]
+    },
+    "message": "In 2025, Cambodia's top 20 imports were led by mineral fuels at $3.57 billion, knitted or crocheted fabrics at $3.26 billion, electrical machinery at $2.90 billion, nuclear reactors and machinery at $2.65 billion, vehicles at $2.59 billion, plastics at $1.57 billion, man-made staple fibres at $1.35 billion, articles of iron or steel at $1.20 billion, paper and paperboard at $0.99 billion, iron and steel at $0.92 billion, aluminium at $0.90 billion, cotton at $0.83 billion, rubber at $0.60 billion, miscellaneous chemical products at $0.54 billion, raw hides and skins at $0.51 billion, wood at $0.48 billion, fertilisers at $0.42 billion, miscellaneous base metal articles at $0.41 billion, footwear at $0.38 billion, and food industry residues at $0.38 billion. (Showing 20 results — the total shown may not represent the full market.)",
+    "suggestion": [
+      "Show the monthly trend comparing Mineral fuels vs Knitted or crocheted f... imports",
+      "What were the top products moved by hs_chapter in 2025?",
+      "Show the hs_chapter breakdown by partner country for 2025"
+    ]
+  },
+  {
+    "question": "Which 10 countries import the most rice from Cambodia?",
+    "status": "success",
+    "count": 10,
+    "records": [
+      {
+        "FREQ": "A",
+        "PERIOD": "2026",
+        "PARTNER_COUNTRY": "Viet Nam",
+        "VALUE_USD": 261212995.58384803
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2026",
+        "PARTNER_COUNTRY": "China",
+        "VALUE_USD": 67777221.0
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2026",
+        "PARTNER_COUNTRY": "France",
+        "VALUE_USD": 23443768.730000004
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2026",
+        "PARTNER_COUNTRY": "Malaysia",
+        "VALUE_USD": 23283470.4
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2026",
+        "PARTNER_COUNTRY": "Philippines",
+        "VALUE_USD": 22689083.5
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2026",
+        "PARTNER_COUNTRY": "Gabon",
+        "VALUE_USD": 15085832.83
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2026",
+        "PARTNER_COUNTRY": "Netherlands",
+        "VALUE_USD": 12397662.369999997
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2026",
+        "PARTNER_COUNTRY": "Hong Kong",
+        "VALUE_USD": 8104644.14
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2026",
+        "PARTNER_COUNTRY": "United Kingdom",
+        "VALUE_USD": 8012576.75
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2026",
+        "PARTNER_COUNTRY": "Italy",
+        "VALUE_USD": 7222839.059999999
+      }
+    ],
+    "summary": {
+      "currency": "USD",
+      "subset_total_value": 449230094.363848,
+      "subset_count": 10,
+      "subset_label": "top 10",
+      "total_weight_kg": null,
+      "data_quality": {
+        "is_partial_period": true,
+        "partial_year": 2026,
+        "partial_year_note": "2026 data is year-to-date only and may understate the full-year figure.",
+        "has_more": true,
+        "shown_count": 10,
+        "truncation_note": "Showing 10 results — the total shown may not represent the full market."
+      }
+    },
+    "metadata": {
+      "dal_source_url": "http://dal-app:8000/v1/query/trade_volume?dimensions=PARTNER_COUNTRY&measures=VALUE_USD&version=1.0&period=2026&frequency=A&sort=VALUE_USD%3Adesc&limit=10&offset=0&filter=FLOW%3Aeq%3AEX&filter=HS_HEADING%3Aeq%3A1006",
+      "intent": "ranking",
+      "count": 10
+    },
+    "query_params": {
+      "intent": "ranking",
+      "version": "trade_volume_1.0",
+      "filters": {
+        "FLOW": "EX",
+        "HS_HEADING": "1006"
+      },
+      "metrics": [
+        "VALUE_USD"
+      ],
+      "group_by": [
+        "PARTNER_COUNTRY"
+      ],
+      "dimensions": [
+        "PARTNER_COUNTRY"
+      ],
+      "period": "2026",
+      "frequency": "A",
+      "sort": "VALUE_USD:desc",
+      "limit": 10,
+      "offset": 0,
+      "extra": {
+        "consolidate_flows": false,
+        "user_limit": 10,
+        "period_was_defaulted": true,
+        "is_current_year_partial": true
+      },
+      "question": "Which 10 countries import the most rice from Cambodia?",
+      "trade_direction": "EX",
+      "hs_code": "1006"
+    },
+    "table": {
+      "columns": [
+        "frequency",
+        "period",
+        "partner_country",
+        "trade_value"
+      ],
+      "rows": [
+        {
+          "frequency": "A",
+          "period": "2026",
+          "partner_country": "Viet Nam",
+          "trade_value": 261212995.58384803
+        },
+        {
+          "frequency": "A",
+          "period": "2026",
+          "partner_country": "China",
+          "trade_value": 67777221.0
+        },
+        {
+          "frequency": "A",
+          "period": "2026",
+          "partner_country": "France",
+          "trade_value": 23443768.730000004
+        },
+        {
+          "frequency": "A",
+          "period": "2026",
+          "partner_country": "Malaysia",
+          "trade_value": 23283470.4
+        },
+        {
+          "frequency": "A",
+          "period": "2026",
+          "partner_country": "Philippines",
+          "trade_value": 22689083.5
+        },
+        {
+          "frequency": "A",
+          "period": "2026",
+          "partner_country": "Gabon",
+          "trade_value": 15085832.83
+        },
+        {
+          "frequency": "A",
+          "period": "2026",
+          "partner_country": "Netherlands",
+          "trade_value": 12397662.369999997
+        },
+        {
+          "frequency": "A",
+          "period": "2026",
+          "partner_country": "Hong Kong",
+          "trade_value": 8104644.14
+        },
+        {
+          "frequency": "A",
+          "period": "2026",
+          "partner_country": "United Kingdom",
+          "trade_value": 8012576.75
+        },
+        {
+          "frequency": "A",
+          "period": "2026",
+          "partner_country": "Italy",
+          "trade_value": 7222839.059999999
+        }
+      ]
+    },
+    "visualization": {
+      "type": "bar",
+      "title": "Trade Volume Ranking",
+      "labels": [
+        "Viet Nam",
+        "China",
+        "France",
+        "Malaysia",
+        "Philippines",
+        "Gabon",
+        "Netherlands",
+        "Hong Kong",
+        "United Kingdom",
+        "Italy"
+      ],
+      "datasets": [
+        {
+          "label": "Trade Value (USD)",
+          "data": [
+            261212995.58384803,
+            67777221.0,
+            23443768.730000004,
+            23283470.4,
+            22689083.5,
+            15085832.83,
+            12397662.369999997,
+            8104644.14,
+            8012576.75,
+            7222839.059999999
+          ]
+        }
+      ]
+    },
+    "message": "The top 10 importers of Cambodian rice are Viet Nam ($261.21 million), China ($67.78 million), France ($23.44 million), Malaysia ($23.28 million), Philippines ($22.69 million), Gabon ($15.09 million), Netherlands ($12.40 million), Hong Kong ($8.10 million), United Kingdom ($8.01 million), and Italy ($7.22 million). (Showing 10 results — the total shown may not represent the full market; 2026 data is year-to-date only and may understate the full-year figure.)",
+    "suggestion": [
+      "Show the monthly trend comparing Viet nam vs China exports of rice",
+      "Specify a year for more precise results (e.g. 'in 2025')",
+      "What were the top products moved by country in 2026?"
+    ]
+  },
+  {
+    "question": "Top air freight export destinations in 2025",
+    "status": "success",
+    "count": 10,
+    "records": [
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Singapore",
+        "VALUE_USD": 857375602.23
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "United States",
+        "VALUE_USD": 420524716.4500001
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Australia",
+        "VALUE_USD": 290384200.19
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "China",
+        "VALUE_USD": 285157056.5999999
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Spain",
+        "VALUE_USD": 116993371.01
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Netherlands",
+        "VALUE_USD": 88963340.73999995
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Japan",
+        "VALUE_USD": 77276940.69999997
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Canada",
+        "VALUE_USD": 61971260.44000003
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "United Kingdom",
+        "VALUE_USD": 53620462.179999985
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Hong Kong",
+        "VALUE_USD": 43213301.519999996
+      }
+    ],
+    "summary": {
+      "currency": "USD",
+      "subset_total_value": 2295480252.06,
+      "subset_count": 10,
+      "subset_label": "top 10",
+      "total_weight_kg": null,
+      "data_quality": {
+        "is_partial_period": false,
+        "has_more": true,
+        "shown_count": 10,
+        "truncation_note": "Showing 10 results — the total shown may not represent the full market."
+      }
+    },
+    "metadata": {
+      "dal_source_url": "http://dal-app:8000/v1/query/trade_volume?dimensions=PARTNER_COUNTRY&measures=VALUE_USD&version=1.0&period=2025&frequency=A&sort=VALUE_USD%3Adesc&limit=10&offset=0&filter=FLOW%3Aeq%3AEX&filter=MODE_OF_TRANSPORT%3Ain%3A4",
+      "intent": "ranking",
+      "count": 10
+    },
+    "query_params": {
+      "intent": "ranking",
+      "version": "trade_volume_1.0",
+      "filters": {
+        "FLOW": "EX",
+        "MODE_OF_TRANSPORT": [
+          "4"
+        ]
+      },
+      "metrics": [
+        "VALUE_USD"
+      ],
+      "group_by": [
+        "PARTNER_COUNTRY"
+      ],
+      "dimensions": [
+        "PARTNER_COUNTRY"
+      ],
+      "period": "2025",
+      "frequency": "A",
+      "sort": "VALUE_USD:desc",
+      "limit": 10,
+      "offset": 0,
+      "extra": {
+        "consolidate_flows": false,
+        "user_limit": 10,
+        "period_was_defaulted": false,
+        "is_current_year_partial": false
+      },
+      "question": "Top air freight export destinations in 2025",
+      "trade_direction": "EX",
+      "mode_of_transport": [
+        "4"
+      ]
+    },
+    "table": {
+      "columns": [
+        "frequency",
+        "period",
+        "partner_country",
+        "trade_value"
+      ],
+      "rows": [
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Singapore",
+          "trade_value": 857375602.23
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "United States",
+          "trade_value": 420524716.4500001
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Australia",
+          "trade_value": 290384200.19
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "China",
+          "trade_value": 285157056.5999999
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Spain",
+          "trade_value": 116993371.01
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Netherlands",
+          "trade_value": 88963340.73999995
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Japan",
+          "trade_value": 77276940.69999997
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Canada",
+          "trade_value": 61971260.44000003
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "United Kingdom",
+          "trade_value": 53620462.179999985
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Hong Kong",
+          "trade_value": 43213301.519999996
+        }
+      ]
+    },
+    "visualization": {
+      "type": "bar",
+      "title": "Trade Volume Ranking",
+      "labels": [
+        "Singapore",
+        "United States",
+        "Australia",
+        "China",
+        "Spain",
+        "Netherlands",
+        "Japan",
+        "Canada",
+        "United Kingdom",
+        "Hong Kong"
+      ],
+      "datasets": [
+        {
+          "label": "Trade Value (USD)",
+          "data": [
+            857375602.23,
+            420524716.4500001,
+            290384200.19,
+            285157056.5999999,
+            116993371.01,
+            88963340.73999995,
+            77276940.69999997,
+            61971260.44000003,
+            53620462.179999985,
+            43213301.519999996
+          ]
+        }
+      ]
+    },
+    "message": "In 2025, Cambodia's top air freight export destinations were Singapore ($0.86 billion), the United States ($0.42 billion), Australia ($0.29 billion), China ($0.29 billion), Spain ($0.12 billion), the Netherlands ($0.09 billion), Japan ($0.08 billion), Canada ($0.06 billion), the United Kingdom ($0.05 billion), and Hong Kong ($0.04 billion). (Showing 10 results — the total shown may not represent the full market.)",
+    "suggestion": [
+      "Show the monthly trend comparing Singapore vs United states exports",
+      "What were the top products moved by country in 2025?",
+      "Show the country breakdown by partner country for 2025"
+    ]
+  },
+  {
+    "question": "Smallest 5 trading partners by import value",
+    "status": "success",
+    "count": 5,
+    "records": [
+      {
+        "FREQ": "A",
+        "PERIOD": "2024",
+        "PARTNER_COUNTRY": "Afghanistan",
+        "VALUE_USD": 2.55
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2024",
+        "PARTNER_COUNTRY": "Zambia",
+        "VALUE_USD": 16.48
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2024",
+        "PARTNER_COUNTRY": "Montserrat",
+        "VALUE_USD": 31.990000000000002
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2024",
+        "PARTNER_COUNTRY": "Gabon",
+        "VALUE_USD": 117.66
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2024",
+        "PARTNER_COUNTRY": "Central African Republic",
+        "VALUE_USD": 135.89
+      }
+    ],
+    "summary": {
+      "currency": "USD",
+      "subset_total_value": 304.57,
+      "subset_count": 5,
+      "subset_label": "top 5",
+      "total_weight_kg": null,
+      "data_quality": {
+        "is_partial_period": false,
+        "has_more": true,
+        "shown_count": 5,
+        "truncation_note": "Showing 5 results — the total shown may not represent the full market.",
+        "period_mismatch": true,
+        "requested_period": "2026",
+        "returned_period": "2024",
+        "period_mismatch_note": "Note: Requested data for 2026, but displaying 2024 data."
+      }
+    },
+    "metadata": {
+      "dal_source_url": "http://dal-app:8000/v1/query/trade_volume?dimensions=PARTNER_COUNTRY&measures=VALUE_USD&version=1.0&period=2026&frequency=A&sort=VALUE_USD%3Aasc&limit=5&offset=0&filter=FLOW%3Aeq%3AIM",
+      "intent": "ranking",
+      "count": 5
+    },
+    "query_params": {
+      "intent": "ranking",
+      "version": "trade_volume_1.0",
+      "filters": {
+        "FLOW": "IM"
+      },
+      "metrics": [
+        "VALUE_USD"
+      ],
+      "group_by": [
+        "PARTNER_COUNTRY"
+      ],
+      "dimensions": [
+        "PARTNER_COUNTRY"
+      ],
+      "period": "2026",
+      "frequency": "A",
+      "sort": "VALUE_USD:asc",
+      "limit": 5,
+      "offset": 0,
+      "extra": {
+        "consolidate_flows": false,
+        "user_limit": 5,
+        "period_was_defaulted": true,
+        "is_current_year_partial": true,
+        "period_mismatch": true,
+        "requested_period": "2026",
+        "returned_period": "2024"
+      },
+      "question": "Smallest 5 trading partners by import value",
+      "trade_direction": "IM"
+    },
+    "table": {
+      "columns": [
+        "frequency",
+        "period",
+        "partner_country",
+        "trade_value"
+      ],
+      "rows": [
+        {
+          "frequency": "A",
+          "period": "2024",
+          "partner_country": "Afghanistan",
+          "trade_value": 2.55
+        },
+        {
+          "frequency": "A",
+          "period": "2024",
+          "partner_country": "Zambia",
+          "trade_value": 16.48
+        },
+        {
+          "frequency": "A",
+          "period": "2024",
+          "partner_country": "Montserrat",
+          "trade_value": 31.990000000000002
+        },
+        {
+          "frequency": "A",
+          "period": "2024",
+          "partner_country": "Gabon",
+          "trade_value": 117.66
+        },
+        {
+          "frequency": "A",
+          "period": "2024",
+          "partner_country": "Central African Republic",
+          "trade_value": 135.89
+        }
+      ]
+    },
+    "visualization": {
+      "type": "bar",
+      "title": "Trade Volume Ranking",
+      "labels": [
+        "Central African Republic",
+        "Gabon",
+        "Montserrat",
+        "Zambia",
+        "Afghanistan"
+      ],
+      "datasets": [
+        {
+          "label": "Trade Value (USD)",
+          "data": [
+            135.89,
+            117.66,
+            31.990000000000002,
+            16.48,
+            2.55
+          ]
+        }
+      ]
+    },
+    "message": "Cambodia's five smallest trading partners by import value are Afghanistan at $2.55, Zambia at $16.48, Montserrat at $31.99, Gabon at $117.66, and the Central African Republic at $135.89; note: requested data for 2026, but displaying 2024 data. (Note: Requested data for 2026, but displaying 2024 data; Showing 5 results — the total shown may not represent the full market.)",
+    "suggestion": [
+      "Show the monthly trend comparing Central african republic vs Gabon imports",
+      "Specify a year for more precise results (e.g. 'in 2025')",
+      "What were the top products moved by country in 2026?"
+    ]
+  },
+  {
+    "question": "Top 10 partner countries for both imports and exports in 2025",
+    "status": "success",
+    "count": 10,
+    "records": [
+      {
+        "PARTNER_COUNTRY": "China",
+        "VALUE_USD": 19731388961.75981,
+        "PERIOD": "2025",
+        "FREQUENCY": null
+      },
+      {
+        "PARTNER_COUNTRY": "United States",
+        "VALUE_USD": 13147777494.117752,
+        "PERIOD": "2025",
+        "FREQUENCY": null
+      },
+      {
+        "PARTNER_COUNTRY": "Viet Nam",
+        "VALUE_USD": 7792075462.911806,
+        "PERIOD": "2025",
+        "FREQUENCY": null
+      },
+      {
+        "PARTNER_COUNTRY": "Thailand",
+        "VALUE_USD": 3657205949.3735056,
+        "PERIOD": "2025",
+        "FREQUENCY": null
+      },
+      {
+        "PARTNER_COUNTRY": "Japan",
+        "VALUE_USD": 2532339679.8753424,
+        "PERIOD": "2025",
+        "FREQUENCY": null
+      },
+      {
+        "PARTNER_COUNTRY": "Singapore",
+        "VALUE_USD": 2341603678.9522457,
+        "PERIOD": "2025",
+        "FREQUENCY": null
+      },
+      {
+        "PARTNER_COUNTRY": "Canada",
+        "VALUE_USD": 1334938151.3355331,
+        "PERIOD": "2025",
+        "FREQUENCY": null
+      },
+      {
+        "PARTNER_COUNTRY": "Spain",
+        "VALUE_USD": 1188671342.5545459,
+        "PERIOD": "2025",
+        "FREQUENCY": null
+      },
+      {
+        "PARTNER_COUNTRY": "Germany",
+        "VALUE_USD": 1100749414.5724225,
+        "PERIOD": "2025",
+        "FREQUENCY": null
+      },
+      {
+        "PARTNER_COUNTRY": "Indonesia",
+        "VALUE_USD": 1089188262.0114257,
+        "PERIOD": "2025",
+        "FREQUENCY": null
+      }
+    ],
+    "summary": {
+      "currency": "USD",
+      "subset_total_value": 53915938397.46439,
+      "subset_count": 10,
+      "subset_label": "top 10",
+      "total_weight_kg": null,
+      "data_quality": {
+        "is_partial_period": false,
+        "has_more": true,
+        "shown_count": 10,
+        "truncation_note": "Showing 10 results — the total shown may not represent the full market."
+      }
+    },
+    "metadata": {
+      "dal_source_url": "http://dal-app:8000/v1/query/trade_volume?dimensions=PARTNER_COUNTRY&measures=VALUE_USD&version=1.0&period=2025&frequency=A&sort=VALUE_USD%3Adesc&limit=1000&offset=0",
+      "intent": "ranking",
+      "count": 10
+    },
+    "query_params": {
+      "intent": "ranking",
+      "version": "trade_volume_1.0",
+      "filters": {},
+      "metrics": [
+        "VALUE_USD"
+      ],
+      "group_by": [
+        "PARTNER_COUNTRY"
+      ],
+      "dimensions": [
+        "PARTNER_COUNTRY"
+      ],
+      "period": "2025",
+      "frequency": "A",
+      "sort": "VALUE_USD:desc",
+      "limit": 1000,
+      "offset": 0,
+      "extra": {
+        "consolidate_flows": true,
+        "user_limit": 10,
+        "period_was_defaulted": false,
+        "is_current_year_partial": false
+      },
+      "question": "Top 10 partner countries for both imports and exports in 2025"
+    },
+    "table": {
+      "columns": [
+        "partner_country",
+        "trade_value",
+        "period",
+        "frequency"
+      ],
+      "rows": [
+        {
+          "partner_country": "China",
+          "trade_value": 19731388961.75981,
+          "period": "2025",
+          "frequency": null
+        },
+        {
+          "partner_country": "United States",
+          "trade_value": 13147777494.117752,
+          "period": "2025",
+          "frequency": null
+        },
+        {
+          "partner_country": "Viet Nam",
+          "trade_value": 7792075462.911806,
+          "period": "2025",
+          "frequency": null
+        },
+        {
+          "partner_country": "Thailand",
+          "trade_value": 3657205949.3735056,
+          "period": "2025",
+          "frequency": null
+        },
+        {
+          "partner_country": "Japan",
+          "trade_value": 2532339679.8753424,
+          "period": "2025",
+          "frequency": null
+        },
+        {
+          "partner_country": "Singapore",
+          "trade_value": 2341603678.9522457,
+          "period": "2025",
+          "frequency": null
+        },
+        {
+          "partner_country": "Canada",
+          "trade_value": 1334938151.3355331,
+          "period": "2025",
+          "frequency": null
+        },
+        {
+          "partner_country": "Spain",
+          "trade_value": 1188671342.5545459,
+          "period": "2025",
+          "frequency": null
+        },
+        {
+          "partner_country": "Germany",
+          "trade_value": 1100749414.5724225,
+          "period": "2025",
+          "frequency": null
+        },
+        {
+          "partner_country": "Indonesia",
+          "trade_value": 1089188262.0114257,
+          "period": "2025",
+          "frequency": null
+        }
+      ]
+    },
+    "visualization": {
+      "type": "bar",
+      "title": "Trade Volume Ranking",
+      "labels": [
+        "China",
+        "United States",
+        "Viet Nam",
+        "Thailand",
+        "Japan",
+        "Singapore",
+        "Canada",
+        "Spain",
+        "Germany",
+        "Indonesia"
+      ],
+      "datasets": [
+        {
+          "label": "Trade Value (USD)",
+          "data": [
+            19731388961.75981,
+            13147777494.117752,
+            7792075462.911806,
+            3657205949.3735056,
+            2532339679.8753424,
+            2341603678.9522457,
+            1334938151.3355331,
+            1188671342.5545459,
+            1100749414.5724225,
+            1089188262.0114257
+          ]
+        }
+      ]
+    },
+    "message": "In 2025, Cambodia's top 10 trade partners by total value were China ($19.73 billion), the United States ($13.15 billion), Viet Nam ($7.79 billion), Thailand ($3.66 billion), Japan ($2.53 billion), Singapore ($2.34 billion), Canada ($1.33 billion), Spain ($1.19 billion), Germany ($1.10 billion), and Indonesia ($1.09 billion). (Showing 10 results — the total shown may not represent the full market.)",
+    "suggestion": [
+      "Show the monthly trend comparing China vs United states trade",
+      "What were the top products moved by country in 2025?",
+      "Show the country breakdown by partner country for 2025"
+    ]
+  },
+  {
+    "question": "Top 5 export partners by weight in 2025",
+    "status": "success",
+    "count": 5,
+    "records": [
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Viet Nam",
+        "NET_WEIGHT": 81394049441.76999
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "United States",
+        "NET_WEIGHT": 2327776686.157003
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "China",
+        "NET_WEIGHT": 2222501611.881
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Thailand",
+        "NET_WEIGHT": 1538840815.5300002
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "PARTNER_COUNTRY": "Canada",
+        "NET_WEIGHT": 174717645.59151176
+      }
+    ],
+    "summary": {
+      "total_trade_value": null,
+      "subset_total_weight": 87657886200.92949,
+      "data_quality": {
+        "is_partial_period": false,
+        "has_more": true,
+        "shown_count": 5,
+        "truncation_note": "Showing 5 results — the total shown may not represent the full market."
+      }
+    },
+    "metadata": {
+      "dal_source_url": "http://dal-app:8000/v1/query/trade_volume?dimensions=PARTNER_COUNTRY&measures=NET_WEIGHT&version=1.0&period=2025&frequency=A&sort=NET_WEIGHT%3Adesc&limit=5&offset=0&filter=FLOW%3Aeq%3AEX",
+      "intent": "ranking",
+      "count": 5
+    },
+    "query_params": {
+      "intent": "ranking",
+      "version": "trade_volume_1.0",
+      "filters": {
+        "FLOW": "EX"
+      },
+      "metrics": [
+        "NET_WEIGHT"
+      ],
+      "group_by": [
+        "PARTNER_COUNTRY"
+      ],
+      "dimensions": [
+        "PARTNER_COUNTRY"
+      ],
+      "period": "2025",
+      "frequency": "A",
+      "sort": "NET_WEIGHT:desc",
+      "limit": 5,
+      "offset": 0,
+      "extra": {
+        "consolidate_flows": false,
+        "user_limit": 5,
+        "period_was_defaulted": false,
+        "is_current_year_partial": false
+      },
+      "question": "Top 5 export partners by weight in 2025",
+      "trade_direction": "EX"
+    },
+    "table": {
+      "columns": [
+        "frequency",
+        "period",
+        "partner_country",
+        "net_weight"
+      ],
+      "rows": [
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Viet Nam",
+          "net_weight": 81394049441.76999
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "United States",
+          "net_weight": 2327776686.157003
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "China",
+          "net_weight": 2222501611.881
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Thailand",
+          "net_weight": 1538840815.5300002
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "partner_country": "Canada",
+          "net_weight": 174717645.59151176
+        }
+      ]
+    },
+    "visualization": {
+      "type": "bar",
+      "title": "Trade Volume Ranking",
+      "labels": [
+        "Viet Nam",
+        "United States",
+        "China",
+        "Thailand",
+        "Canada"
+      ],
+      "datasets": [
+        {
+          "label": "Net Weight (KG)",
+          "data": [
+            81394049441.76999,
+            2327776686.157003,
+            2222501611.881,
+            1538840815.5300002,
+            174717645.59151176
+          ]
+        }
+      ]
+    },
+    "message": "In 2025, Cambodia's top five export partners by weight were Viet Nam at 81.39 billion kg, the United States at 2.33 billion kg, China at 2.22 billion kg, Thailand at 1.54 billion kg, and Canada at 0.17 billion kg. (Showing 5 results — the total shown may not represent the full market.)",
+    "suggestion": [
+      "Show the monthly trend comparing Viet nam vs United states exports",
+      "What were the top products moved by country in 2025?",
+      "Show the country breakdown by partner country for 2025"
+    ]
+  },
+  {
+    "question": "Top 5 SITC divisions for imports in 2025",
+    "status": "success",
+    "count": 5,
+    "records": [
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "SITC_DIVISION": "Textile yarn, fabrics, made-up articles, n.e.s., and related products",
+        "VALUE_USD": 6760322751.361948
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "SITC_DIVISION": "Road vehicles (including air-cushion vehicles)",
+        "VALUE_USD": 2485676120.3919845
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "SITC_DIVISION": "Electrical machinery, apparatus and appliances, n.e.s., and electrical parts thereof (including non-electrical counterparts, n.e.s., of electrical household-type equipment)",
+        "VALUE_USD": 2451244247.9171576
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "SITC_DIVISION": "Petroleum, petroleum products and related materials",
+        "VALUE_USD": 2322812803.5843773
+      },
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "SITC_DIVISION": "Manufactures of metals, n.e.s.",
+        "VALUE_USD": 1689081461.2574358
+      }
+    ],
+    "summary": {
+      "currency": "USD",
+      "subset_total_value": 15709137384.512905,
+      "subset_count": 5,
+      "subset_label": "top 5",
+      "total_weight_kg": null,
+      "data_quality": {
+        "is_partial_period": false,
+        "has_more": true,
+        "shown_count": 5,
+        "truncation_note": "Showing 5 results — the total shown may not represent the full market."
+      }
+    },
+    "metadata": {
+      "dal_source_url": "http://dal-app:8000/v1/query/trade_volume?dimensions=SITC_DIVISION&measures=VALUE_USD&version=1.0&period=2025&frequency=A&sort=VALUE_USD%3Adesc&limit=5&offset=0&filter=FLOW%3Aeq%3AIM",
+      "intent": "ranking",
+      "count": 5
+    },
+    "query_params": {
+      "intent": "ranking",
+      "version": "trade_volume_1.0",
+      "filters": {
+        "FLOW": "IM"
+      },
+      "metrics": [
+        "VALUE_USD"
+      ],
+      "group_by": [
+        "SITC_DIVISION"
+      ],
+      "dimensions": [
+        "SITC_DIVISION"
+      ],
+      "period": "2025",
+      "frequency": "A",
+      "sort": "VALUE_USD:desc",
+      "limit": 5,
+      "offset": 0,
+      "extra": {
+        "consolidate_flows": false,
+        "user_limit": 5,
+        "period_was_defaulted": false,
+        "is_current_year_partial": false
+      },
+      "question": "Top 5 SITC divisions for imports in 2025",
+      "trade_direction": "IM"
+    },
+    "table": {
+      "columns": [
+        "frequency",
+        "period",
+        "sitc_division",
+        "trade_value"
+      ],
+      "rows": [
+        {
+          "frequency": "A",
+          "period": "2025",
+          "sitc_division": "Textile yarn, fabrics, made-up articles, n.e.s., and related products",
+          "trade_value": 6760322751.361948
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "sitc_division": "Road vehicles (including air-cushion vehicles)",
+          "trade_value": 2485676120.3919845
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "sitc_division": "Electrical machinery, apparatus and appliances, n.e.s., and electrical parts thereof (including non-electrical counterparts, n.e.s., of electrical household-type equipment)",
+          "trade_value": 2451244247.9171576
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "sitc_division": "Petroleum, petroleum products and related materials",
+          "trade_value": 2322812803.5843773
+        },
+        {
+          "frequency": "A",
+          "period": "2025",
+          "sitc_division": "Manufactures of metals, n.e.s.",
+          "trade_value": 1689081461.2574358
+        }
+      ]
+    },
+    "visualization": {
+      "type": "bar",
+      "title": "Trade Volume Ranking",
+      "labels": [
+        "Textile yarn, fabrics, made-up articles, n.e.s., and rela...",
+        "Road vehicles (including air-cushion vehicles)",
+        "Electrical machinery, apparatus and appliances, n.e.s., a...",
+        "Petroleum, petroleum products and related materials",
+        "Manufactures of metals, n.e.s."
+      ],
+      "datasets": [
+        {
+          "label": "Trade Value (USD)",
+          "data": [
+            6760322751.361948,
+            2485676120.3919845,
+            2451244247.9171576,
+            2322812803.5843773,
+            1689081461.2574358
+          ]
+        }
+      ]
+    },
+    "message": "In 2025, Cambodia's top five SITC divisions for imports were textile yarn, fabrics, and related products at $6.76 billion, road vehicles at $2.49 billion, electrical machinery and appliances at $2.45 billion, petroleum and related materials at $2.32 billion, and manufactures of metals at $1.69 billion. (Showing 5 results — the total shown may not represent the full market.)",
+    "suggestion": [
+      "Show the monthly trend comparing Textile yarn vs Road vehicles (includi... imports",
+      "What were the top products moved by sitc_division in 2025?",
+      "Show the sitc_division breakdown by partner country for 2025"
+    ]
+  },
+  {
+    "question": "Which mode of transport had the highest import value in 2025?",
+    "status": "success",
+    "count": 1,
+    "records": [
+      {
+        "FREQ": "A",
+        "PERIOD": "2025",
+        "MODE_OF_TRANSPORT": "Sea transport",
+        "VALUE_USD": 20370365243.790215
+      }
+    ],
+    "summary": {
+      "currency": "USD",
+      "subset_total_value": 20370365243.790215,
+      "subset_count": 1,
+      "subset_label": "top 1",
+      "total_weight_kg": null,
+      "data_quality": {
+        "is_partial_period": false,
+        "has_more": true,
+        "shown_count": 1,
+        "truncation_note": "Showing 1 results — the total shown may not represent the full market."
+      }
+    },
+    "metadata": {
+      "dal_source_url": "http://dal-app:8000/v1/query/trade_volume?dimensions=MODE_OF_TRANSPORT&measures=VALUE_USD&version=1.0&period=2025&frequency=A&sort=VALUE_USD%3Adesc&limit=1&offset=0&filter=FLOW%3Aeq%3AIM",
+      "intent": "ranking",
+      "count": 1
+    },
+    "query_params": {
+      "intent": "ranking",
+      "version": "trade_volume_1.0",
+      "filters": {
+        "FLOW": "IM"
+      },
+      "metrics": [
+        "VALUE_USD"
+      ],
+      "group_by": [
+        "MODE_OF_TRANSPORT"
+      ],
+      "dimensions": [
+        "MODE_OF_TRANSPORT"
+      ],
+      "period": "2025",
+      "frequency": "A",
+      "sort": "VALUE_USD:desc",
+      "limit": 1,
+      "offset": 0,
+      "extra": {
+        "consolidate_flows": false,
+        "user_limit": 1,
+        "period_was_defaulted": false,
+        "is_current_year_partial": false
+      },
+      "question": "Which mode of transport had the highest import value in 2025?",
+      "trade_direction": "IM"
+    },
+    "table": {
+      "columns": [
+        "frequency",
+        "period",
+        "mode_of_transport",
+        "trade_value"
+      ],
+      "rows": [
+        {
+          "frequency": "A",
+          "period": "2025",
+          "mode_of_transport": "Sea transport",
+          "trade_value": 20370365243.790215
+        }
+      ]
+    },
+    "visualization": {
+      "type": "kpi",
+      "title": "Trade Volume Ranking",
+      "labels": [
+        "Sea transport"
+      ],
+      "datasets": [
+        {
+          "label": "Trade Value (USD)",
+          "data": [
+            20370365243.790215
+          ]
+        }
+      ]
+    },
+    "message": "In 2025, sea transport recorded the highest import value for Cambodia at $20.37 billion. (Showing 1 results — the total shown may not represent the full market.)",
+    "suggestion": [
+      "What were the top products moved by mode in 2025?",
+      "Show the mode breakdown by partner country for 2025",
+      "What was Cambodia's total export value in 2025?"
+    ]
+  }
+]

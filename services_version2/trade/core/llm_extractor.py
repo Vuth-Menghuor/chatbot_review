@@ -21,6 +21,7 @@ PHASE 1 CHANGES (see PR notes):
 import os
 import re
 import json
+import time
 import logging
 from typing import Any, Dict, Optional, Tuple
 
@@ -32,7 +33,38 @@ logger = logging.getLogger(__name__)
 
 # Default configurations
 DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite"
-DEFAULT_TIMEOUT_SEC = 20
+DEFAULT_TIMEOUT_SEC = 45
+
+SITC_SECTION_CODE_MAP = {
+    "0": "Food and live animals",
+    "1": "Beverages and tobacco",
+    "2": "Crude materials, inedible, except fuels",
+    "3": "Mineral fuels, lubricants and related materials",
+    "4": "Animal and vegetable oils, fats and waxes",
+    "5": "Chemicals and related products, n.e.s.",
+    "6": "Manufactured goods classified chiefly by material",
+    "7": "Machinery and transport equipment",
+    "8": "Miscellaneous manufactured articles",
+    "9": "Commodities and transactions not classified elsewhere in the SITC",
+}
+
+SITC_SECTION_NAME_TO_CODE = {
+    "food and live animals": "0",
+    "beverages and tobacco": "1",
+    "crude materials, inedible, except fuels": "2",
+    "mineral fuels, lubricants and related materials": "3",
+    "animal and vegetable oils, fats and waxes": "4",
+    "chemicals and related products, n.e.s.": "5",
+    "chemicals": "5",
+    "manufactured goods classified chiefly by material": "6",
+    "manufactured goods": "6",
+    "machinery and transport equipment": "7",
+    "machinery": "7",
+    "transport equipment": "7",
+    "miscellaneous manufactured articles": "8",
+    "miscellaneous": "8",
+    "commodities and transactions not classified elsewhere in the sitc": "9"
+}
 
 SYSTEM_INSTRUCTION = """You are an expert at parsing natural language trade query questions into structured search parameters for the trade data service.
 Classify the intent and extract key parameters.
@@ -51,22 +83,25 @@ STRICT RULES (CRITICAL):
    - If the user asks to compare TWO OR MORE distinct partner countries, the intent is ALWAYS "comparison", even if they use the word "trend". 
    - If the word "compare" is used for a SINGLE entity over time (e.g., "compare this year to last year"), the intent is ALWAYS "trend".
    - "trade_balance" takes absolute precedence over other intents if words like "balance", "surplus", "deficit", or "net trade" are present.
-   
+   - If the question asks how something has changed, evolved, or performed OVER TIME (any multi-period phrase), the intent is ALWAYS "trend", even if no explicit time word is used. Do NOT classify these as "summary".
+
 Use these signal words as a guide, but always reason about the FULL question rather than pattern-matching a single keyword in isolation:
 - "ranking" signals: top, bottom, most, least, highest, lowest, largest, smallest, best, worst, leading
-- "trend" signals: over time, monthly, quarterly, each year, per month, historical, how has ... changed
+- "trend" signals: over time, monthly, quarterly, each year, per month, historical, how has ... changed, how did ... change, over the years, over the last N years, past N years, last N years, since [year], year by year, year-on-year, across years, evolution of, trajectory, performance over, how has ... grown, has ... increased
 - "comparison" signals: compare, versus, vs, between, difference, relative to, against -- BUT only when TWO OR MORE distinct partner countries are being compared. "Compare this year to last year" for ONE country is a "trend" question, not "comparison".
 - "breakdown" signals: breakdown, by product, by chapter, by sector, by transport, by mode, distribution of
 - "growth" signals: growth, grew, declined, increase, decrease, year-over-year, YoY, faster, slower
 - "trade_balance" signals: balance, surplus, deficit, net trade, more import than export -- these take precedence over other signals when present, since "balance" implies both EX and IM data are needed regardless of other phrasing.
 - "summary" is the fallback ONLY when no comparison/trend/ranking/breakdown/growth/balance signal is present.
 
+2. VOLUME RULE: "volume", "trade volume", and "volume of trade" always mean VALUE_USD (dollar value) UNLESS the question explicitly says "by weight", "in kg", "in tonnes", or "by tonnage". Never set sort_metric=NET_WEIGHT for a question that only says "volume" without a weight qualifier.
+
 Parameters to extract:
 - intent: one of ["summary", "ranking", "trend", "comparison", "breakdown", "growth", "trade_balance"]
 - origin_country: Origin country name or ISO-2 code.
 - destination_country: Destination country name or ISO-2 code.
 - partner_countries: List of partner countries involved if comparison or ranking.
-- year: A single year as integer.
+- year: A single year as integer. CRITICAL: if the user does NOT mention a specific year, set year to null. Do NOT infer a default year — leave it null so the system can apply the correct default (current year) automatically. Only set year if the user explicitly states a year (e.g. "in 2025", "last year", "2024 data").
 - years: List of years as integers.
 - semester: Integer (1 or 2). Use 1 for "first half", "H1", "S1", "first semester", "semester 1". Use 2 for "second half", "H2", "S2", "second semester", "semester 2". If the user says "semester" or "semi-annual" without specifying which one, default to 1. If the user mentions BOTH halves (e.g. "S1 to S2", "first and second half"), set start_period/end_period instead of semester (see below).
 - start_period: Start year or period (e.g. "2022" for annual, "2022-Q1" for quarterly, "2022-S1" for semi-annual, "2022-01" for monthly) for time ranges.
@@ -76,6 +111,8 @@ Parameters to extract:
 - frequency: Frequency ("M"=monthly, "Q"=quarterly, "A"=annual, "S"=semi-annual).
 - hs_chapter: 2-digit HS chapter code.
 - hs_code: HS code (4-to-8 digits) OR product name/description (e.g., "rice", "garment", "electronics").
+- sitc_section: SITC section number or standard name (e.g. "Section 7" or "Machinery and transport equipment").
+- sitc_division: SITC 2-digit division number or name (e.g. "Division 02" or "Dairy products").
 - mode_of_transport: Mode of transport (one of: "air", "sea", "land", "rail", "inland", "postal", "multimodal", "fixed"). If the question mentions MULTIPLE modes (e.g. "air and sea"), return a list of all of them.
 - trade_direction: One of ["EX", "IM"]. "EX" for exports, selling, sending. "IM" for imports, buying, receiving.
 - limit: Integer limit (e.g. for top N).
@@ -124,7 +161,9 @@ def extract_parameters_llm(question: str, retry_context: Optional[str] = None) -
         logger.debug("Neither X_GOOG_API_KEY nor GEMINI_API_KEY is set in environment. Skipping LLM extraction.")
         return None
 
-    model = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+    from config import get_settings
+    settings = get_settings()
+    model = os.getenv("GEMINI_MODEL", settings.default_gemini_model)
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
     # Get current year dynamically to resolve relative reference tags like "last year" or "this year"
@@ -168,37 +207,45 @@ def extract_parameters_llm(question: str, retry_context: Optional[str] = None) -
         "X-goog-api-key": api_key
     }
 
-    try:
-        logger.info(f"Invoking Gemini model '{model}' for parameter extraction (retry={bool(retry_context)})...")
+    max_api_attempts = 3
+    for attempt in range(1, max_api_attempts + 1):
+        try:
+            logger.info(f"Invoking Gemini model '{model}' for parameter extraction (retry={bool(retry_context)}, API attempt={attempt})...")
 
-        with httpx.Client(timeout=DEFAULT_TIMEOUT_SEC) as client:
-            response = client.post(url, json=payload, headers=headers)
-            response.raise_for_status()
+            with httpx.Client(timeout=settings.default_timeout_sec) as client:
+                response = client.post(url, json=payload, headers=headers)
+                response.raise_for_status()
 
-            result = response.json()
+                result = response.json()
 
-            candidates = result.get("candidates", [])
-            if not candidates:
-                logger.warning("Gemini response returned no candidates.")
+                candidates = result.get("candidates", [])
+                if not candidates:
+                    logger.warning("Gemini response returned no candidates.")
+                    return None
+
+                content_text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+                if not content_text:
+                    logger.warning("Gemini response content text is empty.")
+                    return None
+
+                # Clean markdown code blocks before parsing
+                content_text = content_text.replace("```json", "").replace("```", "").strip()
+                parsed_raw = json.loads(content_text)
+
+                logger.info(f"Gemini raw response parsed successfully: {parsed_raw}")
+
+                processed = parse_and_resolve_parameters(parsed_raw, question)
+                return processed
+
+        except (httpx.HTTPError, httpx.TimeoutException) as e:
+            logger.warning(f"Gemini LLM API call failed (attempt {attempt}/{max_api_attempts}): {e}")
+            if attempt == max_api_attempts:
+                logger.error("Gemini LLM parameter extraction failed after all attempts.", exc_info=True)
                 return None
-
-            content_text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-            if not content_text:
-                logger.warning("Gemini response content text is empty.")
-                return None
-
-            # Clean markdown code blocks before parsing
-            content_text = content_text.replace("```json", "").replace("```", "").strip()
-            parsed_raw = json.loads(content_text)
-
-            logger.info(f"Gemini raw response parsed successfully: {parsed_raw}")
-
-            processed = parse_and_resolve_parameters(parsed_raw, question)
-            return processed
-
-    except Exception as e:
-        logger.error(f"Gemini LLM parameter extraction failed: {e}", exc_info=True)
-        return None
+            time.sleep(1.0 * attempt)
+        except Exception as e:
+            logger.error(f"Unexpected error in Gemini LLM parameter extraction: {e}", exc_info=True)
+            return None
 
 
 def parse_and_resolve_parameters(raw: Dict[str, Any], question: str) -> Dict[str, Any]:
@@ -248,6 +295,25 @@ def parse_and_resolve_parameters(raw: Dict[str, Any], question: str) -> Dict[str
         params["partner_countries"] = resolved_partners
         if len(resolved_partners) == 1:
             params["partner_country"] = resolved_partners[0]
+
+    # Force comparison intent if two or more partner countries are specified with comparison signals
+    if len(resolved_partners) >= 2:
+        question_lower = question.lower()
+        from core.constants import COMPARISON_SIGNALS
+        if any(sig in question_lower for sig in COMPARISON_SIGNALS):
+            params["intent"] = "comparison"
+
+    # Fix #7: Post-extraction trend override — if LLM said summary but question
+    # clearly asks about change over time, force trend intent.
+    if params.get("intent") == "summary":
+        q_lower_trend = question.lower()
+        from core.constants import TREND_OVERRIDE_SIGNALS
+        if any(sig in q_lower_trend for sig in TREND_OVERRIDE_SIGNALS):
+            logger.info(
+                "[parse_and_resolve_parameters] Overriding intent summary→trend: "
+                "question contains multi-period signal words."
+            )
+            params["intent"] = "trend"
 
     # Period: single year vs range
     year = raw.get("year")
@@ -305,6 +371,26 @@ def parse_and_resolve_parameters(raw: Dict[str, Any], question: str) -> Dict[str
     if hs_code is not None:
         params["hs_code"] = str(hs_code)
 
+    # SITC section extraction
+    sitc_section = raw.get("sitc_section")
+    if sitc_section is not None:
+        val_str = str(sitc_section).strip().lower()
+        digit_match = re.search(r"\b(\d)\b", val_str)
+        if digit_match:
+            params["sitc_section"] = digit_match.group(1)
+        else:
+            params["sitc_section"] = SITC_SECTION_NAME_TO_CODE.get(val_str, val_str)
+
+    # SITC division extraction
+    sitc_division = raw.get("sitc_division")
+    if sitc_division is not None:
+        val_str = str(sitc_division).strip()
+        digit_match = re.search(r"\b(\d{1,2})\b", val_str)
+        if digit_match:
+            params["sitc_division"] = digit_match.group(1).zfill(2)
+        else:
+            params["sitc_division"] = val_str
+
     # Transport mode
     mode_of_transport = raw.get("mode_of_transport")
     if mode_of_transport is not None:
@@ -341,6 +427,18 @@ def parse_and_resolve_parameters(raw: Dict[str, Any], question: str) -> Dict[str
     elif isinstance(metrics, str) and metrics:
         params["metrics"] = [metrics.upper()]
 
+    # Fix #6: Volume = VALUE_USD guard.
+    # "volume" / "trade volume" means dollar value UNLESS the question explicitly
+    # asks for weight (in kg, tonnes, etc.). Reset both metrics and sort_metric.
+    q_lower_vol = question.lower()
+    has_volume_word = any(v in q_lower_vol for v in ["volume", "trade volume"])
+    has_weight_qualifier = any(w in q_lower_vol for w in ["weight", "kg", "kilogram", "tonne", "ton ", "tonnage"])
+    if has_volume_word and not has_weight_qualifier:
+        params["metrics"] = ["VALUE_USD"]
+        if params.get("sort_metric") in ("NET_WEIGHT", "WEIGHT"):
+            logger.info("[parse_and_resolve_parameters] Volume query without weight qualifier: resetting sort_metric NET_WEIGHT → VALUE_USD.")
+            params["sort_metric"] = "VALUE_USD"
+
     # Group by
     group_by = raw.get("group_by")
     if isinstance(group_by, list):
@@ -350,11 +448,102 @@ def parse_and_resolve_parameters(raw: Dict[str, Any], question: str) -> Dict[str
         params["group_by"] = [group_by]
         params["dimensions"] = [group_by]
 
+    # Explicit product-level growth override to ensure 'product/products' queries map to hs_heading
+    if params.get("intent") == "growth":
+        q_lower = question.lower()
+        if any(term in q_lower for term in ["product", "products"]):
+            params["group_by"] = ["hs_heading"]
+            params["dimensions"] = ["hs_heading"]
+
+        # Section 21: Decline/decrease directional context detection
+        # Route stays as "growth" (math is identical), but NLG uses this flag
+        # to confirm/correct the user's directional expectation.
+        decline_terms = ["decline", "decrease", "drop", "fall", "shrink", "contracted", "contract", "down"]
+        if any(term in q_lower for term in decline_terms):
+            extra = params.setdefault("extra", {})
+            extra["directional_context"] = "decline"
+
+    # Explicit override for ranking queries asking for "both" flows to ensure flow grouping is included
+    if params.get("intent") == "ranking":
+        q_lower = question.lower()
+        if "both" in q_lower or ("import" in q_lower and "export" in q_lower):
+            if "group_by" not in params:
+                params["group_by"] = ["partner_country"]
+            if "flow" not in [g.lower() for g in params["group_by"]]:
+                params["group_by"].append("flow")
+            params["dimensions"] = params["group_by"]
+
+    # Explicit override for breakdown queries asking for "product breakdown" to use hs_chapter
+    if "product breakdown" in question.lower():
+        params["group_by"] = ["hs_chapter"]
+        params["dimensions"] = ["hs_chapter"]
+
+    # Check for multi-year/trend keywords to trigger range instead of single year fallback
+    multi_year_keywords = ["over the years", "historically", "over time", "across years", "historical trend", "years trend", "historical"]
+    is_trend_query = any(kw in question.lower() for kw in multi_year_keywords) or params.get("intent") in ("trend",)
+    if is_trend_query:
+        freq = params.get("frequency") or "A"
+        if freq == "A":
+            has_any_time_context = any(
+                params.get(k) is not None
+                for k in ("year", "years", "period", "month", "quarter", "semester", "start_period", "end_period")
+            )
+            if not has_any_time_context:
+                import datetime
+                current_yr = datetime.datetime.now().year
+                start_yr = current_yr - 2
+                end_yr = current_yr
+                params["start_period"] = str(start_yr)
+                params["end_period"] = str(end_yr)
+                params["period"] = None
+                params["year"] = None
+                params["years"] = None
+                params["frequency"] = "A"
+                logger.info(f"[llm_extractor] Trend/Historical query detected. Forcing multi-year range {start_yr}-{end_yr}.")
+
     # --- FALLBACK-ONLY regex enrichment ---
     # These never overwrite a value the LLM already gave us. They only fill
     # gaps, and every fill is logged so silent disagreements are visible.
     _fill_semester_params_from_regex(params, question)
     _fill_transport_modes_from_regex(params, question)
+    _fill_sitc_from_regex(params, question)
+
+    # Section 26: "Volume" Keyword Triggers NET_WEIGHT Inclusion
+    volume_keywords = ["volume", "quantity", "weight", "tonnage", "mass", "kg", "kilogram", "kilograms"]
+    if any(kw in question.lower() for kw in volume_keywords):
+        metrics = params.setdefault("metrics", [])
+        if "NET_WEIGHT" not in metrics:
+            metrics.append("NET_WEIGHT")
+        extra = params.setdefault("extra", {})
+        extra["volume_requested"] = True
+
+    # Force growth intent override if "growth" or "grow" is explicitly asked
+    # (unless trade balance keyword is present, which takes absolute precedence)
+    q_lower = question.lower()
+    has_balance = any(term in q_lower for term in ["balance", "surplus", "deficit", "net trade"])
+    if ("growth" in q_lower or "grow" in q_lower) and not has_balance:
+        params["intent"] = "growth"
+
+    # Force trade_direction override based on explicit keywords in the question
+    # to correct LLM extraction errors (e.g. "export growth" pulling IM)
+    has_export = "export" in q_lower or "exports" in q_lower
+    has_import = "import" in q_lower or "imports" in q_lower
+    if has_import and "from cambodia" in q_lower:
+        params["trade_direction"] = "EX"
+    elif has_export and "to cambodia" in q_lower:
+        params["trade_direction"] = "IM"
+    elif has_export and not has_import:
+        params["trade_direction"] = "EX"
+        # Move non-KH country to destination for exports
+        if params.get("origin_country") and params.get("origin_country") != "KH":
+            params["destination_country"] = params["origin_country"]
+            params["origin_country"] = None
+    elif has_import and not has_export:
+        params["trade_direction"] = "IM"
+        # Move non-KH country to origin for imports
+        if params.get("destination_country") and params.get("destination_country") != "KH":
+            params["origin_country"] = params["destination_country"]
+            params["destination_country"] = None
 
     # Filter out None values
     return {k: v for k, v in params.items() if v is not None}
@@ -406,23 +595,10 @@ def _extract_semester_params_regex(question: str) -> Dict[str, Any]:
 
     years = [int(y) for y in re.findall(r"\b(20\d{2})\b", q)]
 
-    s1_patterns = [
-        r"\bS1\b", r"\bH1\b",
-        r"\bFIRST\s+HALF\b", r"\b1ST\s+HALF\b",
-        r"\bFIRST\s+SEMESTER\b", r"\b1ST\s+SEMESTER\b",
-        r"\bSEMESTER\s+1\b", r"\bSEM\s+1\b",
-        r"\bSEMESTER1\b", r"\bSEM1\b"
-    ]
-    s2_patterns = [
-        r"\bS2\b", r"\bH2\b",
-        r"\bSECOND\s+HALF\b", r"\b2ND\s+HALF\b",
-        r"\bSECOND\s+SEMESTER\b", r"\b2ND\s+SEMESTER\b",
-        r"\bSEMESTER\s+2\b", r"\bSEM\s+2\b",
-        r"\bSEMESTER2\b", r"\bSEM2\b"
-    ]
+    from core.constants import SEMESTER_S1_PATTERNS, SEMESTER_S2_PATTERNS
 
-    has_s1 = any(re.search(p, q) for p in s1_patterns)
-    has_s2 = any(re.search(p, q) for p in s2_patterns)
+    has_s1 = any(re.search(p, q) for p in SEMESTER_S1_PATTERNS)
+    has_s2 = any(re.search(p, q) for p in SEMESTER_S2_PATTERNS)
 
     if has_s1 or has_s2:
         params["frequency"] = "S"
@@ -451,24 +627,46 @@ def _extract_semester_params_regex(question: str) -> Dict[str, Any]:
 
 def _extract_transport_modes_regex(question: str) -> list[str]:
     """Regex extractor for transport modes. FALLBACK ONLY -- see callers."""
+    from core.transport_modes import TRANSPORT_MODE_SYNONYMS, TRANSPORT_MODE_LABELS
     q = question.lower()
     detected = []
 
-    mappings = {
-        "air": [r"\bair\b", r"\bplane\b", r"\bflight\b"],
-        "sea": [r"\bsea\b", r"\bocean\b", r"\bship\b", r"\bvessel\b", r"\bmaritime\b"],
-        "road": [r"\broad\b", r"\bland\b", r"\btruck\b"],
-        "rail": [r"\brail\b", r"\btrain\b"],
-        "postal": [r"\bpostal\b", r"\bpost\b", r"\bmail\b"],
-        "inland": [r"\binland\b", r"\briver\b", r"\bcanal\b"],
-        "multimodal": [r"\bmultimodal\b", r"\bmulti-modal\b"],
-        "fixed": [r"\bfixed\b", r"\bpipeline\b"],
-    }
-
-    for mode, patterns in mappings.items():
-        for pattern in patterns:
+    for code, synonyms in TRANSPORT_MODE_SYNONYMS.items():
+        label = TRANSPORT_MODE_LABELS[code]
+        if label in ("unknown", "other transport"):
+            continue
+        # Map inland waterway to inland to preserve exact historical regex output
+        normalized_label = "inland" if label == "inland waterway" else label
+        for syn in synonyms:
+            pattern = rf"\b{re.escape(syn)}\b"
             if re.search(pattern, q):
-                detected.append(mode)
+                detected.append(normalized_label)
                 break
 
     return detected
+
+
+def _fill_sitc_from_regex(params: Dict[str, Any], question: str) -> None:
+    """Fallback ONLY: fill sitc_section / sitc_division from regex if the LLM left them empty."""
+    already_has_sitc = params.get("sitc_section") is not None or params.get("sitc_division") is not None
+    if already_has_sitc:
+        return
+
+    q = question.upper()
+    
+    # Check SITC Section
+    sec_match = re.search(r"\bSECTION\s+(\d)\b", q)
+    if sec_match:
+        digit = sec_match.group(1)
+        if digit in SITC_SECTION_CODE_MAP:
+            params["sitc_section"] = digit
+            logger.info(f"[llm_extractor] LLM left SITC empty; regex fallback filled sitc_section: {params['sitc_section']}")
+            return
+
+    # Check SITC Division
+    div_match = re.search(r"\bDIVISION\s+(\d{1,2})\b", q)
+    if div_match:
+        digit = div_match.group(1).zfill(2)
+        params["sitc_division"] = digit
+        logger.info(f"[llm_extractor] LLM left SITC empty; regex fallback filled sitc_division: {params['sitc_division']}")
+        return

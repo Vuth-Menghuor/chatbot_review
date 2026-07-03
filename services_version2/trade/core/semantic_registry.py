@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+from core.transport_modes import TRANSPORT_MODE_SYNONYMS
 
 
 @dataclass
@@ -157,18 +158,7 @@ SEMANTIC: Dict[str, Dict[str, Any]] = {
         },
         "MODE_OF_TRANSPORT": {
             "synonyms": ["mode_of_transport", "transport_mode", "mot", "transport"],
-            "values_map": {
-                "1": ["sea", "ocean", "ship", "vessel"],
-                "2": ["rail", "train"],
-                "3": ["road", "land", "truck"],
-                "4": ["air", "plane", "flight"],
-                "5": ["postal", "post", "mail"],
-                "6": ["multimodal", "multi-modal"],
-                "7": ["fixed", "pipeline"],
-                "8": ["inland", "river", "canal"],
-                "9": ["other transport", "not elsewhere specified", "nes", "unclassified transport"],
-                "0": ["unknown", "unspecified"],
-            },
+            "values_map": TRANSPORT_MODE_SYNONYMS,
         },
         "HS_CHAPTER": {
             "synonyms": ["hs_chapter", "chapter", "broad product"],

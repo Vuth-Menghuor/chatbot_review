@@ -292,6 +292,17 @@ def apply_intent_scoping(enriched_plan: EnrichedQueryPlan) -> ScopedQueryPlan:
         else:
             final_dims.append(d)
 
+    # Ensure SITC filter dimensions are present in group_by/dimensions so the DAL
+    # can route the query to the correct classification table.
+    if sitc_division and "SITC_DIVISION" not in final_group:
+        final_group.append("SITC_DIVISION")
+    if sitc_section and "SITC_SECTION" not in final_group:
+        final_group.append("SITC_SECTION")
+    if sitc_division and "SITC_DIVISION" not in final_dims:
+        final_dims.append("SITC_DIVISION")
+    if sitc_section and "SITC_SECTION" not in final_dims:
+        final_dims.append("SITC_SECTION")
+
     # Sort & Limits defaults
     default_limit = strategy.default_limit if strategy else 1000
     limit = enriched_plan.limit if enriched_plan.limit is not None else default_limit

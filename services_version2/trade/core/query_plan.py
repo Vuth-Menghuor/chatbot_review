@@ -18,6 +18,8 @@ class RawQueryPlan:
     raw_partner_countries: Optional[List[str]] = None
     raw_trade_direction: Optional[str] = None
     raw_product: Optional[str] = None
+    raw_sitc_section: Optional[str] = None
+    raw_sitc_division: Optional[str] = None
     raw_mode_of_transport: Optional[Union[str, List[str]]] = None
     raw_year: Optional[int] = None
     raw_years: Optional[List[int]] = None

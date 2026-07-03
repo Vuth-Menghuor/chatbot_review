@@ -11,7 +11,7 @@ from core.normaliser import normalise
 
 logger = logging.getLogger(__name__)
 
-MAX_EXTRACTION_RETRIES = 2
+# Retry policy loaded from settings inside the service methods
 
 
 class TradeService:
@@ -48,6 +48,8 @@ class TradeService:
             "sort": final.sort,
             "limit": final.limit,
             "offset": final.offset,
+            "extra": final.extra,
+            "question": question,
         }
 
         # Flatten helper keys for downstream consumption
@@ -63,8 +65,143 @@ class TradeService:
         # Execute via DALClient
         logger.info(f"[TradeService] Executing trade database lookup via DALClient for sub-intent '{final.intent}'...")
         dal_request = self.request_builder.build_request(final.intent, dal_params)
+
+        # Workaround for DAL Range Query Bug with FLOW filter
+        is_range_query = bool(dal_request.start_period or dal_request.end_period)
+        flow_filter_value = None
+        if is_range_query and "FLOW" in dal_request.filters:
+            logger.info("[TradeService] Range query detected with FLOW filter. Temporarily keeping FLOW filter in request to bypass DAL bug.")
+            flow_filter_value = dal_request.filters.get("FLOW")
+
         dal_response = self.dal_client.execute(dal_request)
-        dal_params["dal_source_url"] = dal_response.get("metadata", {}).get("dal_source_url", "")
+
+        # 1. Flow Post-filtering (workaround for range query bug / database leak)
+        if flow_filter_value:
+            # Restore FLOW filter in request
+            dal_request.filters["FLOW"] = flow_filter_value
+            
+            allowed_flows = flow_filter_value if isinstance(flow_filter_value, list) else [flow_filter_value]
+            allowed_flows_upper = {str(f).upper() for f in allowed_flows}
+            
+            raw_records = dal_response.get("records", [])
+            filtered_records = []
+            for r in raw_records:
+                flow_key_in_record = None
+                for k in r.keys():
+                    if k.upper() == "FLOW":
+                        flow_key_in_record = k
+                        break
+                if flow_key_in_record:
+                    val = str(r.get(flow_key_in_record)).upper()
+                    if val in allowed_flows_upper:
+                        filtered_records.append(r)
+                else:
+                    filtered_records.append(r)
+            
+            dal_response["records"] = filtered_records
+
+        # 2. Time Sub-Period Post-filtering (workaround for range query over-fetching e.g. "Q1 each year")
+        if is_range_query:
+            records = dal_response.get("records", [])
+            filtered_records = list(records)
+            did_filter_time = False
+
+            req_quarter = scoped.quarter
+            if req_quarter:
+                q_suffix = f"-{str(req_quarter).upper()}"
+                filtered_records = [
+                    r for r in filtered_records
+                    if str(r.get("PERIOD", r.get("period", ""))).endswith(q_suffix)
+                ]
+                did_filter_time = True
+                logger.info(f"[TradeService] Post-filtering range query by quarter '{req_quarter}'. Kept {len(filtered_records)} records.")
+
+            req_semester = scoped.semester
+            if req_semester is not None:
+                s_suffix = f"-S{req_semester}"
+                filtered_records = [
+                    r for r in filtered_records
+                    if str(r.get("PERIOD", r.get("period", ""))).endswith(s_suffix)
+                ]
+                did_filter_time = True
+                logger.info(f"[TradeService] Post-filtering range query by semester '{req_semester}'. Kept {len(filtered_records)} records.")
+
+            req_month = scoped.month
+            if req_month is not None:
+                m_suffix = f"-{str(req_month).zfill(2)}"
+                filtered_records = [
+                    r for r in filtered_records
+                    if str(r.get("PERIOD", r.get("period", ""))).endswith(m_suffix)
+                ]
+                did_filter_time = True
+                logger.info(f"[TradeService] Post-filtering range query by month '{req_month}'. Kept {len(filtered_records)} records.")
+
+            # Post-filtering by start_period and end_period range constraint
+            start_p = final.start_period
+            end_p = final.end_period
+            if start_p or end_p:
+                original_len = len(filtered_records)
+                if start_p:
+                    filtered_records = [
+                        r for r in filtered_records
+                        if str(r.get("PERIOD", r.get("period", ""))) >= str(start_p)
+                    ]
+                if end_p:
+                    filtered_records = [
+                        r for r in filtered_records
+                        if str(r.get("PERIOD", r.get("period", ""))) <= str(end_p)
+                    ]
+                if len(filtered_records) != original_len:
+                    logger.info(f"[TradeService] Post-filtering range query by range [{start_p}, {end_p}]. Kept {len(filtered_records)} records.")
+                    did_filter_time = True
+
+            if did_filter_time:
+                dal_response["records"] = filtered_records
+
+        # Summary recalculation (recalculate dal_response summary total to match filtered records)
+        if "summary" in dal_response and isinstance(dal_response["summary"], dict):
+            total_val = sum(float(r.get("VALUE_USD", r.get("trade_value", 0.0)) or 0.0) for r in dal_response.get("records", []))
+            dal_response["summary"]["total_trade_value"] = total_val
+
+        # Sanity check: if requested period differs from returned records,
+        # post-filter to the requested period so we never silently serve wrong-year data.
+        records = dal_response.get("records", [])
+        returned_period = None
+        if records and final.period:
+            returned_period = records[0].get("PERIOD") or records[0].get("period")
+            if returned_period and str(returned_period) != str(final.period):
+                logger.warning(
+                    f"[TradeService] Sanity Check Warning: Request period was '{final.period}', "
+                    f"but DAL returned records with period '{returned_period}'. "
+                    f"Post-filtering to requested period."
+                )
+                original_len = len(records)
+                filtered_by_period = [
+                    r for r in records
+                    if str(r.get("PERIOD") or r.get("period", "")) == str(final.period)
+                ]
+                if len(filtered_by_period) != original_len:
+                    dal_response["records"] = filtered_by_period
+                    extra = dal_params.get("extra") or {}
+                    extra["period_mismatch"] = True
+                    extra["requested_period"] = str(final.period)
+                    extra["returned_period"] = str(returned_period)
+                    dal_params["extra"] = extra
+                    logger.info(
+                        f"[TradeService] Post-filtered from {original_len} to {len(filtered_by_period)} records "
+                        f"matching requested period '{final.period}'."
+                    )
+
+        # Rebuild the canonical dal_source_url from the url_builder using the
+        # original requested params so the URL always reflects what was asked for.
+        try:
+            corrected_req = self.request_builder.build_request(final.intent, dal_params)
+            dal_url = self.dal_client._url_builder.build(corrected_req)
+        except Exception:
+            dal_url = dal_response.get("metadata", {}).get("dal_source_url", "")
+        dal_params["dal_source_url"] = dal_url
+        if isinstance(dal_response, dict):
+            dal_response.setdefault("metadata", {})["dal_source_url"] = dal_url
         record_count = len(dal_response.get("records", [])) if isinstance(dal_response, dict) else 0
         logger.info(f"[TradeService] DAL query executed successfully. Retrieved {record_count} raw records.")
 
@@ -87,7 +224,18 @@ class TradeService:
         # Stage 6: Natural Language Generation (NLG)
         logger.info(f"[TradeService] Stage 6: Generating conversational NLG summary and suggestions...")
         from core.nlg import generate_nlg_response
-        result = generate_nlg_response(result, dal_params)
+        try:
+            result = generate_nlg_response(result, dal_params)
+        except Exception as nlg_exc:
+            logger.error(f"[TradeService] NLG generation failed — degrading gracefully: {nlg_exc}", exc_info=True)
+            # Fix #9: NLG failure should never crash the whole response.
+            # Return normalised data with a fallback message.
+            result.setdefault("message", "Data retrieved successfully. (Summary generation unavailable.)")
+            result.setdefault("suggestion", [
+                "Try asking about a specific year or country for more detailed results.",
+                "Show the breakdown by product category.",
+                "Compare exports and imports for the same period.",
+            ])
 
         # Ensure only the 10 allowed keys are returned in the result
         allowed_keys = {
@@ -106,6 +254,8 @@ class TradeService:
         # Use the full pipeline WITH the repair loop
         scoped, final = self._build_validated_plan(question)
         
+        from core.enrichment import _map_mot_to_names, deduce_year
+        
         # Build the structured dictionary expected by the test script
         res = {
             "intent": final.intent,
@@ -123,13 +273,13 @@ class TradeService:
             "offset": final.offset,
             "sort_order": scoped.sort_order,
             "sort_metric": scoped.sort_metric,
-            "year": scoped.year,
+            "year": deduce_year(scoped.year, final.period, final.start_period, final.end_period),
             "years": scoped.years,
             "month": scoped.month,
             "quarter": scoped.quarter,
             "semester": scoped.semester,
             "trade_direction": final.filters.get("FLOW"),
-            "mode_of_transport": final.filters.get("MODE_OF_TRANSPORT"),
+            "mode_of_transport": _map_mot_to_names(final.filters.get("MODE_OF_TRANSPORT")),
             "hs_chapter": final.filters.get("HS_CHAPTER"),
             "hs_code": final.filters.get("HS_HEADING") or final.filters.get("HS_CODE"),
             "sitc_section": final.filters.get("SITC_SECTION"),
@@ -175,7 +325,10 @@ class TradeService:
         retry_context: Optional[str] = None
         last_error: Optional[Exception] = None
 
-        attempts = MAX_EXTRACTION_RETRIES + 1 if owns_extraction else 1
+        from config import get_settings
+        settings = get_settings()
+        max_retries = settings.max_extraction_retries
+        attempts = max_retries + 1 if owns_extraction else 1
 
         for attempt in range(1, attempts + 1):
             if owns_extraction:
@@ -208,6 +361,8 @@ class TradeService:
                 raw_sort_metric=llm_params.get("sort_metric"),
                 raw_limit=llm_params.get("limit"),
                 raw_offset=llm_params.get("offset"),
+                raw_sitc_section=llm_params.get("sitc_section"),
+                raw_sitc_division=llm_params.get("sitc_division"),
                 version=llm_params.get("version", "trade_volume_1.0"),
                 question=question,
             )
@@ -259,6 +414,8 @@ def post_resolve_parameters(llm_params: dict[str, Any], question: str) -> dict[s
         raw_partner_countries=raw_params.get("partner_countries"),
         raw_trade_direction=raw_params.get("trade_direction"),
         raw_product=raw_params.get("hs_code") or raw_params.get("hs_chapter") or raw_params.get("product"),
+        raw_sitc_section=raw_params.get("sitc_section"),
+        raw_sitc_division=raw_params.get("sitc_division"),
         raw_mode_of_transport=raw_params.get("mode_of_transport"),
         raw_year=raw_params.get("year"),
         raw_years=raw_params.get("years"),
@@ -285,7 +442,7 @@ def post_resolve_parameters(llm_params: dict[str, Any], question: str) -> dict[s
 
     validate_query_plan(final)
 
-    from semantic_registry import find_dimension_by_synonym
+    from core.semantic_registry import find_dimension_by_synonym
 
     raw_group_by = raw_params.get("group_by")
     if raw_group_by:
@@ -315,12 +472,13 @@ def post_resolve_parameters(llm_params: dict[str, Any], question: str) -> dict[s
         "group_by": resolved_group_by,
         "dimensions": resolved_dimensions,
         "period": final.period,
-        "start_period": final.start_period,
-        "end_period": final.end_period,
+        "start_period": final.start_period or scoped.start_period,
+        "end_period": final.end_period or scoped.end_period,
         "frequency": final.frequency,
         "sort": final.sort,
-        "limit": final.limit,
+        "limit": scoped.limit or final.limit,
         "offset": final.offset,
+        "extra": final.extra,
         "sort_order": scoped.sort_order,
         "sort_metric": scoped.sort_metric,
         "year": scoped.year,
@@ -401,7 +559,7 @@ def extract_parameters(question: str) -> dict[str, Any]:
     logger.info(f"[extract_parameters] Question: {question}")
 
     try:
-        from llm_extractor import extract_parameters_llm
+        from core.llm_extractor import extract_parameters_llm
         llm_params = extract_parameters_llm(question)
         if llm_params is None:
             raise ValidationError("LLM parameter extraction returned no parameters", field="question")

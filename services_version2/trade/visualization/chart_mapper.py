@@ -28,6 +28,9 @@ def _resolve_column_key(row: Dict[str, Any], target_key: str) -> str:
         "HS_CODE": ["hs_code", "HS_CHAPTER", "hs_chapter", "HS_HEADING", "hs_heading"],
         "HS_CHAPTER": ["hs_chapter", "HS_CODE", "hs_code", "HS_HEADING", "hs_heading"],
         "HS_HEADING": ["hs_heading", "HS_CODE", "hs_code", "HS_CHAPTER", "hs_chapter"],
+        # Section 20: growth_rate_pct MUST NOT fall back to VALUE_USD or any other metric.
+        # An empty list forces the catch-all path, which is intercepted by the growth guard below.
+        "growth_rate_pct": [],
     }
     for fb in fallback_maps.get(target_key, []):
         for k in row.keys():
@@ -93,15 +96,40 @@ def generate_visualizations(
 
     group_by = params.get("group_by") or []
 
+    # Check if PERIOD is present in the response rows
+    period_key = None
+    for k in first_row.keys():
+        if k.upper() == "PERIOD":
+            period_key = k
+            break
+
+    # Check if this query is explicitly for a single period/year
+    is_single_period = False
+    if params.get("period") and not params.get("start_period") and not params.get("end_period"):
+        years_list = params.get("years")
+        if not years_list or len(years_list) <= 1:
+            is_single_period = True
+    elif not params.get("period") and not params.get("start_period") and not params.get("end_period"):
+        # No temporal fields? Defaults to a single year
+        years_list = params.get("years")
+        if not years_list or len(years_list) <= 1:
+            is_single_period = True
+
+    # Section 24: Detect monthly/quarterly/semester comparison queries with multiple countries
+    is_time_series_comparison = False
+    partner_col = next((k for k in first_row.keys() if k.upper() == "PARTNER_COUNTRY"), None)
+    if intent == "comparison" and period_key and partner_col:
+        freq = params.get("frequency") or ""
+        unique_periods = set(str(r.get(period_key)) for r in rows if r.get(period_key) is not None)
+        unique_partners = set(str(r.get(partner_col)) for r in rows if r.get(partner_col) is not None)
+        if (freq in ("M", "Q", "S") or len(unique_periods) > 1) and len(unique_partners) > 1:
+            is_time_series_comparison = True
+
     # Override default label column if an explicit group_by dimension is present
     # in the parameters. NOTE: for "trend" intent we deliberately do NOT
     # override the label column (it must stay PERIOD so the X-axis remains
     # chronological) — but we DO need to resolve the group_by dimension
     # separately so it can become the *series* split (see series_col below).
-    # Previously this block was skipped entirely for intent == "trend",
-    # which meant a group_by like MODE_OF_TRANSPORT was silently dropped
-    # for trend charts, causing all groups to collapse into a single
-    # (incorrectly overwritten) line.
     target_label_col = config["label_col"]
     if intent != "trend" and group_by:
         resolved = _resolve_group_by_column(first_row, group_by)
@@ -109,17 +137,101 @@ def generate_visualizations(
             target_label_col = resolved
 
     label_col = _resolve_column_key(first_row, target_label_col)
-    value_col = _resolve_column_key(first_row, config["value_col"])
+    
+    if is_time_series_comparison:
+        label_col = period_key
+    elif intent in ("growth", "comparison", "trend") and not is_single_period and period_key:
+        label_col = period_key
 
-    # For trend intent, resolve a secondary series column from group_by
-    # (e.g. MODE_OF_TRANSPORT) so transform_to_line_chart can build one
+    default_value_col = config["value_col"]
+    metrics_list = params.get("metrics") or []
+    if metrics_list:
+        primary_metric = metrics_list[0]
+        if "WEIGHT" in str(primary_metric).upper():
+            default_value_col = "NET_WEIGHT"
+        elif "USD" in str(primary_metric).upper():
+            default_value_col = "VALUE_USD"
+        elif "KHR" in str(primary_metric).upper():
+            default_value_col = "VALUE_KHR"
+
+    value_col = _resolve_column_key(first_row, default_value_col)
+
+    # Section 20: Growth guard — strict priority, runs before ALL chart-type branching.
+    # 1. growth_rate_pct present and non-null in ≥1 row AND growth_valid == True → allow chart
+    # 2. Any other condition → empty state only
+    # 3. VALUE_USD substitution under growth intent → PROHIBITED (structurally enforced here)
+    if intent == "growth":
+        # Resolve distinct periods directly from rows to stay self-contained
+        period_key_for_growth = None
+        for k in first_row.keys():
+            if k.upper() == "PERIOD":
+                period_key_for_growth = k
+                break
+        distinct_periods = 0
+        if period_key_for_growth:
+            distinct_periods = len(set(str(r.get(period_key_for_growth, "")) for r in rows if r.get(period_key_for_growth)))
+        
+        growth_valid = distinct_periods >= 2
+        has_growth_col = any(
+            r.get("growth_rate_pct") is not None for r in rows
+        )
+        if not growth_valid or not has_growth_col:
+            return {
+                "table": table_data,
+                "visualization": {
+                    "type": "empty",
+                    "title": "Growth Rate (%) Not Available",
+                    "message": (
+                        "Insufficient baseline data to render growth chart. "
+                        "A prior period is required to compute the growth rate."
+                    ),
+                    "labels": [],
+                    "datasets": [],
+                }
+            }
+
+    # Dynamic Visual Suitability Overrides
+    if intent == "summary":
+        test_rows = rows
+        requested_flow = params.get("trade_direction") or \
+                         params.get("filters", {}).get("FLOW")
+        if requested_flow:
+            test_rows = [
+                r for r in rows
+                if str(r.get("FLOW", r.get("flow", ""))).upper() 
+                   == requested_flow.upper()
+            ]
+        if len(test_rows) <= 1:
+            chart_type = "kpi"
+        else:
+            chart_type = "bar"
+    elif intent == "breakdown":
+        if str(label_col).upper() in ["MODE_OF_TRANSPORT", "SITC_SECTION", "FLOW"]:
+            chart_type = "pie"
+        else:
+            chart_type = "bar"
+    elif intent in ("growth", "comparison"):
+        if is_time_series_comparison:
+            chart_type = "line"
+        elif str(label_col).upper() == "PERIOD":
+            if not is_single_period:
+                chart_type = "line"
+            else:
+                chart_type = "bar"
+
+    # For line charts, resolve a secondary series column from group_by
+    # (e.g. MODE_OF_TRANSPORT or PARTNER_COUNTRY) so transform_to_line_chart can build one
     # line per group instead of a single, silently-overwritten series.
     series_col = None
-    if intent == "trend" and group_by:
+    if chart_type == "line" and group_by:
         series_col = _resolve_group_by_column(first_row, group_by)
         # Don't treat the period column itself as a series split.
         if series_col and series_col.upper() == str(label_col).upper():
             series_col = None
+    if intent == "trend":
+        series_col = None
+    if is_time_series_comparison:
+        series_col = partner_col
 
     # Use static title directly from registry config
     title = config["title"]
@@ -131,6 +243,15 @@ def generate_visualizations(
 
     # Handle aggregation for trade balance queries to prevent duplicate/double label rendering
     chart_rows = list(rows)
+    requested_flow = params.get("trade_direction") or \
+                     params.get("filters", {}).get("FLOW")
+    if requested_flow and intent == "summary":
+        chart_rows = [
+            r for r in rows
+            if not any(k.upper() == "FLOW" for k in r.keys()) or \
+               str(r.get(next(k for k in r.keys() if k.upper() == "FLOW"), r.get("flow", ""))).upper() == requested_flow.upper()
+        ]
+
     if intent == "trade_balance":
         flow_key = None
         for k in first_row.keys():
@@ -177,26 +298,104 @@ def generate_visualizations(
                         seen_labels.append(lbl_str)
                         new_rows.append(aggregated_map[lbl_str])
             chart_rows = new_rows
-
             if "net_weight" in value_col.lower() or "weight" in value_col.lower():
                 dataset_label = "Net Trade Balance (KG)"
             else:
                 dataset_label = "Net Trade Balance (USD)"
 
+    # 2.5 Visual Suitability Check: Fallback to KPI card if 1 or 0 unique X-axis labels/rows (single-period queries only)
+    if chart_type in ("line", "bar", "pie"):
+        is_single_period = params.get("period") is not None
+        unique_labels = set(str(r.get(label_col, "")) for r in chart_rows if r.get(label_col) is not None)
+        if intent != "trade_balance" and is_single_period and (len(chart_rows) <= 1 or len(unique_labels) <= 1):
+            chart_type = "kpi"
+
     # 3. Transform to designated chart visualization structure
+    user_limit = params.get("extra", {}).get("user_limit") or params.get("limit")
+    # Resolve sort column to match the order in records/table
+    sort_col = None
+    sort_param = params.get("sort") or ""
+    if "NET_WEIGHT" in sort_param.upper() or "WEIGHT" in sort_param.upper():
+        sort_col = "NET_WEIGHT"
     visualization_data = None
     if chart_type == "bar":
         visualization_data = transform_to_bar_chart(
-            chart_rows, label_col, value_col, title, dataset_label
+            chart_rows, label_col, value_col, title, dataset_label,
+            user_limit=user_limit, sort_col=sort_col
         )
     elif chart_type == "line":
+        split_flow = (intent != "growth")
+        if is_time_series_comparison:
+            split_flow = False
         visualization_data = transform_to_line_chart(
-            chart_rows, label_col, value_col, title, series_col=series_col
+            chart_rows, label_col, value_col, title, series_col=series_col, dataset_label=dataset_label, split_flow=split_flow
         )
     elif chart_type == "pie":
         visualization_data = transform_to_pie_chart(
-            chart_rows, label_col, value_col, title, dataset_label
+            chart_rows, label_col, value_col, title, dataset_label, user_limit=user_limit
         )
+    elif chart_type == "kpi":
+        single_row = chart_rows[0] if chart_rows else {}
+        lbl = single_row.get(label_col) or "Value"
+        
+        FLOW_LABELS = {"EX": "Exports", "IM": "Imports"}
+        lbl_str = str(lbl)
+        if str(label_col).upper() == "FLOW":
+            lbl_str = FLOW_LABELS.get(lbl_str.upper(), lbl_str)
+
+        # Extract requested metrics
+        req_metrics = [str(m).upper() for m in (params.get("metrics") or [])]
+        has_usd = any("USD" in m or "KHR" in m for m in req_metrics) or not req_metrics
+        has_weight = any("WEIGHT" in m for m in req_metrics) or not req_metrics
+
+        usd_col = next((k for k in single_row.keys() if k.upper() in ("VALUE_USD", "VALUE_USD_NET", "TRADE_VALUE")), None)
+        weight_col = next((k for k in single_row.keys() if k.upper() in ("NET_WEIGHT", "WEIGHT_KG", "NET_WEIGHT_KG")), None)
+
+        val_usd = 0.0
+        if usd_col:
+            try:
+                val_usd = float(single_row.get(usd_col) or 0.0)
+            except (ValueError, TypeError):
+                pass
+
+        val_weight = 0.0
+        if weight_col:
+            try:
+                val_weight = float(single_row.get(weight_col) or 0.0)
+            except (ValueError, TypeError):
+                pass
+
+        unit = "USD"
+        val = val_usd
+        if not has_usd and has_weight:
+            unit = "KG"
+            val = val_weight
+
+        # Extract growth rate if present in records
+        change_val = None
+        for k in single_row.keys():
+            if k.lower() in ("growth_rate_pct", "change", "growth_rate"):
+                try:
+                    change_val = float(single_row[k])
+                    break
+                except (ValueError, TypeError):
+                    pass
+
+        visualization_data = {
+            "type": "kpi",
+            "title": title,
+            "value": val,
+            "label": lbl_str,
+            "unit": unit,
+            "change": change_val,
+            "datasets": [{"label": dataset_label, "data": [val]}],
+            "labels": [lbl_str]
+        }
+        
+        if has_usd and has_weight:
+            visualization_data["weight"] = val_weight
+            visualization_data["weight_unit"] = "KG"
+            visualization_data["weight_change"] = None
 
     return {
         "table": table_data,

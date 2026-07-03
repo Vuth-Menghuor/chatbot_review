@@ -52,6 +52,7 @@ class VisualizationData(BaseModel):
 class TradeQueryResponse(BaseModel):
     """Standard response envelope for POST /query."""
 
+    question: Optional[str] = None
     status: str = Field(default="success")
     count: int = Field(default=0)
     records: list[dict[str, Any]] = Field(default_factory=list)

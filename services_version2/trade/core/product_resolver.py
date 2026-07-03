@@ -43,19 +43,45 @@ _LABEL_STOP_WORDS = frozenset({
     "freight", "cargo", "transport",
 })
 
+HARDCODED_PRODUCT_TO_HS: Dict[str, str] = {
+    "garment": "61",
+    "clothing": "61",
+    "apparel": "61",
+    "footwear": "64",
+    "shoe": "64",
+    "rice": "1006",
+    "electronics": "85",
+    "electronic": "85",
+}
+
+HARDCODED_HS_TO_PRODUCT_NAME: Dict[str, str] = {
+    "61": "garments",
+    "62": "garments",
+    "64": "footwear",
+    "1006": "rice",
+    "85": "electronics",
+    "10": "cereals",
+    "02": "dairy products",
+    "07": "vegetables",
+    "08": "fruits",
+    "09": "coffee, tea, and spices",
+}
+
+
+from core.constants import PRODUCT_SPLIT_DELIMITERS, PRODUCT_PREPOSITION_DELIMITERS, PRODUCT_AND_DELIMITERS
 
 def _build_terms_from_label(label: str) -> list[str]:
     """Split an HS label into indexable keyword terms."""
     label = label.strip().rstrip(".\n\r").lower()
-    first_segment = re.split(r"[,;]", label)[0].strip()
-    first_segment = re.split(r"\bfor\b|\bof\b|\bnot\b|\bwhether\b|\bexcluding\b", first_segment)[0].strip()
+    first_segment = re.split(PRODUCT_SPLIT_DELIMITERS, label)[0].strip()
+    first_segment = re.split(PRODUCT_PREPOSITION_DELIMITERS, first_segment)[0].strip()
 
     terms: list[str] = []
     cleaned = first_segment.rstrip(".").strip()
     if 2 <= len(cleaned) <= 40 and cleaned not in _LABEL_STOP_WORDS:
         terms.append(cleaned)
 
-    for part in re.split(r"\band\b", first_segment):
+    for part in re.split(PRODUCT_AND_DELIMITERS, first_segment):
         word_phrase = part.strip().rstrip(".").strip()
         if 2 <= len(word_phrase) <= 40 and word_phrase not in _LABEL_STOP_WORDS:
             if word_phrase not in terms:
@@ -133,20 +159,9 @@ def _get_product_keyword_map() -> dict[str, str]:
 def resolve_product_to_hs(product_name: str) -> Optional[str]:
     """Resolve a raw product name description to a numeric HS chapter or heading."""
     name_lower = product_name.lower().strip()
-    
+
     # 1. Direct semantic mapping for generic industry terms
-    semantic_map = {
-        "garment": "61",
-        "clothing": "61",
-        "apparel": "61",
-        "footwear": "64",
-        "shoe": "64",
-        "rice": "1006",
-        "electronics": "85",
-        "electronic": "85"
-    }
-    
-    for term, code in semantic_map.items():
+    for term, code in HARDCODED_PRODUCT_TO_HS.items():
         if term in name_lower:
             return code
 
@@ -164,5 +179,31 @@ def resolve_product_to_hs(product_name: str) -> Optional[str]:
                 return product_map[key]
     except Exception as exc:
         logger.warning(f"[resolve_product_to_hs] Live mapping resolution failed: {exc}")
+
+    return None
+
+
+def resolve_hs_to_name(code: str) -> Optional[str]:
+    """Resolve a product code (HS chapter, HS heading, SITC) to a conversational name."""
+    clean_code = str(code).strip()
+
+    # Direct semantic mapping for common categories
+    val = (
+        HARDCODED_HS_TO_PRODUCT_NAME.get(clean_code)
+        or HARDCODED_HS_TO_PRODUCT_NAME.get(clean_code.zfill(2))
+        or HARDCODED_HS_TO_PRODUCT_NAME.get(clean_code.lstrip('0'))
+    )
+    if val:
+        return val
+
+    # Match from live mapping keywords if available
+    try:
+        product_map = _get_product_keyword_map()
+        matching_terms = [k for k, c in product_map.items() if str(c).strip() == clean_code]
+        if matching_terms:
+            matching_terms.sort(key=len)
+            return matching_terms[0]
+    except Exception as exc:
+        logger.warning(f"[resolve_hs_to_name] Live metadata lookup failed for {code}: {exc}")
 
     return None
