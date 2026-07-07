@@ -40,6 +40,13 @@ jobs:
     name: Orchestrator
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ci
+      POSTGRES_USER: ci
+      POSTGRES_PASSWORD: ci
+      REDIS_URL: redis://localhost:6379/0
     defaults:
       run:
         working-directory: services_version2/orchestrator
