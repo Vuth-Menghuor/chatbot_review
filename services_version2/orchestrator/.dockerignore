@@ -1,0 +1,42 @@
+﻿# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Secrets — never bake into image
+.env
+*.env.local
+
+# Tests — not needed in production image
+tests/
+.pytest_cache/
+.coverage
+
+# IDE
+.vscode/
+.idea/
+
+# Docs & markdown
+docs/
+*.md
+
+# Git
+.git/
+.gitignore
+
+# Logs (runtime, not build time)
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local session store data
+app/session_store/*.json

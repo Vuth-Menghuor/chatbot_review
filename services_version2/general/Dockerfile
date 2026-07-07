@@ -21,4 +21,4 @@ EXPOSE 8005
 ENV PYTHONUNBUFFERED=1
 
 # Command to run the FastAPI app with Uvicorn
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8005"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8005"]

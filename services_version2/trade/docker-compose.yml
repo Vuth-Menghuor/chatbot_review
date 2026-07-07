@@ -1,19 +1,31 @@
-version: "3.8"
+# Trade query service — port 8004
+# Setup: cp .env.example .env  (fill GEMINI_API_KEY, DAL_API_KEY)
+# Run: docker compose up -d --build
+# Requires shared network (once): docker network create gdce-network
+# DAL must be reachable on gdce-network (e.g. dal-app:8000)
 
 services:
-  trade-service:
+  trade:
     build: .
-    container_name: trade-service
+    container_name: trade
     env_file:
-      - .env
+      - path: .env
+        required: true
+    environment:
+      TRADE_SERVICE_HOST: 0.0.0.0
+      TRADE_SERVICE_PORT: 8004
+      DAL_BASE_URL: ${DAL_BASE_URL:-http://dal-app:8000}
     ports:
       - "8004:8004"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - gdce-network
+      gdce-network:
+        aliases:
+          - trade-service
     restart: unless-stopped
 
 networks:
   gdce-network:
     external: true
+    name: gdce-network

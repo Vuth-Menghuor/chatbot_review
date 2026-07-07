@@ -1,0 +1,89 @@
+services:
+  app:
+    build: .
+    ports:
+      - "${APP_PORT}:8000"
+    environment:
+      METADATA_DB_HOST: metadata-db
+      METADATA_DB_PORT: 5432
+      OPERATIONAL_DB_HOST: operational-db
+      OPERATIONAL_DB_PORT: 5432
+      REDIS_HOST: redis
+    depends_on:
+      metadata-db:
+        condition: service_healthy
+      operational-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["sh", "scripts/start.sh", "--reload"]
+    volumes:
+      - .:/app
+    restart: unless-stopped
+    networks:
+      app-network:
+      gdce-network:
+        aliases:
+          - dal-app
+
+  metadata-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: "${METADATA_DB_USER}"
+      POSTGRES_PASSWORD: "${METADATA_DB_PASSWORD}"
+      POSTGRES_DB: "${METADATA_DB_NAME}"
+    ports:
+      - "${METADATA_DB_EXPOSE_PORT}:5432"
+    volumes:
+      - metadata_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${METADATA_DB_USER} -d ${METADATA_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+
+  operational-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: "${OPERATIONAL_DB_USER}"
+      POSTGRES_PASSWORD: "${OPERATIONAL_DB_PASSWORD}"
+      POSTGRES_DB: "${OPERATIONAL_DB_NAME}"
+    ports:
+      - "${OPERATIONAL_DB_EXPOSE_PORT}:5432"
+    volumes:
+      - operational_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${OPERATIONAL_DB_USER} -d ${OPERATIONAL_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_EXPOSE_PORT}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - redis_data:/data
+    networks:
+      - app-network
+
+volumes:
+  metadata_data:
+  operational_data:
+  redis_data:
+
+networks:
+  app-network:
+    driver: bridge
+  gdce-network:
+    external: true
+    name: gdce-network

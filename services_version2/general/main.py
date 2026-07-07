@@ -6,7 +6,7 @@ Run with:
   python -m services_version2.general.main
 
 Or:
-  uvicorn services_version2.general.app:app --reload --host 127.0.0.1 --port 8005
+  uvicorn services_version2.general.app.main:app --reload --host 127.0.0.1 --port 8005
 
 Architecture:
   - Orchestrator (8001) routes general/FAQ/definition/policy queries here
@@ -16,8 +16,8 @@ Architecture:
 
 import logging
 import uvicorn
-from .app import app  # Export app for uvicorn module loading
-from .config import get_config
+from .app.main import app  # Export app for uvicorn module loading
+from .app.config.config import get_config
 
 # Setup logging
 logging.basicConfig(
@@ -41,7 +41,7 @@ def main():
 
     # Run uvicorn
     uvicorn.run(
-        "services_version2.general.app:app",
+      "services_version2.general.app.main:app",
         host=host,
         port=port,
         reload=reload,

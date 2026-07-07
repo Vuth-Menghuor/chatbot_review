@@ -3,23 +3,18 @@ GDCE Trade Query Service - Uvicorn Entrypoint
 =============================================
 Run this file with:
 
-    python -m services_version2.trade.main
+    python main.py
 
 Or use uvicorn directly:
 
-    uvicorn services_version2.trade.main:app --host 127.0.0.1 --port 8004 --reload
+    uvicorn app.main:app --host 127.0.0.1 --port 8004 --reload
 """
 
 import logging
 import uvicorn
-from app import app  # Export app for uvicorn module loading
-from config import get_settings
+from app.main import app  # Export app for uvicorn module loading
+from app.core.config import get_settings
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
 logger = logging.getLogger(__name__)
 
 
@@ -35,7 +30,7 @@ def main():
     # Run uvicorn
     # Note: when reload=True, uvicorn must be passed the import string rather than the app object.
     uvicorn.run(
-        "services_version2.trade.app:app",
+        "app.main:app",
         host=host,
         port=port,
         reload=False,  # Can set reload to True in dev environments

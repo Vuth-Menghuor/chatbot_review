@@ -1,0 +1,34 @@
+orchestrator_pipeline:
+  name: "default_pipeline"
+  version: "1.0"
+  description: "Standard two-stage safety, intent classification, and formatting pipeline."
+  stages:
+    - name: "safety_validation"
+      description: "Applies Stage 1 (Regex) and Stage 2 (LLM) security, scope, and commercial validations."
+      enabled: true
+      validators:
+        - "safety_check_security"
+        - "safety_check_blocklist"
+        - "safety_check_commercial_description"
+        - "safety_check_taxonomy_scope"
+        - "safety_check_certificate_scope"
+        - "safety_check_calculation_parameters"
+        - "safety_check_input_conciseness"
+        - "safety_check_injection"
+
+    - name: "intent_classification"
+      description: "Classifies query intent and extracts currency/parameters."
+      enabled: true
+      models:
+        classifier: "gemini_classify_intent"
+        rewriter: "gemini_rewrite_input"
+
+    - name: "formatting"
+      description: "Applies beautiful Markdown styling depending on classified intent."
+      enabled: true
+      formatters:
+        calculation: "gemini_format_calculation"
+        hs_code_lookup: "gemini_format_hs_code"
+        retrieval: "gemini_format_retrieval"
+        trade_query: "gemini_format_trade"
+        general: "gemini_format_general"

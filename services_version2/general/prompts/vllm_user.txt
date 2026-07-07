@@ -1,0 +1,6 @@
+Answer the user's customs/trade question using only the provided context. Use a clear, friendly tone for non-technical users. If the answer is not in context, say that clearly and suggest rephrasing.
+
+User question: {query}
+
+Context:
+{context}

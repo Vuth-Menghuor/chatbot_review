@@ -28,7 +28,7 @@ INTENT_MAPPING = {
 
 BASE_URL = "http://127.0.0.1:8004"
 MAX_RETRIES = 3
-BASE_DELAY = 0.3   # increased from 0.1 (important fix)
+BASE_DELAY = 1.2   # increased from 0.3 to prevent HTTP 429
 BACKOFF_FACTOR = 2
 
 
@@ -50,12 +50,12 @@ def call_api(url, body, timeout=30):
         except urllib.error.HTTPError as e:
             # Retry only on server errors (502, 503, 504)
             if e.code in [502, 503, 504]:
-                print(f"⚠️ HTTP {e.code} (attempt {attempt}/{MAX_RETRIES})")
+                print(f"[Warning] HTTP {e.code} (attempt {attempt}/{MAX_RETRIES})")
             else:
                 return {"status": "error", "error": f"HTTP {e.code}"}
 
         except Exception as e:
-            print(f"⚠️ Error (attempt {attempt}/{MAX_RETRIES}): {e}")
+            print(f"[Warning] Error (attempt {attempt}/{MAX_RETRIES}): {e}")
 
         # Backoff before retry
         if attempt < MAX_RETRIES:
@@ -117,9 +117,9 @@ def run_all_questions():
             json.dump(responses, f, indent=2, ensure_ascii=False)
 
         success_count = sum(1 for r in responses if r.get("status") != "error")
-        print(f"{intent}: {success_count}/{len(responses)} successful → {file_path.name}")
+        print(f"{intent}: {success_count}/{len(responses)} successful -> {file_path.name}")
 
-    print("\nDone ✔")
+    print("\nDone [OK]")
 
 
 if __name__ == "__main__":

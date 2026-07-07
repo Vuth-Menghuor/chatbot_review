@@ -1,0 +1,339 @@
+{
+    "dataset-code": "trade_volume",
+    "version": "1.0",
+    "frequency": {
+        "code": "FREQ",
+        "query": {
+            "base": "FREQ",
+            "case": {
+                "a": "'A'",
+                "m": "'M'",
+                "q": "'Q'",
+                "s": "'S'"
+            }
+        },
+        "default": "A",
+        "metadata": {
+            "description": "Frequency of the data point (A=Annual, M=Monthly, Q=Quarterly, S=Semi-Annual), by default Annual.",
+            "type": "string",
+            "auto-generate": false,
+            "data": [
+                {
+                    "code": "A",
+                    "label": "Annual"
+                },
+                {
+                    "code": "M",
+                    "label": "Monthly"
+                },
+                {
+                    "code": "Q",
+                    "label": "Quarterly"
+                },
+                {
+                    "code": "S",
+                    "label": "Semi-Annual"
+                }
+            ]
+        }
+    },
+    "period": {
+        "code": "PERIOD",
+        "metadata": {
+            "description": "Time period of the data point, formatted according to the frequency (e.g. '2023' for annual, '2023-Q1' for quarterly).",
+            "type": "string",
+            "auto-generate": true,
+            "data": [
+                {
+                    "code": "YYYY",
+                    "label": "Annual"
+                },
+                {
+                    "code": "YYYY-Sn",
+                    "label": "Semi-Annual"
+                },
+                {
+                    "code": "YYYY-Qn",
+                    "label": "Quarterly"
+                },
+                {
+                    "code": "YYYY-MM",
+                    "label": "Monthly"
+                }
+            ]
+        },
+        "query": {
+            "base": "FREQ",
+            "case": {
+                "a": "td.ref_year::TEXT",
+                "m": "td.ref_year || '-' || LPAD(td.ref_month::TEXT, 2, '0')",
+                "q": "td.ref_year || '-Q' || CEIL(td.ref_month / 3.0)::TEXT",
+                "s": "td.ref_year || '-S' || CEIL(td.ref_month / 6.0)::TEXT"
+            }
+        },
+        "filters": {
+            "end-period": {
+                "query": {
+                    "yyyy": "td.ref_year <= {VALUE}",
+                    "yyyy-mm": "concat(td.ref_year::text,LPAD(td.ref_month::text, 2, '0'))::integer <= replace(({VALUE})::text, '-', '')::integer",
+                    "yyyy-q1": "concat(td.ref_year::text,LPAD(td.ref_month::text, 2, '0'))::integer <= concat(({VALUE0})::text,'03')::integer",
+                    "yyyy-q2": "concat(td.ref_year::text,LPAD(td.ref_month::text, 2, '0'))::integer <= concat(({VALUE0})::text,'06')::integer",
+                    "yyyy-q3": "concat(td.ref_year::text,LPAD(td.ref_month::text, 2, '0'))::integer <= concat(({VALUE0})::text,'09')::integer",
+                    "yyyy-q4": "concat(td.ref_year::text,LPAD(td.ref_month::text, 2, '0'))::integer <= concat(({VALUE0})::text,'12')::integer",
+                    "yyyy-s1": "concat(td.ref_year::text,LPAD(td.ref_month::text, 2, '0'))::integer <= concat(({VALUE0})::text,'06')::integer",
+                    "yyyy-s2": "concat(td.ref_year::text,LPAD(td.ref_month::text, 2, '0'))::integer <= concat(({VALUE0})::text,'12')::integer"
+                },
+                "pattern-test": {
+                    "yyyy": "\\d{4}$",
+                    "yyyy-mm": "\\d{4}-\\d{2}$",
+                    "yyyy-q1": "\\d{4}-[Qq]1$",
+                    "yyyy-q2": "\\d{4}-[Qq]2$",
+                    "yyyy-q3": "\\d{4}-[Qq]3$",
+                    "yyyy-q4": "\\d{4}-[Qq]4$",
+                    "yyyy-s1": "\\d{4}-[Ss]1$",
+                    "yyyy-s2": "\\d{4}-[Ss]2$"
+                }
+            },
+            "start-period": {
+                "query": {
+                    "yyyy": "td.ref_year >= {VALUE}",
+                    "yyyy-mm": "concat(td.ref_year::text,LPAD(td.ref_month::text, 2, '0'))::integer >= replace(({VALUE})::text, '-', '')::integer",
+                    "yyyy-q1": "concat(td.ref_year::text,LPAD(td.ref_month::text, 2, '0'))::integer >= concat(({VALUE0})::text,'01')::integer",
+                    "yyyy-q2": "concat(td.ref_year::text,LPAD(td.ref_month::text, 2, '0'))::integer >= concat(({VALUE0})::text,'04')::integer",
+                    "yyyy-q3": "concat(td.ref_year::text,LPAD(td.ref_month::text, 2, '0'))::integer >= concat(({VALUE0})::text,'07')::integer",
+                    "yyyy-q4": "concat(td.ref_year::text,LPAD(td.ref_month::text, 2, '0'))::integer >= concat(({VALUE0})::text,'10')::integer",
+                    "yyyy-s1": "concat(td.ref_year::text,LPAD(td.ref_month::text, 2, '0'))::integer >= concat(({VALUE0})::text,'01')::integer",
+                    "yyyy-s2": "concat(td.ref_year::text,LPAD(td.ref_month::text, 2, '0'))::integer >= concat(({VALUE0})::text,'07')::integer"
+                },
+                "pattern-test": {
+                    "yyyy": "\\d{4}$",
+                    "yyyy-mm": "\\d{4}-\\d{2}$",
+                    "yyyy-q1": "\\d{4}-[Qq]1$",
+                    "yyyy-q2": "\\d{4}-[Qq]2$",
+                    "yyyy-q3": "\\d{4}-[Qq]3$",
+                    "yyyy-q4": "\\d{4}-[Qq]4$",
+                    "yyyy-s1": "\\d{4}-[Ss]1$",
+                    "yyyy-s2": "\\d{4}-[Ss]2$"
+                }
+            }
+        }
+    },
+    "dimensions": [
+        {
+            "code": "PARTNER_COUNTRY",
+            "query": "c.name",
+            "metadata": {
+                "description": "Partner country involved in the trade.",
+                "type": "string",
+                "auto-generate": false,
+                "data": {
+                    "sql": "SELECT code, name as label FROM metadata.countries where valid_to is null"
+                }
+            }
+        },
+        {
+            "code": "FLOW",
+            "query": "td.flow",
+            "metadata": {
+                "description": "Direction of the trade flow (e.g. export, import).",
+                "type": "string",
+                "auto-generate": false,
+                "data": [
+                    {
+                        "code": "EX",
+                        "label": "Export"
+                    },
+                    {
+                        "code": "IM",
+                        "label": "Import"
+                    }
+                ]
+            }
+        },
+        {
+            "code": "MODE_OF_TRANSPORT",
+            "query": "mot.desc_en",
+            "metadata": {
+                "description": "Mode of transport at the border.",
+                "type": "string",
+                "auto-generate": false,
+                "data": {
+                    "sql": "SELECT code, desc_en as label FROM metadata.mot_border where valid_to is null"
+                }
+            }
+        },
+        {
+            "code": "HS_CHAPTER",
+            "query": "hs2.hs2_dsc",
+            "metadata": {
+                "description": "HS chapter description.",
+                "type": "string",
+                "auto-generate": false,
+                "data": {
+                    "sql": "SELECT hs2_cod as code, hs2_dsc as label FROM public.hs2_codes where valid_to is null"
+                }
+            }
+        },
+        {
+            "code": "HS_HEADING",
+            "query": "hs4.hs4_dsc",
+            "metadata": {
+                "description": "HS heading description.",
+                "type": "string",
+                "auto-generate": false,
+                "data": {
+                    "sql": "SELECT hs4_cod as code, hs4_dsc as label FROM public.hs4_codes where valid_to is null"
+                }
+            }
+        },
+        {
+            "code": "SITC_SECTION",
+            "query": "ssec.desc_en",
+            "metadata": {
+                "description": "SITC section description.",
+                "type": "string",
+                "auto-generate": false,
+                "data": {
+                    "sql": "SELECT code, desc_en as label FROM metadata.sitc where digit = 1 and revision = 'rev4' and valid_to is null"
+                }
+            }
+        },
+        {
+            "code": "SITC_DIVISION",
+            "query": "sdiv.desc_en",
+            "metadata": {
+                "description": "SITC division description.",
+                "type": "string",
+                "auto-generate": false,
+                "data": {
+                    "sql": "SELECT code, desc_en as label FROM metadata.sitc where digit = 2 and revision = 'rev4' and valid_to is null"
+                }
+            }
+        }
+    ],
+    "measures": [
+        {
+            "code": "VALUE_KHR",
+            "query": "td.value_khr",
+            "aggregate": "SUM",
+            "metadata": {
+                "description": "Trade value in Cambodian Riel.",
+                "type": "number",
+                "auto-generate": false,
+                "unit": "KHR"
+            }
+        },
+        {
+            "code": "VALUE_USD",
+            "query": "td.value_usd",
+            "aggregate": "SUM",
+            "metadata": {
+                "description": "Trade value in US dollars.",
+                "type": "number",
+                "auto-generate": false,
+                "unit": "USD"
+            }
+        },
+        {
+            "code": "NET_WEIGHT",
+            "query": "td.net_weight",
+            "aggregate": "SUM",
+            "metadata": {
+                "description": "Net weight of the trade.",
+                "type": "number",
+                "auto-generate": false,
+                "unit": "KGM"
+            }
+        },
+        {
+            "code": "QUANTITY",
+            "query": "COALESCE(td.quantity, td.net_weight)",
+            "aggregate": "SUM",
+            "unit": {
+                "code": "UNIT",
+                "query": "COALESCE(td.unit_code, 'KGM')",
+                "metadata": {
+                    "description": "Unit of quantity, either supplementary unit if available or net weight unit.",
+                    "type": "string",
+                    "auto-generate": true,
+                    "data": {
+                        "sql": "SELECT code, desc_en as label FROM metadata.uom_stats where valid_to is null"
+                    }
+                }
+            },
+            "metadata": {
+                "description": "Quantity of the trade in supplementary units if available, otherwise net weight.",
+                "type": "number",
+                "auto-generate": false
+            }
+        }
+    ],
+    "source": {
+        "table": "aggregate_data.trade_data as td",
+        "schema": "aggregate_data",
+        "connection-key": "operational_db",
+        "join": [
+            {
+                "table": "metadata.countries as c",
+                "type": "inner",
+                "on": "td.partner_country = c.code and c.valid_to is null"
+            },
+            {
+                "table": "metadata.mot_border as mot",
+                "type": "inner",
+                "on": "td.mot_border = mot.code and mot.valid_to is null"
+            },
+            {
+                "table": "public.hs2_codes as hs2",
+                "type": "left",
+                "on": "td.hs2_code = hs2.hs2_cod and hs2.valid_to is null"
+            },
+            {
+                "table": "public.hs4_codes as hs4",
+                "type": "left",
+                "on": "td.hs4_code = hs4.hs4_cod and hs4.valid_to is null"
+            },
+            {
+                "table": "metadata.classification_correlation as cc",
+                "type": "left",
+                "on": "td.hs8_code = cc.hs8_code and cc.hs_version = '2022' and cc.sitc_version = 'rev4' and cc.valid_to is null"
+            },
+            {
+                "table": "metadata.sitc as ssec",
+                "type": "left",
+                "on": "left(cc.sitc_code,1) = ssec.code and ssec.digit = 1 and ssec.revision = 'rev4' and ssec.valid_to is null"
+            },
+            {
+                "table": "metadata.sitc as sdiv",
+                "type": "left",
+                "on": "left(cc.sitc_code,2) = sdiv.code and sdiv.digit = 2 and sdiv.revision = 'rev4' and sdiv.valid_to is null"
+            }
+        ]
+    },
+    "filters": {
+        "partner_country": {
+            "query": "td.partner_country"
+        },
+        "flow": {
+            "query": "td.flow"
+        },
+        "mode_of_transport": {
+            "query": "td.mot_border"
+        },
+        "hs_chapter": {
+            "query": "td.hs2_code"
+        },
+        "hs_heading": {
+            "query": "td.hs4_code"
+        },
+        "sitc_section": {
+            "query": "left(cc.sitc_code,1)"
+        },
+        "sitc_division": {
+            "query": "left(cc.sitc_code,2)"
+        }
+    },
+    "security": {
+        "allow-raw-sql": false
+    }
+}

@@ -1,0 +1,58 @@
+prompts:
+  - name: ollama_classify_intent
+    version: "1.1"
+    description: "Ollama-specific fallback prompt to categorize user query intent."
+    provider: ollama
+    system_prompt: |
+      Classify the user's query into intent(s) from these four categories: hs_code_lookup, calculation, trade_query, general.
+
+      Guidelines:
+      - 'hs_code_lookup': The user wants to find or classify an HS/AHTN tariff code for a product, or has provided a raw commercial/shipping description to classify (e.g., 'HS code for rice', 'NEW BYD SEALION 5 PREMIUM 1498CC', 'what is the tariff code for laptop').
+      - 'calculation': The user wants to calculate or estimate customs duties, import taxes, VAT, or total import cost, usually with a product + value or CIF/FOB figure (e.g., 'calculate duty on $5000 laptop', 'how much tax to import car from China').
+      - 'trade_query': The user asks for historical trade statistics, bilateral trade volumes, import/export data or trends (e.g., 'Cambodia trade volume with Vietnam 2023', 'top exports last year'). Do NOT use this for procedural or how-to import questions.
+      - 'general': Everything else — definitions, explanations, policies, regulations, FTA/trade agreement details (ATIGA, RCEP, ACFTA, ASEAN, Form D/E), customs procedures, required documents, permits, licensing, step-by-step guidance, and any other knowledge/information query (e.g., 'What is ATIGA?', 'How to import goods to Cambodia?', 'What documents do I need?', 'What is CIF?', 'Explain rules of origin').
+      - If the query is a greeting, farewell, joke, or casual small talk with no customs/trade content, still return 'general' with low confidence.
+
+      Multi-intent queries:
+      - If the query clearly requests two or more of these actions together (e.g., "HS code for rice and calculate duty on $2000 CIF"), set 'intent' to the PRIMARY action (the one the user needs answered first — usually hs_code_lookup before calculation), and populate 'secondary_intent' with the other one. If there is no secondary action, set 'secondary_intent' to null.
+
+      Return JSON only, with no markdown fences and no prose before or after. Use exactly this schema:
+      {
+        "intent": "<one of: hs_code_lookup, calculation, trade_query, general>",
+        "secondary_intent": "<one of: hs_code_lookup, calculation, trade_query, general, or null>",
+        "confidence": <float 0.0-1.0>,
+        "reasoning": "<one short sentence>"
+      }
+
+      Query: {question}
+
+  - name: ollama_rewrite_input
+    version: "1.1"
+    description: "Ollama-specific fallback prompt to rewrite queries based on chat history."
+    provider: ollama
+    system_prompt: |
+      You are a context-aware query rewriter for a Cambodia Customs and Trade assistant.
+      Given the conversation history, active session context, and the latest user query, rewrite the latest query to resolve pronouns, references, and elliptical follow-up questions.
+      If the query is a follow-up (e.g., 'how about export?', 'what if value is higher?', 'how about motor?'), expand it using the context (e.g., 'calculate import tax for motor' or 'export rice').
+
+      Contextual Data Capture & Query Merging Guidelines:
+      - Track these fields across turns, regardless of intent: CIF Value (cost, insurance, freight), Origin Country, Currency, HS Code / Product Description, and Reporting Period (for trade_query, e.g. year or year range).
+      - CALCULATION follow-ups: When a follow-up references the same CIF value, currency, and origin country (e.g., 'what about bus' after a calculation for HS 0102.29.11 CIF $800 from Thailand), merge and trigger the same calculation with the new product context. Preserve CIF, currency, and origin across turns and reapply them to new product requests without requiring the user to re-specify those parameters.
+      - HS_CODE_LOOKUP follow-ups: When a follow-up references a variant or related product of a prior lookup (e.g., 'what about the diesel version' after 'HS code for a petrol SUV'), carry forward the product category and any specified attributes (engine type, capacity, material) and only change what the follow-up explicitly changes.
+      - TRADE_QUERY follow-ups: When a follow-up changes only one axis of a prior trade query (e.g., 'what about Thailand' after 'Cambodia exports to Vietnam 2023', or 'and imports?' after an exports query), carry forward the unmentioned axes (country, product, direction, period) and change only the axis the follow-up specifies.
+      - Overriding context: If the follow-up explicitly restates a field with a new value (e.g., 'what if CIF is $1200 instead', 'actually from Vietnam not Thailand'), REPLACE that field with the new value and keep all other tracked fields unchanged. Only replace the field(s) explicitly restated — do not clear the rest of the context.
+
+      Guidelines:
+      - Do not add new information not implied by the query or history.
+      - Keep the rewrite clean, clear, and direct.
+      - If the query is already complete and doesn't need context, return it unchanged.
+      - Return ONLY the rewritten query text and nothing else — no explanation, no JSON, no quotes around it.
+
+      Conversation History (most recent last):
+      {history}
+
+      Active Session Context (tracked fields, may be empty):
+      {context}
+
+      Latest User Query: {user_input}
+      Rewritten Query:

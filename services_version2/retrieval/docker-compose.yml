@@ -1,32 +1,60 @@
-version: '3.8'
+# Retrieval (HS code) — port 8003
+# Run: docker compose up -d --build
+# Requires shared network (once): docker network create gdce-network
 
 services:
-  qdrant:
+  qdrant-retrieval:
     image: qdrant/qdrant:v1.17.0
-    container_name: qdrant
+    container_name: qdrant-retrieval
     ports:
       - "6333:6333"
     volumes:
       - qdrant_data:/qdrant/storage
+    networks:
+      - gdce-network
     restart: unless-stopped
 
-  retrieval-service:
+  redis-retrieval:
+    image: redis:7-alpine
+    container_name: redis-retrieval
+    ports:
+      - "6381:6379"
+    volumes:
+      - redis_retrieval_data:/data
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+    networks:
+      - gdce-network
+    restart: unless-stopped
+
+  retrieval:
     build: .
-    container_name: retrieval-service
+    container_name: retrieval
     env_file:
-      - .env
+      - path: .env
+        required: false
+    environment:
+      RETRIEVAL_HOST: 0.0.0.0
+      RETRIEVAL_PORT: 8003
+      QDRANT_HOST: qdrant-retrieval
+      QDRANT_PORT: 6333
+      REDIS_HOST: redis-retrieval
+      REDIS_PORT: 6379
     ports:
       - "8003:8003"
     depends_on:
-      - qdrant
+      - qdrant-retrieval
+      - redis-retrieval
+    networks:
+      - gdce-network
     restart: unless-stopped
 
 volumes:
   qdrant_data:
     external: true
     name: retrieval_version2_qdrant_data
+  redis_retrieval_data:
 
 networks:
   gdce-network:
+    external: true
     name: gdce-network
-    driver: bridge

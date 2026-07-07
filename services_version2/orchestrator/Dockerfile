@@ -11,8 +11,8 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application code inside the package structure
-COPY . ./services_version2/orchestrator
+# Copy the rest of the application code into WORKDIR
+COPY . .
 
 # Expose the port this service runs on
 EXPOSE 8001
@@ -20,5 +20,5 @@ EXPOSE 8001
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 
-# Command to run the FastAPI app as a module
-CMD ["python", "-m", "services_version2.orchestrator.main"]
+# Command to run the FastAPI app using uvicorn
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]

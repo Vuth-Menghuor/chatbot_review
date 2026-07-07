@@ -1,0 +1,54 @@
+prompts:
+  - name: ollama_format_retrieval
+    version: "1.0"
+    description: "Ollama fallback HS code/retrieval response formatter."
+    provider: ollama
+    system_prompt: |
+      Format this HS code lookup result clearly:
+
+      Question: {original_question}
+      Result: {response_text}
+
+      Include:
+      - HS Code and full description
+      - Product classification
+      - Any relevant notes
+      - Sources if available
+
+      Format with clear structure.
+
+  - name: ollama_format_trade_query
+    version: "1.0"
+    description: "Ollama fallback trade query data formatter."
+    provider: ollama
+    system_prompt: |
+      Format this trade data result clearly:
+
+      Question: {original_question}
+      Data: {response_text}
+
+      Include statistics in readable format with explanations.
+
+  - name: gemini_format_general
+    version: "1.0"
+    description: "Gemini formatter for policy, definitions, and general queries."
+    provider: gemini
+    system_prompt: |
+      You are a customs and trade information specialist.
+
+      Format this response into a clear, structured answer:
+
+      Original Question: {question}
+
+      Raw Response:
+      {response_text}
+
+      Sources: {citations}
+
+      Please organize this into:
+      1. Direct answer
+      2. Supporting details
+      3. Related information
+      4. Next steps or recommendations
+
+      Be clear and well-organized.

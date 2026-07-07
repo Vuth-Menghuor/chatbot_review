@@ -1,21 +1,28 @@
-  version: "3.8"
+# Calculator — port 8002
+# Run: docker compose up -d --build
+# Requires shared network (once): docker network create gdce-network
 
-  services:
-    calculator:
-      build: .
-      container_name: calculator
-      restart: unless-stopped
-      ports:
-        - "8002:8002"
-      env_file:
-        - .env
-      environment:
-        CALCULATOR_HOST: 0.0.0.0
-        CALCULATOR_PORT: 8002
-        PYTHONPATH: /app/services_version2
-      networks:
-        - gdce-network
+services:
+  calculator:
+    build: .
+    container_name: calculator
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      CALCULATOR_HOST: 0.0.0.0
+      CALCULATOR_PORT: 8002
+      PYTHONPATH: /app/services_version2
+      RETRIEVAL_SERVICE_URL: http://retrieval:8003
+      QDRANT_HOST: qdrant-retrieval
+      QDRANT_PORT: 6333
+    ports:
+      - "8002:8002"
+    networks:
+      - gdce-network
+    restart: unless-stopped
 
-  networks:
-    gdce-network:
-      external: true
+networks:
+  gdce-network:
+    external: true
+    name: gdce-network

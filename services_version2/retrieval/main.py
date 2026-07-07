@@ -1,24 +1,23 @@
 """
 Entry point for Retrieval service v2
-Port: 8003 (as per GDCE services architecture)
+Port: 8003
 
-Run with: 
+Run with:
   python -m services_version2.retrieval.main
-  
-Or: 
-  uvicorn services_version2.retrieval.app:app --reload --host 127.0.0.1 --port 8003
+
+Or:
+  uvicorn services_version2.retrieval.app.app:app --reload --host 127.0.0.1 --port 8003
 
 Architecture:
-  - Orchestrator (8001) routes HS_CODE_LOOKUP, DEFINITION, POLICY_INQUIRY, GENERAL intents here
-  - See: services_version2/orchestrator/ORCHESTRATOR_V2_ARCHITECTURE.md
+  - Orchestrator (8001) routes HS_CODE_LOOKUP queries here
+  - This service exposes two endpoints: /hs-code-candidates and /hs-code-ranked
 """
 
 import logging
 import uvicorn
-from .app import app  # Export app for uvicorn module loading
-from .config import get_config
+from services_version2.retrieval.app.app import app  # Export app for uvicorn module loading
+from services_version2.retrieval.config import get_config
 
-# Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -33,14 +32,13 @@ def main():
     port = config.port
     reload = config.reload
     workers = config.workers
-    
+
     logger.info(f"Starting Retrieval Service (v2) on {host}:{port}")
-    logger.info(f"Port: 8003 (Handles: HS_CODE_LOOKUP, DEFINITION, POLICY_INQUIRY, GENERAL intents)")
+    logger.info("Port: 8003 (Handles: HS_CODE_LOOKUP intent)")
     logger.info(f"API Documentation: http://{host}:{port}/docs")
-    
-    # Run uvicorn
+
     uvicorn.run(
-        "services_version2.retrieval.app:app",
+        "services_version2.retrieval.app.app:app",
         host=host,
         port=port,
         reload=reload,

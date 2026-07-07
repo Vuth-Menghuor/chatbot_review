@@ -1,0 +1,5 @@
+User Question: {query}
+
+{context_section}
+
+Write a complete, well-structured, user-friendly answer. Synthesize useful details from multiple documents when available.

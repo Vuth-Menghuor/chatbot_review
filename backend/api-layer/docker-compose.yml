@@ -1,0 +1,138 @@
+# API gateway — port 8000
+# Setup: cp .env.example .env  (fill secrets)  then  docker compose up -d --build
+# Requires shared network (once): docker network create gdce-network
+
+services:
+  api-postgres:
+    image: postgres:16-alpine
+    container_name: api-postgres
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-api_layer_db}
+      POSTGRES_USER: ${POSTGRES_USER:-api_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - api_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-api_user} -d ${POSTGRES_DB:-api_layer_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - api-network
+    restart: unless-stopped
+
+  api-redis:
+    image: redis:7-alpine
+    container_name: api-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - api_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - api-network
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    env_file:
+      - path: .env
+        required: false
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - api-network
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - api-network
+    restart: unless-stopped
+
+  api:
+    build: .
+    container_name: api
+    env_file:
+      - path: .env
+        required: true
+    ports:
+      - "8000:8000"
+    depends_on:
+      api-postgres:
+        condition: service_healthy
+      api-redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - api-network
+      - gdce-network
+    restart: unless-stopped
+
+  image-worker:
+    build: ../../image-worker
+    container_name: image-worker
+    env_file:
+      - path: .env
+        required: true
+    depends_on:
+      api-postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - api-network
+    restart: unless-stopped
+
+volumes:
+  api_postgres_data:
+  api_redis_data:
+  minio_data:
+  rabbitmq_data:
+
+networks:
+  api-network:
+  gdce-network:
+    external: true
+    name: gdce-network

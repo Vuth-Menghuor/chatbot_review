@@ -1,40 +1,58 @@
-version: '3.8'
+# General Q&A — port 8005
+# Run: docker compose up -d --build
+# Requires shared network (once): docker network create gdce-network
 
 services:
   qdrant-general:
     image: qdrant/qdrant:v1.17.0
     container_name: qdrant-general
     ports:
-      # Host port 6334 -> container's internal Qdrant port 6333.
-      # This is a SEPARATE instance from the HS-code retrieval service's
-      # qdrant container (which uses host port 6333).
       - "6334:6333"
     volumes:
       - qdrant_general_data:/qdrant/storage
+    networks:
+      - gdce-network
     restart: unless-stopped
 
-  general-service:
+  redis-general:
+    image: redis:7-alpine
+    container_name: redis-general
+    ports:
+      - "6382:6379"
+    volumes:
+      - redis_general_data:/data
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    networks:
+      - gdce-network
+    restart: unless-stopped
+
+  general:
     build: .
-    container_name: general-service
+    container_name: general
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
-      # Inside the Docker network, talk to the qdrant-general container by
-      # its service name on Qdrant's internal default port (6333) — NOT the
-      # host-mapped 6334. The 6334 mapping above is only for host/local access.
-      - QDRANT_HOST=qdrant-general
-      - QDRANT_PORT=6333
+      GENERAL_HOST: 0.0.0.0
+      GENERAL_PORT: 8005
+      QDRANT_HOST: qdrant-general
+      QDRANT_PORT: 6333
+      REDIS_HOST: redis-general
+      REDIS_PORT: 6379
     ports:
       - "8005:8005"
     depends_on:
       - qdrant-general
+      - redis-general
+    networks:
+      - gdce-network
     restart: unless-stopped
 
 volumes:
   qdrant_general_data:
-    # Removed 'external: true' and 'name' - Docker will create this automatically
+  redis_general_data:
 
 networks:
   gdce-network:
+    external: true
     name: gdce-network
-    driver: bridge
