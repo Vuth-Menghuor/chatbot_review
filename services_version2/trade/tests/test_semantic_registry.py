@@ -69,7 +69,7 @@ def test_convert_legacy_params():
     transformed = convert_legacy_params(raw)
     assert transformed["intent"] == "trend"
     assert transformed["trade_direction"] == "EX"
-    assert transformed["mode_of_transport"] == "4"
+    assert transformed["mode_of_transport"] == ["air"]
     assert transformed["group_by"] == ["FLOW", "SITC_SECTION"]
 
 

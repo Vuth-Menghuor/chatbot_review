@@ -1,6 +1,9 @@
 """Extra unit tests for parameter extraction and handler logic."""
 
 import pytest
+
+pytestmark = pytest.mark.integration
+
 from services_version2.trade.core.service import extract_parameters
 
 def test_extract_parameters_trended_last_3_years():

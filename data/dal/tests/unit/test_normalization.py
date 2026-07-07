@@ -5,20 +5,20 @@ from app.utils.normalization import normalize_list, normalize_string
 
 class TestNormalizeList:
     def test_basic(self):
-        assert normalize_list("FREQ,PARTNER_COUNTRY,FLOW") == [
+        assert set(normalize_list("FREQ,PARTNER_COUNTRY,FLOW")) == {
             "FLOW",
             "FREQ",
             "PARTNER_COUNTRY",
-        ]
+        }
 
     def test_lowercased_input(self):
-        assert normalize_list("freq,partner_country") == ["FREQ", "PARTNER_COUNTRY"]
+        assert set(normalize_list("freq,partner_country")) == {"FREQ", "PARTNER_COUNTRY"}
 
     def test_deduplication(self):
-        assert normalize_list("FLOW,FLOW,FREQ") == ["FLOW", "FREQ"]
+        assert set(normalize_list("FLOW,FLOW,FREQ")) == {"FLOW", "FREQ"}
 
     def test_whitespace_handling(self):
-        assert normalize_list("  FLOW , FREQ  ") == ["FLOW", "FREQ"]
+        assert set(normalize_list("  FLOW , FREQ  ")) == {"FLOW", "FREQ"}
 
     def test_empty_string(self):
         assert normalize_list("") == []

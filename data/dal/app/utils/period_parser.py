@@ -15,6 +15,9 @@ def split_period(period: str) -> tuple[str, str]:
     '''
     
     period = period.strip()
+    if " - " in period:
+        start, end = period.split(" - ", 1)
+        period = f"{start.strip()}-{end.strip()}"
 
     patterns = {
         "year": r"^\d{4}$",

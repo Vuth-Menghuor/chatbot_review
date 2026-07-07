@@ -2,6 +2,9 @@
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 norecursedirs = ["outputs", "reports", "results"]
+markers = [
+    "integration: tests that call external services (LLM, DAL, etc.)",
+]
 
 [tool.ruff]
 line-length = 120

@@ -119,3 +119,5 @@ class DatasetConcept(BaseModel):
     source: SourceConcept
     filters: dict[str, FilterKeyConcept]
     security: SecurityConcept = Field(default_factory=SecurityConcept)
+
+    model_config = {"populate_by_name": True}

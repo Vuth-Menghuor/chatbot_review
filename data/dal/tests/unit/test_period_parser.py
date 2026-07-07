@@ -70,5 +70,6 @@ class TestMatchPeriodPattern:
             split_period("2020/01/01 - 2025/12/31")
     
     def test_different_formats(self):
-        with pytest.raises(ValueError):
-            split_period("2020-01 - 2025-Q4")
+        start, end = split_period("2020-01 - 2025-Q4")
+        assert start == "2020-01"
+        assert end == "2025-Q4"
