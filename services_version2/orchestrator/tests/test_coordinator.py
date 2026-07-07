@@ -321,22 +321,13 @@ class TestServiceCoordinator:
         assert "0101.29.00" in response.get("answer", "")
         retrieval_client.hs_code_lookup.assert_awaited_once()
 
-    async def test_short_unclassified_product_query_is_rewritten_and_routed_to_hs_lookup(self):
-        """Short product-only queries like 'train?' should become HS lookup requests."""
+    async def test_short_unclassified_product_query_is_routed_to_hs_lookup_without_rewrite(self):
+        """Short product-only queries like 'train?' route to HS lookup with the raw query."""
         get_cache_service().invalidate_cache()
 
-        class ShortProductRewriteLLM(DummyLLMService):
+        class NoRewriteShortProductLLM(DummyLLMService):
             async def rewrite_input(self, user_input, context=None, intent_hint=None):
-                if intent_hint == "hs_code_lookup" and user_input.strip().lower() == "train?":
-                    return (
-                        "What is the HS code for train?",
-                        {
-                            "rewrite_reason": "hs_short_product_auto_template",
-                            "confidence": 0.98,
-                            "rewritten": True,
-                        },
-                    )
-                return await super().rewrite_input(user_input, context=context, intent_hint=intent_hint)
+                raise AssertionError("rewrite_input should not be called for short HS product lookups")
 
         retrieval_client = AsyncMock()
         retrieval_client.hs_code_lookup = AsyncMock(return_value={
@@ -362,7 +353,7 @@ class TestServiceCoordinator:
             trade_data_client=None,
             use_llm_intent=False,
             use_input_rewriter=True,
-            llm_service=ShortProductRewriteLLM(
+            llm_service=NoRewriteShortProductLLM(
                 intent="unclassified",
                 selection={
                     "selected_code": "8603.10.00",
@@ -378,7 +369,7 @@ class TestServiceCoordinator:
         assert response["status"] == "completed"
         retrieval_client.hs_code_lookup.assert_awaited_once()
         _, kwargs = retrieval_client.hs_code_lookup.await_args
-        assert kwargs["query"] == "What is the HS code for train?"
+        assert kwargs["query"] == "train?"
         retrieval_client.policy_inquiry.assert_not_awaited()
 
     async def test_short_product_query_skips_rewriter_and_routes_to_hs_lookup(self):

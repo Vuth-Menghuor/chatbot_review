@@ -541,11 +541,15 @@ class ServiceCoordinator:
             rewrite_skip_reason = self._get_rewrite_skip_reason(intent=context.intent, rewriter_enabled=self.use_input_rewriter)
             context.rewrite_metadata = context.rewrite_metadata or {"rewrite_reason": "not_applied", "reason": "rewrite_disabled_or_skipped"}
 
+            _rewrite_skip_intents = {
+                WorkflowIntent.TRADE_QUERY,
+                WorkflowIntent.HS_CODE_LOOKUP,
+                WorkflowIntent.CALCULATION,
+            }
             if (
                 self.use_input_rewriter
-                and raw_detected_intent != WorkflowIntent.TRADE_QUERY
-                and raw_detected_intent != WorkflowIntent.HS_CODE_LOOKUP
-                and raw_detected_intent != WorkflowIntent.CALCULATION  # calculation takes raw query as-is
+                and raw_detected_intent not in _rewrite_skip_intents
+                and context.intent not in _rewrite_skip_intents
             ):
                 intent_hint = context.intent.value if context.intent else None
                 try:
