@@ -179,6 +179,59 @@ jobs:
       - name: Smoke import
         run: python -c "import worker; assert callable(worker.main)"
 
+  docker-publish:
+    name: Docker / ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs:
+      - api-layer
+      - orchestrator
+      - trade
+      - calculator
+      - general
+      - retrieval
+      - dal
+      - image-worker
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: api-layer
+            context: backend/api-layer
+          - image: orchestrator
+            context: services_version2/orchestrator
+          - image: trade
+            context: services_version2/trade
+          - image: calculator
+            context: services_version2/calculator
+          - image: general
+            context: services_version2/general
+          - image: retrieval
+            context: services_version2/retrieval
+          - image: dal
+            context: data/dal
+          - image: image-worker
+            context: image-worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/chatbot_review-${{ matrix.image }}:main
+            ghcr.io/${{ github.repository_owner }}/chatbot_review-${{ matrix.image }}:sha-${{ github.sha }}
+
   promote-dev:
     name: Promote to dev
     runs-on: ubuntu-latest
