@@ -3,12 +3,15 @@ API Endpoints for Orchestrator Service
 FastAPI route handlers with full integration of validators, formatters, and service coordination
 """
 
+import asyncio
+import json
 import logging
 import uuid
 import time
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Depends, Query, Request
+from fastapi.responses import StreamingResponse
 from ..schemas.schemas import (
     QueryRequest,
     QueryResponse,
@@ -34,6 +37,11 @@ logger = logging.getLogger(__name__)
 
 # Create router
 router = APIRouter(tags=["orchestrator"])
+
+# Per-session lock table for single-process deployment.
+# In multi-worker deployments, the coordinator uses a Redis distributed lock
+# instead; this dict is the fallback when Redis is unavailable.
+_session_locks: dict = {}
 
 
 # DEPENDENCY INJECTION
@@ -290,6 +298,214 @@ async def process_query(
             latency_ms=latency_ms,
             metadata={"error": str(e)}
         )
+
+
+@router.post("/query/stream")
+async def stream_query(
+    req: QueryRequest,
+    app_request: Request,
+    coordinator=Depends(get_coordinator),
+):
+    """
+    Stream a response for a user query using Server-Sent Events (SSE).
+
+    Event types emitted:
+      - ``data``          — incremental text chunks from the formatter
+      - ``clarification`` — the bot needs more info (no formatter invoked)
+      - ``done``          — stream finished, includes final metadata JSON
+      - ``error``         — mid-stream failure after partial output
+      - ``: keep-alive``  — SSE comment line sent every ~15 s while retrieving
+
+    Session persistence (Redis/Postgres) is written after the ``done`` event.
+    Partial responses from disconnected sessions are never persisted.
+    """
+    request_id = str(uuid.uuid4())
+    effective_session_id = req.session_id or str(uuid.uuid4())
+
+    async def event_generator():
+        # ── 1. Capture ContextVar cache so it survives await boundaries ──────
+        from ..ai.analyzer import unified_result_var
+        question = req.question.strip()
+
+        # Pre-warm unified NLU cache (same as /query endpoint)
+        cached_nlu = None
+        if hasattr(app_request.app.state, 'first_layer_service'):
+            try:
+                first_layer = app_request.app.state.first_layer_service
+                session_mgr = first_layer.session_manager
+                sess_ctx = session_mgr.get_or_create_session(effective_session_id)
+                await first_layer.get_unified_result(question, sess_ctx)
+                cached_nlu = unified_result_var.get()
+            except Exception as e:
+                logger.warning(f"[{request_id}] Failed to pre-warm NLU cache for streaming: {e}")
+
+        # Restore the ContextVar so downstream code that reads it after any
+        # await boundary still finds the cached result.
+        if cached_nlu is not None:
+            unified_result_var.set(cached_nlu)
+
+        # ── 2. Acquire per-session lock ───────────────────────────────────────
+        # Use Redis distributed lock when available; fall back to asyncio.Lock.
+        redis_lock = None
+        local_lock = None
+        try:
+            redis_client = getattr(app_request.app.state, 'redis_client', None)
+            if redis_client is not None:
+                redis_lock = redis_client.lock(
+                    f"lock:session:{effective_session_id}", timeout=120
+                )
+                await asyncio.get_event_loop().run_in_executor(None, redis_lock.acquire)
+            else:
+                if effective_session_id not in _session_locks:
+                    _session_locks[effective_session_id] = asyncio.Lock()
+                local_lock = _session_locks[effective_session_id]
+                await local_lock.acquire()
+        except Exception as lock_err:
+            logger.warning(f"[{request_id}] Session lock acquisition failed (continuing without lock): {lock_err}")
+
+        try:
+            # ── 3. Safety check ───────────────────────────────────────────────
+            if hasattr(app_request.app.state, 'input_validator'):
+                try:
+                    is_safe, reason = await app_request.app.state.input_validator.validate_input_async(
+                        question, None
+                    )
+                    if not is_safe and reason != "out_of_scope":
+                        yield f"data: {json.dumps({'error': 'Request refused by safety filter.', 'reason': reason})}\n\n"
+                        return
+                except Exception as e:
+                    logger.warning(f"[{request_id}] Safety check failed in stream mode: {e}")
+
+            # ── 4. Run coordinator (retrieval/routing) with keep-alive pings ─
+            retrieval_task = asyncio.create_task(
+                coordinator.process_query(
+                    question=question,
+                    session_id=effective_session_id,
+                    stream=True,
+                )
+            )
+
+            context_result = None
+            while not retrieval_task.done():
+                try:
+                    context_result = await asyncio.wait_for(
+                        asyncio.shield(retrieval_task), timeout=15.0
+                    )
+                except asyncio.TimeoutError:
+                    # Retrieval still running — send SSE keep-alive comment
+                    yield ": keep-alive\n\n"
+                    # Check for client disconnect while waiting
+                    if await app_request.is_disconnected():
+                        retrieval_task.cancel()
+                        logger.info(f"[{request_id}] Client disconnected during retrieval; task cancelled.")
+                        return
+
+            if context_result is None:
+                context_result = retrieval_task.result()
+
+            # ── 5. Handle clarification / ask-back path ───────────────────────
+            result_status = context_result.get("status", "")
+            if result_status == "clarification_required" or context_result.get("clarifications"):
+                clarification_payload = {
+                    "questions": context_result.get("clarifications", []),
+                    "session_id": effective_session_id,
+                    "status": "clarification_required",
+                    "intent": context_result.get("intent", "unclassified"),
+                }
+                yield f"event: clarification\ndata: {json.dumps(clarification_payload)}\n\n"
+                return
+
+            # For pre-resolved statuses (small_talk, refused, error) emit a
+            # synthetic single-chunk stream so clients always see SSE events.
+            if result_status in ("failed", "refused") or "error" in context_result:
+                yield f"data: {json.dumps({'chunk': context_result.get('error', context_result.get('answer', ''))})}\n\n"
+                yield f"event: done\ndata: {json.dumps({'status': result_status, 'session_id': effective_session_id})}\n\n"
+                return
+
+            if result_status == "completed" and context_result.get("intent") in ("small_talk",):
+                answer_text = context_result.get("answer", "")
+                yield f"data: {json.dumps({'chunk': answer_text})}\n\n"
+                yield f"event: done\ndata: {json.dumps({'status': 'completed', 'session_id': effective_session_id})}\n\n"
+                # Persist small-talk turn
+                session_ctx = context_result.get("_session_context")
+                if session_ctx is not None:
+                    try:
+                        original_input = context_result.get("_original_input", question)
+                        session_ctx.add_turn(user_input=original_input, bot_response=answer_text)
+                    except Exception as e:
+                        logger.warning(f"[{request_id}] Failed to persist small-talk turn: {e}")
+                return
+
+            # ── 6. Stream formatted response ──────────────────────────────────
+            base_answer = context_result.get("answer", "")
+            intent = context_result.get("intent", "general")
+            sources = context_result.get("sources", [])
+            citations = context_result.get("citations", [])
+            session_ctx = context_result.get("_session_context")
+            original_input = context_result.get("_original_input", question)
+
+            from ..ai.summarizer import get_formatter_service
+            formatter = get_formatter_service()
+
+            full_response_parts = []
+            try:
+                async for chunk in formatter.format_response_stream(
+                    base_answer=base_answer,
+                    question=question,
+                    intent=intent,
+                    context={"sources": sources},
+                    citations=citations,
+                ):
+                    # Check for client disconnect before each yield
+                    if await app_request.is_disconnected():
+                        logger.info(f"[{request_id}] Client disconnected mid-stream; stopping generator.")
+                        return
+
+                    full_response_parts.append(chunk)
+                    yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+
+            except Exception as stream_err:
+                logger.error(f"[{request_id}] Streaming formatter raised mid-stream: {stream_err}")
+                yield f"event: error\ndata: {json.dumps({'error': 'Stream interrupted', 'session_id': effective_session_id})}\n\n"
+                return
+
+            # ── 7. Session persistence (only on full completion) ──────────────
+            full_response = "".join(full_response_parts)
+            if session_ctx is not None and full_response:
+                try:
+                    session_ctx.add_turn(user_input=original_input, bot_response=full_response)
+                    logger.debug(f"[{request_id}] Session turn persisted after stream completion.")
+                except Exception as e:
+                    logger.warning(f"[{request_id}] Failed to persist session turn: {e}")
+
+            # ── 8. Done event ─────────────────────────────────────────────────
+            done_payload = {
+                "status": "completed",
+                "session_id": effective_session_id,
+                "intent": intent,
+                "sources": sources,
+            }
+            yield f"event: done\ndata: {json.dumps(done_payload)}\n\n"
+
+        finally:
+            # ── Release session lock ─────────────────────────────────────────
+            try:
+                if redis_lock is not None:
+                    await asyncio.get_event_loop().run_in_executor(None, redis_lock.release)
+                elif local_lock is not None and local_lock.locked():
+                    local_lock.release()
+            except Exception as unlock_err:
+                logger.warning(f"[{request_id}] Failed to release session lock: {unlock_err}")
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @router.post("/chat", response_model=QueryResponse)

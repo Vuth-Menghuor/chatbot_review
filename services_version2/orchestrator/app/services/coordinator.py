@@ -201,8 +201,18 @@ class ServiceCoordinator:
         self.use_input_rewriter = use_input_rewriter
         logger.info(f" LLM abstraction layer initialized (input rewrite enabled: {use_input_rewriter})")
     
-    async def process_query(self, question: str, session_id: Optional[str] = None) -> Dict[str, Any]:
-        """Public entrypoint for query processing. Detects and handles translation if the query is in Khmer."""
+    async def process_query(
+        self,
+        question: str,
+        session_id: Optional[str] = None,
+        stream: bool = False,
+    ) -> Dict[str, Any]:
+        """Public entrypoint for query processing. Detects and handles translation if the query is in Khmer.
+
+        When stream=True the coordinator skips the synchronous formatter and
+        returns a raw WorkflowContext-shaped dict so the streaming endpoint can
+        own the final text-generation step.
+        """
         from .translator import QueryTranslator
         translator = QueryTranslator(self.llm_service)
         is_km = translator.is_khmer(question)
@@ -220,16 +230,18 @@ class ServiceCoordinator:
             question=question,
             session_id=session_id,
             is_km=is_km,
-            original_question=original_question
+            original_question=original_question,
+            stream=stream,
         )
 
-        if is_km:
+        # For streaming mode, Khmer translation is handled by the endpoint after
+        # the stream completes so we skip it here.
+        if not stream and is_km:
             response["question"] = original_question
             if "metadata" not in response:
                 response["metadata"] = {}
             response["metadata"]["language"] = "km"
 
-            # Determine which key contains the text to translate
             text_key = "answer"
             if "error" in response and not response.get("answer"):
                 text_key = "error"
@@ -243,7 +255,6 @@ class ServiceCoordinator:
                 except Exception as e:
                     logger.error(f"Failed to translate response to Khmer: {e}")
 
-
         return response
 
     async def _process_query_core(
@@ -251,11 +262,17 @@ class ServiceCoordinator:
         question: str,
         session_id: Optional[str] = None,
         is_km: bool = False,
-        original_question: Optional[str] = None
+        original_question: Optional[str] = None,
+        stream: bool = False,
     ) -> Dict[str, Any]:
         """
         Processes an incoming user query through the orchestration pipeline.
-        
+
+        When stream=True downstream service calls use generate_answer=False so
+        that raw documents/data are returned without the service running its own
+        LLM formatting step.  The coordinator then returns a context dict that
+        the streaming endpoint uses to build the Gemini prompt.
+
         The execution flow is as follows:
         1. Context initialization & tracking.
         2. Query normalization & fast small-talk detection.
@@ -265,7 +282,7 @@ class ServiceCoordinator:
         6. Proactive ask-back checks for ambiguous core queries.
         7. Context-aware input rewriting using session history.
         8. Microservice routing & dispatching (calculator, trade_data, retrieval).
-        9. Session state updates and final response formatting.
+        9. Session state updates (session save deferred to endpoint in stream mode).
         """
         # Step 1: Initialize a unique request ID and workflow tracking context
         request_id = str(uuid.uuid4())
@@ -761,19 +778,35 @@ class ServiceCoordinator:
                         update_kwargs["import_export_mode"] = mode
 
                     self.rewriter_service.update_session_context(session_id, **update_kwargs)
-                    answer_summary = "Query processed"
-                    if context.retrieval_result and context.retrieval_result.get("documents"):
-                        docs = context.retrieval_result.get("documents", [])
-                        if docs:
-                            answer_summary = f"Found {len(docs)} relevant documents"
-                    context.session_context.add_turn(user_input=context.original_input, bot_response=answer_summary[:200])
+
+                    if not stream:
+                        # Synchronous mode: save turn with placeholder answer summary now.
+                        answer_summary = "Query processed"
+                        if context.retrieval_result and context.retrieval_result.get("documents"):
+                            docs = context.retrieval_result.get("documents", [])
+                            if docs:
+                                answer_summary = f"Found {len(docs)} relevant documents"
+                        context.session_context.add_turn(user_input=context.original_input, bot_response=answer_summary[:200])
+                    # In stream mode, add_turn is called by the endpoint after the full streamed
+                    # response is assembled, so we skip it here.
+
                 except Exception as e:
                     logger.warning(f"[{request_id}] Failed to update session: {e}")
-            
+
             # Finalize context and build orchestrator response package
             context.finalize()
+
+            if stream:
+                # Return raw context so the streaming endpoint can drive generation.
+                # The endpoint reads: answer, intent, sources, metadata, session_context.
+                raw = await self._build_response(context)
+                raw["_stream"] = True
+                raw["_session_context"] = context.session_context
+                raw["_original_input"] = context.original_input
+                return raw
+
             return await self._build_response(context)
-            
+
         except Exception as e:
             # Handle unexpected orchestration pipeline errors cleanly
             logger.error(f"[{request_id}] Error processing query: {e}")
@@ -781,6 +814,7 @@ class ServiceCoordinator:
             context.status = WorkflowStatus.FAILED
             context.finalize()
             return await self._build_error_response(context)
+
 
     # Decide which service should be sent to downstream services
     def _select_service_query(self, original_query: str, rewritten_query: Optional[str], rewrite_applied: bool) -> tuple[str, str]:

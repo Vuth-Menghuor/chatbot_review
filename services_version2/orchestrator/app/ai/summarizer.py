@@ -79,31 +79,30 @@ class OrchestratorFormatterService:
         self.config.enabled = False
         logger.info("Formatter service disabled")
 
-    async def format_response(
+
+
+    async def format_response_stream(
         self,
         base_answer: str,
         question: str,
         intent: str,
         context: Any = None,
-        citations: Optional[list] = None
-    ) -> str:
+        citations: Optional[list] = None,
+    ):
         """
-        Format a response using the configured provider.
-        
-        Args:
-            base_answer: Raw response from service
-            question: Original question
-            intent: Type of response (calculation, retrieval, etc. as string)
-            context: Context dict, optionally containing 'citations' (could be string in legacy code)
-            citations: Direct list of citations for backward compatibility
-            
-        Returns:
-            Formatted response
+        Stream the formatted response using the configured provider with
+        mid-stream fallback protection.
+
+        - If Gemini fails BEFORE the first token is yielded (sent_any=False),
+          we transparently fall back to the Ollama provider.
+        - If Gemini fails AFTER tokens have already been sent (sent_any=True),
+          we re-raise so the endpoint can emit an SSE error event and stop;
+          starting Ollama from scratch at this point would garble the output.
         """
         if not self.is_available():
-            return base_answer
+            yield base_answer
+            return
 
-        # Parse string intent to FormatterIntent enum
         intent_map = {
             'calculation': FormatterIntent.CALCULATION,
             'retrieval': FormatterIntent.RETRIEVAL,
@@ -116,40 +115,49 @@ class OrchestratorFormatterService:
             'hs_code': FormatterIntent.HS_CODE_LOOKUP,
         }
         formatter_intent = intent_map.get(intent.lower(), FormatterIntent.GENERAL)
-        
-        # Merge citations into context if provided separately
-        merged_context = {}
+
+        merged_context: Dict[str, Any] = {}
         if isinstance(context, dict):
             merged_context.update(context)
         elif context is not None:
             merged_context['legacy_context'] = context
-            
         if citations:
             merged_context['citations'] = citations
-            
+
+        sent_any = False
         try:
-            return await self._provider.format_response(
+            async for chunk in self._provider.format_response_stream(
                 response_text=base_answer,
                 intent=formatter_intent,
                 original_question=question,
-                context=merged_context
-            )
+                context=merged_context,
+            ):
+                sent_any = True
+                yield chunk
         except Exception as e:
-            logger.warning(f"Active formatter provider failed: {e}")
-            # If the active provider was Gemini and failed, try to fall back to local Ollama provider if available
-            if getattr(self._provider, "name", "") == "gemini" and "ollama" in self.providers:
-                try:
-                    logger.info("Falling back to local LLM (Ollama) formatter provider...")
-                    return await self.providers["ollama"].format_response(
-                        response_text=base_answer,
-                        intent=formatter_intent,
-                        original_question=question,
-                        context=merged_context
-                    )
-                except Exception as fallback_err:
-                    logger.error(f"Local LLM fallback formatter failed: {fallback_err}")
-            return base_answer
-
+            logger.warning(f"Active formatter provider streaming failed: {e}")
+            if not sent_any:
+                # No tokens delivered yet — safe to restart with Ollama fallback
+                if getattr(self._provider, "name", "") == "gemini" and "ollama" in self.providers:
+                    try:
+                        logger.info("No tokens sent yet. Falling back to local LLM (Ollama)...")
+                        async for chunk in self.providers["ollama"].format_response_stream(
+                            response_text=base_answer,
+                            intent=formatter_intent,
+                            original_question=question,
+                            context=merged_context,
+                        ):
+                            yield chunk
+                        return
+                    except Exception as fallback_err:
+                        logger.error(f"Ollama fallback streaming failed: {fallback_err}")
+                # Both providers failed before first token — yield raw answer
+                yield base_answer
+            else:
+                # Tokens already sent — cannot safely restart; propagate so the
+                # endpoint emits an SSE error event and closes the stream.
+                logger.error("Failure mid-stream after tokens sent. Propagating to emit error event.")
+                raise
 
 
 _formatter_service_instance: Optional[OrchestratorFormatterService] = None

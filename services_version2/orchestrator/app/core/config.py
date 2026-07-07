@@ -29,9 +29,9 @@ class OrchestratorConfig:
         Args:
             env_file: Optional path to .env file. If None, uses default search.
         """
-        # Load environment variables from the service root .env (services_version2/orchestrator/.env)
-        self.service_root = Path(__file__).resolve().parents[2]
-        default_env = self.service_root / ".env"
+        # Load environment variables (prefer explicit file, then service-local .env, then default search)
+        service_root = Path(__file__).resolve().parent
+        default_env = service_root / ".env"
 
         if env_file and env_file.exists():
             load_dotenv(env_file)
@@ -45,7 +45,8 @@ class OrchestratorConfig:
     
     def _setup_paths(self):
         """Set up repository and service paths."""
-        self.repo_root = self.service_root.parent.parent
+        self.service_root = Path(__file__).resolve().parent
+        self.repo_root = self.service_root.parent.parent.parent
         self.configs_dir = self.repo_root / "configs"
         # Look for configs in orchestrator/configs first, then fall back to repo-level configs
         self.orchestrator_configs_dir = self.service_root / "configs"
@@ -664,7 +665,7 @@ class LLMFirstLayerConfig:
         from dotenv import load_dotenv
         from pathlib import Path
         
-        service_root = Path(__file__).resolve().parents[2]
+        service_root = Path(__file__).resolve().parent.parent
         local_env = service_root / ".env"
         if local_env.exists():
             load_dotenv(local_env)

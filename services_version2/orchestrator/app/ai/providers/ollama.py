@@ -193,6 +193,28 @@ class OllamaFormatterProvider(BaseFormatterProvider):
             logger.warning(f"LLM formatting failed: {e}. Returning raw response.")
             return response_text
 
+    async def format_response_stream(
+        self,
+        response_text: str,
+        intent: FormatterIntent,
+        original_question: str,
+        context: Optional[Dict[str, Any]] = None,
+    ):
+        """
+        Fallback streaming implementation for Ollama.
+
+        Ollama does not expose a native token-streaming API through this
+        adapter, so we await the full formatted response and yield it as
+        a single chunk, giving the caller a uniform async-generator interface.
+        """
+        res = await self.format_response(
+            response_text=response_text,
+            intent=intent,
+            original_question=original_question,
+            context=context,
+        )
+        yield res
+
     async def _format_calculation(
         self,
         response_text: str,

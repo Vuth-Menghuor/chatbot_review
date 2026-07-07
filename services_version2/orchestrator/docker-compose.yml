@@ -1,79 +1,24 @@
-# Orchestrator — port 8001
-# Run: cp .env.example .env  (fill secrets)  then  docker compose up -d --build
-# Requires shared network (once): docker network create gdce-network
+version: '3.8'
 
 services:
-  orchestrator-redis:
-    image: redis:7-alpine
-    container_name: orchestrator-redis
-    env_file:
-      - path: .env
-        required: false
-    command: redis-server --requirepass ${REDIS_PASSWORD}
-    volumes:
-      - orchestrator_redis_data:/data
-    networks:
-      - gdce-network
-    restart: unless-stopped
-
-  orchestrator-postgres:
-    image: postgres:16-alpine
-    container_name: orchestrator-postgres
-    env_file:
-      - path: .env
-        required: false
-    environment:
-      POSTGRES_USER: ${PG_USER}
-      POSTGRES_PASSWORD: ${PG_PASSWORD}
-      POSTGRES_DB: ${PG_DATABASE}
-    volumes:
-      - orchestrator_postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${PG_USER} -d ${PG_DATABASE}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    networks:
-      - gdce-network
-    restart: unless-stopped
-
-  orchestrator:
+  orchestrator-service:
     build: .
-    container_name: orchestrator
+    container_name: orchestrator-service
     env_file:
-      - path: .env
-        required: true
+      - .env
     environment:
-      ORCHESTRATOR_HOST: 0.0.0.0
-      ORCHESTRATOR_PORT: 8001
-      RETRIEVAL_SERVICE_URL: http://retrieval:8003
-      CALCULATOR_SERVICE_URL: http://calculator:8002
-      TRADE_DATA_SERVICE_URL: http://trade:8004
-      GENERAL_SERVICE_URL: http://general:8005
-      REDIS_HOST: orchestrator-redis
-      REDIS_PORT: 6379
-      PG_HOST: orchestrator-postgres
-      POSTGRES_HOST: orchestrator-postgres
-      PG_PORT: 5432
-      POSTGRES_PORT: 5432
+      - ORCHESTRATOR_HOST=0.0.0.0
+      - ORCHESTRATOR_PORT=8001
+      - RETRIEVAL_SERVICE_URL=http://retrieval-service:8003
+      - CALCULATOR_SERVICE_URL=http://calculator:8002
+      - TRADE_DATA_SERVICE_URL=http://trade-service:8004
+      - GENERAL_SERVICE_URL=http://general-service:8005
     ports:
       - "8001:8001"
-    depends_on:
-      orchestrator-redis:
-        condition: service_started
-      orchestrator-postgres:
-        condition: service_healthy
     networks:
-      gdce-network:
-        aliases:
-          - orchestrator-service
+      - gdce-network
     restart: unless-stopped
-
-volumes:
-  orchestrator_redis_data:
-  orchestrator_postgres_data:
 
 networks:
   gdce-network:
     external: true
-    name: gdce-network

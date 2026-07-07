@@ -370,6 +370,48 @@ class GeminiFormatterProvider(BaseFormatterProvider):
             logger.error(f"Gemini formatting failed: {e}")
             return response_text
 
+    async def format_response_stream(
+        self,
+        response_text: str,
+        intent: FormatterIntent,
+        original_question: str,
+        context: Optional[Dict[str, Any]] = None,
+    ):
+        """
+        Stream the formatted response using Gemini.
+
+        Raises the exception on failure so the caller (summarizer.py)
+        can decide whether to fall back or emit an error event.
+        """
+        if not self.is_available():
+            logger.warning("Gemini formatter not available, yielding raw response")
+            yield response_text
+            return
+
+        citations = []
+        if context and isinstance(context, dict):
+            citations = context.get("citations", [])
+
+        prompt = self._build_formatting_prompt(
+            response_text=response_text,
+            intent=intent,
+            original_question=original_question,
+            citations=citations,
+        )
+
+        try:
+            logger.debug(f"Streaming formatting response for intent: {intent.value}")
+            response_stream = await self.client.aio.models.generate_content_stream(
+                model=self.model_name,
+                contents=prompt,
+            )
+            async for chunk in response_stream:
+                if chunk.text:
+                    yield chunk.text
+        except Exception as e:
+            logger.error(f"Gemini streaming formatting failed: {e}")
+            raise
+
     def _build_formatting_prompt(
         self,
         response_text: str,
