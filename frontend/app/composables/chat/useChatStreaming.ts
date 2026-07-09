@@ -1,0 +1,141 @@
+import type { StreamingDeps, UnifiedToolResponse } from '~/types/message';
+import {
+  isLocalChartTaskId,
+  normalizeUnifiedToolResponse,
+  unifiedResponseToMarkerText,
+} from '~/utils/tool';
+import { isChatApiConfigured, streamGdceChat } from '~/services/chat-api';
+import { uploadImageFile } from '~/services/files-api';
+import { useAuthStore } from '~/stores/auth.store';
+import { getImageUploadLimits, validateImageFile } from '~/utils/file/imageUpload';
+import {
+  pollAsyncToolTasksWhenEnabled,
+  scheduleDeferredLocalChartTaskMerges,
+} from '~/composables/chat/useAsyncToolTaskPoll';
+
+export function useChatStreaming(deps: StreamingDeps) {
+  function maybeStartAsyncTaskPoll(
+    unified: UnifiedToolResponse,
+    assistantMsgId: string,
+    signal: AbortSignal,
+  ) {
+    const norm = normalizeUnifiedToolResponse(unified);
+    if (!norm.asyncTasks.length) return;
+
+    const mergeDeps = {
+      assistantMsgId,
+      signal,
+      getAssistantMessage: deps.getAssistantMessage,
+      upsertAssistantMessage: deps.upsertAssistantMessage,
+    };
+
+    void scheduleDeferredLocalChartTaskMerges({ ...mergeDeps, asyncTasks: norm.asyncTasks });
+
+    const remoteTasks = norm.asyncTasks.filter((t) => !isLocalChartTaskId(t.taskId));
+    if (remoteTasks.length && deps.chatApi) {
+      void pollAsyncToolTasksWhenEnabled({
+        ...mergeDeps,
+        asyncTasks: remoteTasks,
+        chatApiBaseUrl: deps.chatApi.baseUrl,
+        apiToken: deps.chatApi.apiToken,
+      });
+    }
+  }
+
+  async function prepareAttachments(files: unknown[] | undefined) {
+    const runtimeConfig = useRuntimeConfig();
+    const limits = getImageUploadLimits(
+      runtimeConfig.public.allowedImageTypes as string | string[],
+      runtimeConfig.public.maxImageSizeMb as number | string,
+    );
+    const authStore = useAuthStore();
+    const token = await authStore.getValidAccessToken();
+    if (!token) throw new Error('Not authenticated. Please sign in.');
+
+    const attachments: unknown[] = [];
+    for (const item of files ?? []) {
+      if (item instanceof File) {
+        const validationError = validateImageFile(item, limits);
+        if (validationError) throw new Error(validationError);
+
+        const uploaded = await uploadImageFile(deps.chatApi!.baseUrl, token, item);
+        attachments.push({
+          file_id: uploaded.file_id,
+          name: item.name,
+          mime_type: item.type,
+          size: item.size,
+          url: uploaded.url,
+          object_key: uploaded.object_key,
+          bucket: uploaded.bucket,
+          status: uploaded.status,
+        });
+        continue;
+      }
+      attachments.push(item);
+    }
+    return attachments;
+  }
+
+  async function streamFromChatApi(
+    text: string,
+    files: unknown[] | undefined,
+    assistantMsgId: string,
+  ) {
+    if (!deps.chatApi || !isChatApiConfigured(deps.chatApi)) {
+      throw new Error('Chat API is not configured');
+    }
+
+    const transport = deps.chatApi.transport ?? 'gdce';
+    if (transport !== 'gdce') {
+      throw new Error('Only the GDCE API-layer transport is enabled in this build');
+    }
+
+    const controller = new AbortController();
+    deps.streamController.value = controller;
+    deps.currentRenderType.value = 'thinking';
+    const startedAt = Date.now();
+    let currentContent = '';
+    let firstToken = true;
+    const storageKey = `gdce:upstream-chat:${deps.chatId || 'default'}`;
+    const upstreamChatId = localStorage.getItem(storageKey) || undefined;
+    const attachments = await prepareAttachments(files);
+
+    await streamGdceChat({
+      baseUrl: deps.chatApi.baseUrl,
+      apiToken: deps.chatApi.apiToken,
+      message: text,
+      chatId: upstreamChatId,
+      attachments,
+      signal: controller.signal,
+      onStart: (data) => {
+        const backendChatId = String(data.chat_id ?? '');
+        if (backendChatId) localStorage.setItem(storageKey, backendChatId);
+      },
+      onToken: (content) => {
+        if (deps.stopStreaming.value) return;
+        if (firstToken) {
+          firstToken = false;
+          deps.currentRenderType.value = 'markdown';
+        }
+        currentContent += content;
+        deps.upsertAssistantMessage(assistantMsgId, currentContent, { status: 'streaming' });
+      },
+    });
+
+    if (deps.stopStreaming.value || controller.signal.aborted) return;
+    const unified = {
+      requestId: assistantMsgId,
+      mode: 'stream',
+      status: 'success',
+      tools: [],
+    } as UnifiedToolResponse;
+    const markerText = unifiedResponseToMarkerText(unified);
+    deps.upsertAssistantMessage(assistantMsgId, markerText || currentContent, {
+      generationDurationMs: Date.now() - startedAt,
+      status: 'completed',
+    });
+    maybeStartAsyncTaskPoll(unified, assistantMsgId, controller.signal);
+  }
+
+  return { streamFromChatApi };
+}

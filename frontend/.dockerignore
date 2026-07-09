@@ -1,0 +1,17 @@
+.git
+.github
+.nuxt
+.output
+node_modules
+dist
+coverage
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.idea
+.vscode
+docs
+image*.png
+.tmp-*

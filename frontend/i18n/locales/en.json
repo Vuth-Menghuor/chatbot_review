@@ -1,0 +1,598 @@
+{
+  "common": {
+    "cancel": "Cancel",
+    "close": "Close",
+    "delete": "Delete",
+    "confirm": "Confirm",
+    "rename": "Rename",
+    "share": "Share",
+    "search": "Search",
+    "optional": "optional",
+    "copied": "Copied!",
+    "copy": "Copy",
+    "copyContent": "Copy content",
+    "copyLink": "Copy link"
+  },
+  "auth": {
+    "logoAlt": "General Department of Customs and Excise of Cambodia — 75th Anniversary seal",
+    "login": {
+      "title": "Sign in to ChatGDCE",
+      "subtitle": "Enter your account to access the customs AI chat system.",
+      "email": "Email",
+      "emailPlaceholder": "you{'@'}example.com",
+      "password": "Password",
+      "passwordPlaceholder": "Enter your password",
+      "submit": "Sign in",
+      "forgotPassword": "Forgot password?",
+      "forgotPasswordSoonTitle": "Coming soon",
+      "forgotPasswordSoonMessage": "Password recovery will be available in a future update.",
+      "copyright": "Copyright ©2026 by Department of Information Technology",
+      "continueWithGoogle": "Continue with Google",
+      "orDivider": "or",
+      "continueWithEmail": "or continue with email",
+      "googleSoonTitle": "Coming soon",
+      "googleSoonMessage": "Google sign-in will be available in a future update.",
+      "requiredFields": "Email and password are required.",
+      "termsRequired": "You must accept the Terms and Conditions to continue.",
+      "failed": "Sign in failed. Check your credentials and try again.",
+      "footer": "General Department of Customs and Excise of Cambodia",
+      "noAccount": "Don't have an account?",
+      "registerLink": "Register"
+    },
+    "register": {
+      "title": "Create an account",
+      "subtitle": "Register to access the customs AI chat system.",
+      "fullName": "Full name",
+      "fullNamePlaceholder": "Your full name",
+      "passwordPlaceholder": "At least 8 characters",
+      "submit": "Create account",
+      "requiredFields": "Full name, email, and password are required.",
+      "passwordMin": "Password must be at least 8 characters.",
+      "failed": "Registration failed. Please try again.",
+      "success": "Account created successfully. Please sign in.",
+      "haveAccount": "Already have an account?",
+      "signInLink": "Sign in"
+    },
+    "terms": {
+      "title": "Terms and Conditions",
+      "acceptPrefix": "I agree to the",
+      "acceptLink": "Terms and Conditions",
+      "acceptButton": "I accept",
+      "required": "You must accept the Terms and Conditions to continue.",
+      "lastUpdated": "Last updated: June 2026",
+      "body": {
+        "p1": "By accessing ChatGDCE, you agree to use this customs AI assistant only for lawful purposes related to customs, trade, and regulatory information.",
+        "p2": "You are responsible for safeguarding your account credentials and for all activity under your account. Do not share sensitive personal data unless required for your customs workflow.",
+        "p3": "Responses are provided for guidance and must be verified against official regulations, notices, and procedures issued by the General Department of Customs and Excise of Cambodia.",
+        "p4": "We may update these terms from time to time. Continued use of the service after changes are published constitutes acceptance of the updated terms."
+      }
+    }
+  },
+  "toast": {
+    "dismiss": "Dismiss notification",
+    "responseCompleted": {
+      "title": "Response completed",
+      "message": "ChatGDCE finished responding."
+    }
+  },
+  "chat": {
+    "newChat": "New Chat",
+    "welcomeTitle": "What can Customs AI help you with?",
+    "welcomeSuggestions": {
+      "heading": "Try asking",
+      "hsCode": {
+        "label": "HS code",
+        "description": "Find the correct HS code for your goods",
+        "prompt": "Help me find the HS code for my product"
+      },
+      "showDataAsChat": {
+        "label": "Show data as chat",
+        "description": "Turn tables or reports into a chat summary",
+        "prompt": "Show this customs data in a clear chat-friendly format"
+      },
+      "askQuestion": {
+        "label": "Ask question",
+        "description": "Get help with customs rules and procedures",
+        "prompt": "I have a customs-related question"
+      },
+      "customsGuide": {
+        "label": "Declaration guide",
+        "description": "Step-by-step help for import/export paperwork",
+        "prompt": "Walk me through the customs declaration process"
+      }
+    },
+    "disclaimer": "ChatGDCE gives answers fast, but verify important info.",
+    "placeholder": "Ask anything",
+    "attachFiles": "Attach files",
+    "sendMessage": "Send message",
+    "stopResponse": "Stop response",
+    "moreOptions": "More options",
+    "viewFiles": "View files in chat",
+    "defaultTitle": "Chat",
+    "itemType": "chat",
+    "actions": {
+      "like": "Like",
+      "dislike": "Dislike",
+      "regenerate": "Regenerate",
+      "edit": "Edit",
+      "sources": "Sources ({count})",
+      "download": "Download",
+      "downloadImage": "Download image",
+      "downloadPng": "Download PNG",
+      "downloadReport": "Download report",
+      "regenerateImage": "Regenerate image",
+      "downloadUnavailable": "No file bytes (only metadata after reload)"
+    },
+    "filesPanel": {
+      "files": "Files",
+      "sources": "Sources",
+      "noFilesTitle": "No files shared yet",
+      "noFilesHint": "Files uploaded in this chat will appear here.",
+      "noSourcesTitle": "No sources available",
+      "noSourcesHint": "Sources cited in responses will appear here.",
+      "sourcesCount": "Sources · {count}",
+      "sourceLabel": "Source"
+    }
+  },
+  "interaction": {
+    "title": "Additional input needed",
+    "submit": "Submit",
+    "submitted": "Response submitted",
+    "cancelled": "Cancelled"
+  },
+  "prediction": {
+    "title": "Classification result",
+    "genericTitle": "Prediction result",
+    "valueLabel": "Value",
+    "year": "Year",
+    "confidence": "Confidence",
+    "primaryMatch": "Primary match ({percent}%)",
+    "alternative": "Alt {index}: {hsCode} ({percent}%)",
+    "tariffSection": "Tariff rates",
+    "reason": "Reasoning",
+    "evidence": "Evidence",
+    "tax": {
+      "importDuty": "Import duty",
+      "specialTax": "Special tax",
+      "vat": "VAT",
+      "exportTax": "Export tax"
+    }
+  },
+  "reasoning": {
+    "title": "Reasoning",
+    "thinking": "Thinking..."
+  },
+  "toolOutput": {
+    "title": "Tool output",
+    "views": {
+      "cards": "Cards",
+      "table": "Table",
+      "json": "JSON"
+    }
+  },
+  "ocr": {
+    "title": "OCR extract",
+    "accuracy": "{percent}% accuracy",
+    "pages": "{count} pages"
+  },
+  "image": {
+    "loadError": "Unable to load image.",
+    "promptLabel": "Prompt"
+  },
+  "workflow": {
+    "title": "Workflow"
+  },
+  "table": {
+    "empty": "No table data"
+  },
+  "report": {
+    "title": "Report",
+    "generating": "Generating report…",
+    "error": "Report generation failed."
+  },
+  "error": {
+    "genericTitle": "Something went wrong",
+    "genericBody": "Something went wrong. Please try again.",
+    "network": {
+      "title": "We can't reach the internet right now",
+      "body": "Check your connection, then try again."
+    },
+    "timeout": {
+      "title": "This took longer than expected",
+      "body": "The request timed out. Try again in a few seconds."
+    },
+    "rateLimit": {
+      "title": "Please wait a moment",
+      "body": "Too many requests in a short time. Take a short break and try again."
+    },
+    "server": {
+      "title": "Something went wrong on our side",
+      "body": "The service is temporarily unavailable. Please try again shortly."
+    },
+    "tryAgain": "Try again",
+    "regenerate": "Regenerate",
+    "technicalDetails": "Technical details",
+    "hideDetails": "Hide details",
+    "codeLabel": "Code"
+  },
+  "chart": {
+    "title": "Chart",
+    "generating": "Generating chart…",
+    "empty": "Chart data is not available yet.",
+    "error": "Chart generation failed.",
+    "regenerate": "Regenerate chart",
+    "types": {
+      "bar": "Bar chart",
+      "horizontal-bar": "Horizontal bar chart",
+      "horizontalbar": "Horizontal bar chart",
+      "line": "Line chart",
+      "area": "Area chart",
+      "pie": "Pie chart",
+      "donut": "Donut chart",
+      "scatter": "Scatter plot",
+      "radar": "Radar chart",
+      "heatmap": "Heatmap",
+      "treemap": "Tree map",
+      "tree-map": "Tree map",
+      "funnel": "Funnel chart",
+      "gauge": "Gauge chart",
+      "candlestick": "Candlestick chart",
+      "sankey": "Sankey diagram",
+      "graph": "Network graph",
+      "sunburst": "Sunburst chart",
+      "chart": "Chart",
+      "fallback": "{type} chart"
+    }
+  },
+  "calculator": {
+    "title": "Calculation",
+    "expression": "Expression",
+    "finalResult": "Final Result",
+    "stepFallback": "Step",
+    "empty": "No expression provided",
+    "tabs": {
+      "result": "Result",
+      "formula": "Formula",
+      "steps": "Steps",
+      "note": "Note"
+    }
+  },
+  "sidebar": {
+    "brand": "Customs AI",
+    "toggleWidth": "Toggle sidebar width",
+    "close": "Close sidebar",
+    "projects": "Projects",
+    "newProject": "New project",
+    "recents": "Recents",
+    "recentChats": "Recent chats",
+    "less": "Less",
+    "more": "More",
+    "search": "Search",
+    "searchPlaceholder": "Search...",
+    "newChat": "New Chat",
+    "userMenu": {
+      "open": "Open user menu",
+      "profile": "Profile",
+      "account": "Account",
+      "privacy": "Privacy",
+      "settings": "Settings",
+      "logout": "Log out",
+      "roleAdmin": "Admin"
+    },
+    "chatMenu": {
+      "moveToProject": "Move to project",
+      "generalChat": "General Chat",
+      "pin": "Pin chat",
+      "unpin": "Unpin chat"
+    }
+  },
+  "search": {
+    "placeholder": "Search chats and projects",
+    "noResults": "No results found",
+    "tryAdjusting": "Try adjusting your search terms",
+    "emptyHistory": "No chats or projects yet",
+    "sectionProjects": "Projects",
+    "sectionChats": "Chats",
+    "typeProject": "Project",
+    "typeChat": "Chat",
+    "closeDialog": "Close search",
+    "escClose": "close"
+  },
+  "project": {
+    "defaultTitle": "Project",
+    "label": "Project",
+    "newSource": "New Source",
+    "tabs": {
+      "chats": "Chats",
+      "sources": "Sources"
+    },
+    "itemType": "project",
+    "categories": {
+      "work": "Work",
+      "personal": "Personal",
+      "travel": "Travel",
+      "education": "Education",
+      "health": "Health",
+      "finance": "Finance",
+      "creative": "Creative",
+      "research": "Research"
+    },
+    "create": {
+      "title": "Create project",
+      "description": "Keep chats, files and instructions in one place.",
+      "nameLabel": "Project name",
+      "namePlaceholder": "e.g. Customs valuation review",
+      "category": "Category",
+      "submit": "Create project"
+    }
+  },
+  "dialogs": {
+    "rename": {
+      "title": "Rename",
+      "newName": "New name"
+    },
+    "delete": {
+      "title": "Delete {itemType}?",
+      "message": "{itemName} will be permanently deleted.",
+      "cannotUndo": "This action cannot be undone.",
+      "defaultItem": "this item",
+      "defaultType": "item"
+    },
+    "share": {
+      "title": "Share chat",
+      "createdTitle": "Chat shared",
+      "description": "Only messages up to this point will be shared.",
+      "createdDescription": "Future messages aren't included.",
+      "policy": "Don't share personal information or third-party content without permission, and see our",
+      "usagePolicy": "Usage Policy",
+      "createLink": "Create share link",
+      "options": {
+        "private": {
+          "title": "Keep private",
+          "description": "Only you have access"
+        },
+        "public": {
+          "title": "Create public link",
+          "description": "Anyone with the link can view"
+        }
+      }
+    }
+  },
+  "profile": {
+    "editTitle": "Edit profile",
+    "editDescription": "Update your account details and profile photo.",
+    "accountInfo": "Account information",
+    "photo": "Profile photo",
+    "photoHint": "Use a clear PNG or JPG image.",
+    "changePhoto": "Change photo",
+    "changeAvatar": "Change avatar",
+    "displayName": "Display name",
+    "displayNamePlaceholder": "Your full name",
+    "username": "Username",
+    "usernamePlaceholder": "{'@'}handle",
+    "email": "Email",
+    "emailPlaceholder": "you{'@'}example.com",
+    "phone": "Phone number",
+    "phonePlaceholder": "+855 12 345 678",
+    "address": "Address",
+    "addressPlaceholder": "Street, city, province",
+    "role": "Role",
+    "visibilityHint": "Your display name and username are visible to other members in shared spaces.",
+    "save": "Save changes",
+    "saveSuccess": "Profile updated"
+  },
+  "logout": {
+    "title": "Log out?",
+    "confirm": "Log out",
+    "message": "Are you sure you want to log out? You will be returned to the login page."
+  },
+  "settings": {
+    "title": "Settings",
+    "close": "Close",
+    "reset": {
+      "button": "Reset",
+      "aria": "Reset settings",
+      "success": "Done"
+    },
+    "nav": {
+      "account": "Account",
+      "general": "General",
+      "notifications": "Notifications",
+      "keyboard": "Keyboard",
+      "privacy": "Privacy"
+    },
+    "general": {
+      "description": "Customize appearance, language, chat behavior, and interface."
+    },
+    "account": {
+      "title": "Account",
+      "description": "Manage your profile, contact details, and account security.",
+      "profileTitle": "Profile",
+      "profileDescription": "Your photo and public profile details.",
+      "detailsTitle": "Personal information",
+      "detailsDescription": "Update your name, username, and contact details.",
+      "securityTitle": "Security",
+      "securityDescription": "Manage sign-in and active sessions.",
+      "dangerTitle": "Danger zone",
+      "dangerDescription": "Irreversible actions for your account.",
+      "changePassword": "Change password",
+      "logoutAllDevices": "Log out of all devices",
+      "logoutAllDevicesMessage": "This will sign you out everywhere. You will need to sign in again on each device.",
+      "logoutAllDevicesConfirm": "Log out everywhere",
+      "logoutAllDevicesSuccess": "Signed out of all devices",
+      "deleteAccount": "Delete your account",
+      "deleteAccountMessage": "Your profile, chats, and project data will be permanently removed. This cannot be undone.",
+      "deleteAccountConfirm": "Delete account",
+      "deleteAccountSuccess": "Account deletion requested"
+    },
+    "privacy": {
+      "title": "Privacy",
+      "description": "How ChatGDCE handles your data and conversations.",
+      "body": "Your chats and uploaded project files are used to generate responses for your organization. Contact your administrator for retention, export, and deletion policies.",
+      "infoTitle": "Privacy",
+      "intro": {
+        "beforeLinks": "ChatGDCE believes in transparent data practices. Learn how your information is protected when using ChatGDCE, and visit our",
+        "privacyCenter": "Privacy Center",
+        "betweenLinks": "and",
+        "privacyPolicy": "Privacy Policy",
+        "afterLinks": "for more details."
+      },
+      "links": {
+        "privacyCenterUrl": "https://www.customs.gov.kh",
+        "privacyPolicyUrl": "https://www.customs.gov.kh",
+        "protectData": "How we protect your data",
+        "protectDataUrl": "https://www.customs.gov.kh",
+        "useData": "How we use your data",
+        "useDataUrl": "https://www.customs.gov.kh"
+      },
+      "preferencesTitle": "Preferences",
+      "items": {
+        "locationMetadata": {
+          "title": "Location metadata",
+          "description": "Allow ChatGDCE to use coarse location metadata (city/region) to improve product experiences.",
+          "learnMore": "Learn more.",
+          "learnMoreUrl": "https://www.customs.gov.kh"
+        },
+        "helpImproveModel": {
+          "title": "Help improve ChatGDCE",
+          "description": "Allow the use of your chats and coding sessions to train and improve ChatGDCE AI models.",
+          "learnMore": "Learn more.",
+          "learnMoreUrl": "https://www.customs.gov.kh"
+        }
+      }
+    },
+    "keyboard": {
+      "title": "Keyboard shortcuts",
+      "description": "Use these shortcuts to navigate ChatGDCE faster.",
+      "groups": {
+        "composer": "Composer",
+        "navigation": "Navigation",
+        "settings": "Settings",
+        "general": "General"
+      },
+      "shortcuts": {
+        "search": {
+          "label": "Open search",
+          "hint": "Find chats and projects"
+        },
+        "newChat": {
+          "label": "New chat",
+          "hint": "Start a new conversation"
+        },
+        "toggleSidebar": {
+          "label": "Toggle sidebar",
+          "hint": "Show or hide the left sidebar"
+        },
+        "openSettings": {
+          "label": "Open settings",
+          "hint": "Open the General settings section"
+        },
+        "openAccount": {
+          "label": "Open account",
+          "hint": "Open your profile and account details"
+        },
+        "openKeyboard": {
+          "label": "Keyboard shortcuts",
+          "hint": "Open this shortcuts reference"
+        },
+        "sendMessage": {
+          "label": "Send message",
+          "hint": "Send the current chat message (depends on Enter to send setting)"
+        },
+        "newLine": {
+          "label": "New line",
+          "hint": "Insert a line break in the chat input"
+        },
+        "closeDialog": {
+          "label": "Close dialog",
+          "hint": "Dismiss modals and popovers"
+        }
+      }
+    },
+    "notifications": {
+      "title": "Notifications",
+      "description": "Choose how you want to be notified for each activity.",
+      "channels": {
+        "push": "Push",
+        "email": "Email",
+        "off": "Off"
+      },
+      "items": {
+        "responseCompleted": {
+          "title": "Responses",
+          "description": "Get notified when ChatGDCE finishes responding to a request."
+        },
+        "projects": {
+          "title": "Projects",
+          "description": "Get notified when you receive an invitation to a shared project."
+        },
+        "tasks": {
+          "title": "Tasks",
+          "description": "Get notified when tasks you created have updates."
+        },
+        "newMessages": {
+          "title": "New messages",
+          "description": "Get notified about new messages in your recent chats."
+        }
+      },
+      "responseCompleted": {
+        "title": "Response completed",
+        "description": "Show a toast when ChatGDCE finishes responding"
+      }
+    },
+    "language": {
+      "title": "Language",
+      "description": "Choose the language preference for this app.",
+      "options": {
+        "en": "English",
+        "km": "Khmer"
+      },
+      "selectorLabel": "Select language"
+    },
+    "appearance": {
+      "title": "Appearance",
+      "description": "Choose how the app looks on your device.",
+      "options": {
+        "light": {
+          "label": "Light",
+          "description": "Use light theme."
+        },
+        "dark": {
+          "label": "Dark",
+          "description": "Use dark theme."
+        },
+        "custom": {
+          "label": "Custom",
+          "description": "Use GDCE custom colors."
+        }
+      }
+    },
+    "chat": {
+      "title": "Chat",
+      "description": "Customize how conversations behave.",
+      "enterToSend": {
+        "title": "Enter to send",
+        "description": "Press Enter to send. When off, use Ctrl+Enter or Cmd+Enter instead."
+      },
+      "autoScroll": {
+        "title": "Auto-scroll to new messages",
+        "description": "Automatically scroll down when new messages arrive while you are at the bottom."
+      }
+    },
+    "ui": {
+      "title": "Interface",
+      "description": "Adjust layout and readability across the app.",
+      "defaultSidebarRail": {
+        "title": "Start with collapsed sidebar",
+        "description": "Open the app with the sidebar in rail (icon-only) mode on desktop."
+      },
+      "fontSize": {
+        "title": "Font size",
+        "description": "Change the base text size for the app.",
+        "small": "Small",
+        "medium": "Medium",
+        "large": "Large"
+      }
+    }
+  }
+}

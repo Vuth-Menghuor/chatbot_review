@@ -1,0 +1,21 @@
+# Frontend — port 3000
+# Run: docker compose up -d --build
+
+services:
+  frontend:
+    build:
+      context: .
+      args:
+        NUXT_PUBLIC_GDCE_API_ENABLED: ${NUXT_PUBLIC_GDCE_API_ENABLED:-true}
+        NUXT_PUBLIC_GDCE_API_BASE_URL: ${NUXT_PUBLIC_GDCE_API_BASE_URL:-http://localhost:8000}
+        NUXT_PUBLIC_GDCE_DEV_EMAIL: ${NUXT_PUBLIC_GDCE_DEV_EMAIL:-frontend-dev@example.com}
+        NUXT_PUBLIC_GDCE_DEV_PASSWORD: ${NUXT_PUBLIC_GDCE_DEV_PASSWORD:-password123}
+    container_name: frontend
+    environment:
+      NUXT_PUBLIC_GDCE_API_ENABLED: ${NUXT_PUBLIC_GDCE_API_ENABLED:-true}
+      NUXT_PUBLIC_GDCE_API_BASE_URL: ${NUXT_PUBLIC_GDCE_API_BASE_URL:-http://localhost:8000}
+      NUXT_PUBLIC_GDCE_DEV_EMAIL: ${NUXT_PUBLIC_GDCE_DEV_EMAIL:-frontend-dev@example.com}
+      NUXT_PUBLIC_GDCE_DEV_PASSWORD: ${NUXT_PUBLIC_GDCE_DEV_PASSWORD:-password123}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    restart: unless-stopped

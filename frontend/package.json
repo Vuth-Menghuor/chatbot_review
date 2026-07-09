@@ -1,0 +1,58 @@
+{
+  "name": "frontend",
+  "type": "module",
+  "private": true,
+  "packageManager": "pnpm@10.19.0",
+  "pnpm": {
+    "overrides": {
+      "unimport": "^6.1.1"
+    }
+  },
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare",
+    "typecheck": "vue-tsc --noEmit",
+    "lint": "eslint . --ext .ts,.vue",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check"
+  },
+  "dependencies": {
+    "@comark/nuxt": "^0.3.1",
+    "@comark/vue": "^0.3.1",
+    "@nuxtjs/i18n": "^10.4.0",
+    "@pinia/nuxt": "^0.11.3",
+    "@shikijs/langs": "^4.0.2",
+    "@shikijs/themes": "^4.0.2",
+    "date-fns": "^4.1.0",
+    "dompurify": "^3.3.3",
+    "echarts": "^6.0.0",
+    "lucide-vue-next": "^1.0.0",
+    "markdown-it": "^14.1.1",
+    "mermaid": "^11.14.0",
+    "nuxt": "^4.4.2",
+    "pdfjs-dist": "^5.7.284",
+    "pinia": "^3.0.4",
+    "shiki": "^4.0.2",
+    "striptags": "^3.2.0",
+    "vue": "^3.5.30",
+    "vue-router": "^5.0.4",
+    "vuetify": "^4.0.4"
+  },
+  "devDependencies": {
+    "@nuxt/eslint": "^1.9.0",
+    "@tailwindcss/postcss": "^4.2.2",
+    "@types/markdown-it": "^14.1.2",
+    "eslint": "^9.39.1",
+    "eslint-config-prettier": "^10.1.8",
+    "lightningcss": "^1.32.0",
+    "prettier": "^3.6.2",
+    "sass": "^1.98.0",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^6.0.2",
+    "vue-tsc": "^3.2.6",
+    "vuetify-nuxt-module": "^0.19.5"
+  }
+}

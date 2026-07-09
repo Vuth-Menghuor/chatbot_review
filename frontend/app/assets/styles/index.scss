@@ -1,0 +1,21 @@
+// Scss Partials - must use @use at the very top
+@use './scss/transition';
+@use './scss/global';
+@use './scss/components';
+
+// Tailwind v4 Reference - using interpolation to avoid Sass compiler warnings
+@reference "./tailwind.css";
+
+// External CSS - using @import for better Sass support for plain CSS
+// @import "@mdi/font/css/materialdesignicons.css";
+
+// @use './scss/overlay';
+// @use './scss/dialog';
+// @use './scss/table';
+// @use './scss/form';
+// @use './scss/list';
+// @use './scss/checkbox';
+// @use './scss/drawer';
+// @use './scss/datepicker';
+// @use './scss/tab';
+// @use './scss/select';

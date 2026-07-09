@@ -1,0 +1,230 @@
+<template>
+  <div
+    ref="containerRef"
+    class="markdown-body"
+  >
+    <div :key="mermaidRemountKey">
+      <template v-for="section in parsedSections" :key="section.key">
+        <div v-if="section.type === 'html'" v-html="section.content" />
+        <TableRenderer
+          v-else-if="section.type === 'table' && section.tableBlock"
+          :block="section.tableBlock"
+          :animate="!props.loading"
+        />
+        <ChartTaskRenderer
+          v-else-if="section.type === 'chart' && section.chartBlock"
+          :block="section.chartBlock"
+        />
+      </template>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useTheme } from 'vuetify';
+import type { MessageBlock } from '../../types/message';
+import {
+  useMarkdown,
+  useMarkdownCodeCopy,
+  highlighterReady,
+} from '~/composables/renderers/useMarkdownRenderer';
+import { useMarkdownFenceHighlighter } from '~/composables/renderers/useMarkdownFenceHighlighter';
+import { useTypewriter } from '~/composables/message/useTypewriter';
+import { defaultTypingConfig } from '~/composables/message/typingDefaults';
+import TableRenderer from '~/components/renderers/TableRenderer.vue';
+import ChartTaskRenderer from '~/components/renderers/ChartTaskRenderer.vue';
+import {
+  areMermaidFencesExplicitlyClosed,
+  hasMermaidFence,
+  loadMermaid,
+  normalizeLatexInMarkdown,
+  normalizeMermaidLLMOutput,
+  parseMarkdownSections,
+} from '~/utils/markdown';
+import { legacyToolContentToMarkdown } from '~/utils/tool/formulaToMarkdown';
+
+const props = defineProps<{
+  block: MessageBlock;
+  loading?: boolean;
+}>();
+
+const { t, locale } = useI18n();
+const { render } = useMarkdown();
+const containerRef = ref<HTMLElement | null>(null);
+const theme = useTheme();
+const mermaidIsDark = computed(() => theme.global.current.value.dark);
+const mermaidRemountKey = ref(0);
+
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function runMermaidInContainer() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  if (!areMermaidFencesExplicitlyClosed(displayText.value)) {
+    return;
+  }
+  const root = containerRef.value;
+  if (!root) {
+    return;
+  }
+  const nodes = root.querySelectorAll<HTMLElement>('.mermaid:not([data-processed])');
+  if (!nodes.length) {
+    return;
+  }
+  const mermaid = await loadMermaid();
+  mermaid.initialize({
+    startOnLoad: false,
+    securityLevel: 'strict',
+    suppressErrorRendering: true,
+    theme: mermaidIsDark.value ? 'dark' : 'default',
+  });
+
+  for (const element of Array.from(nodes)) {
+    if (element.getAttribute('data-processed')) {
+      continue;
+    }
+
+    let text = (element.textContent ?? '').trim();
+    if (!text) {
+      continue;
+    }
+
+    const normalized = normalizeMermaidLLMOutput(text);
+    if (normalized !== text) {
+      element.replaceChildren(document.createTextNode(normalized));
+      text = normalized;
+    }
+
+    element.classList.remove('mermaid-source-only');
+    const snapshot = text;
+
+    try {
+      await mermaid.run({ nodes: [element], suppressErrors: true });
+    } catch {
+      element.removeAttribute('data-processed');
+      element.replaceChildren(document.createTextNode(snapshot));
+      element.classList.add('mermaid', 'mermaid-source-only');
+    }
+  }
+}
+
+function scheduleMermaidRun() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+  }
+  const delay = props.loading ? 250 : 0;
+  debounceTimer = setTimeout(async () => {
+    debounceTimer = null;
+    await nextTick();
+    try {
+      await runMermaidInContainer();
+    } catch {
+      /* invalid or partial diagrams during streaming */
+    }
+  }, delay);
+}
+
+const textTarget = computed(() => {
+  const content = props.block.content;
+  let base: string;
+  if (typeof content === 'string') {
+    base = content;
+  } else {
+    const legacy =
+      legacyToolContentToMarkdown('calculator', content, locale.value) ??
+      legacyToolContentToMarkdown('math', content, locale.value);
+    if (legacy) {
+      base = legacy;
+    } else if (content && typeof content === 'object') {
+      base = JSON.stringify(content, null, 2);
+    } else {
+      base = String(content ?? '');
+    }
+  }
+  return normalizeLatexInMarkdown(base);
+});
+
+const typewriterEnabled = computed(() => !props.loading);
+const { typedText, flush: flushTypewriter } = useTypewriter(textTarget, typewriterEnabled, {
+  config: defaultTypingConfig,
+});
+
+const displayText = computed(() => (props.loading ? textTarget.value : typedText.value));
+
+watch(
+  () => props.loading,
+  (loading, wasLoading) => {
+    if (wasLoading && !loading && hasMermaidFence(textTarget.value)) {
+      flushTypewriter();
+    }
+  },
+);
+
+onMounted(() => {
+  if (!props.loading && hasMermaidFence(textTarget.value)) {
+    flushTypewriter();
+  }
+});
+
+const sanitizedHtml = computed(() => {
+  const _ = highlighterReady.value;
+  return render(displayText.value);
+});
+
+const parsedSections = computed(() =>
+  parseMarkdownSections(sanitizedHtml.value, {
+    blockId: props.block.id,
+    isComplete: !props.loading,
+    onTableParseError: () => undefined,
+  }),
+);
+
+watch(mermaidIsDark, () => {
+  mermaidRemountKey.value += 1;
+});
+
+watch(
+  [sanitizedHtml, () => props.loading, mermaidRemountKey],
+  () => {
+    scheduleMermaidRun();
+  },
+  { flush: 'post' },
+);
+
+onBeforeUnmount(() => {
+  if (debounceTimer) clearTimeout(debounceTimer);
+});
+
+useMarkdownCodeCopy(containerRef, {
+  copyLabel: () => t('common.copy'),
+  copiedLabel: () => t('common.copied'),
+});
+useMarkdownFenceHighlighter(containerRef, mermaidIsDark, sanitizedHtml);
+</script>
+
+<style scoped>
+.markdown-body {
+  transition: opacity 180ms ease;
+}
+
+.markdown-body :deep(.shiki-markdown-wrap pre) {
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  background-color: transparent !important;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.markdown-body :deep(.shiki-markdown-wrap .shiki) {
+  background-color: transparent !important;
+}
+</style>

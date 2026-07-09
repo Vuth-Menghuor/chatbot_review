@@ -1,0 +1,15 @@
+.no-transition {
+  transition: none !important;
+  * {
+    transition: none !important;
+  }
+}
+
+// Sidebar Resize Handle
+.sidebar-resize-handle {
+  @apply transition-colors;
+
+  &.is-dragging {
+    @apply bg-blue-500/10;
+  }
+}
