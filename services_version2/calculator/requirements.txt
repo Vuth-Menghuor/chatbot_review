@@ -18,6 +18,9 @@
   # Config
   PyYAML==6.0.1
 
+  # Redis (exchange rate cache)
+  redis==5.0.1
+
   # Optional: semantic HS code search via Qdrant
   qdrant-client==1.7.0
 

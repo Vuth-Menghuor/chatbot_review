@@ -2,7 +2,7 @@
 
 > **Owner:** Vechika | **Port:** `8002` | **Version:** `2.0.0` (reference microservice)
 
-Import tax calculation service for Cambodia customs (GDCE).  
+Import tax calculation service for Cambodia customs (GDCE).
 This is the **reference implementation** for the GDCE-ChatBot microservice migration.
 
 ---
@@ -29,8 +29,7 @@ services/calculator/
 │   └── calculator.py       # ImportTaxCalculator (uses formulas + DatabaseInterface)
 │
 ├── infrastructure/         # I/O adapters
-│   ├── __init__.py         # Exports CSVDatabase
-│   ├── csv_database.py     # CSV-backed duty rate database (DatabaseInterface impl)
+│   ├── __init__.py
 │   └── retrieval_client.py # HTTP client → Retrieval Service (placeholder)
 │
 ├── tests/                  # Automated tests
@@ -134,7 +133,7 @@ Swagger UI: `http://127.0.0.1:8002/docs`
 
 ## Configuration
 
-All settings are documented in [`config.yaml`](./config.yaml).  
+All settings are documented in [`config.yaml`](./config.yaml).
 Override any setting with environment variables (see the reference table at the bottom of that file).
 
 Key variables for local dev:
@@ -171,7 +170,7 @@ $env:PYTHONPATH = (Get-Location).Path
 | **Phase 2** | ✅ Done | Logic split — core/calculator, core/formulas, api schemas/endpoints                                     |
 | **Phase 3** | ✅ Done | Dependency cleanup — core has zero FastAPI/Flask imports; api only calls core; no cross-service imports |
 | **Phase 4** | ✅ Done | API standardization — request/response models, router structure, error handling                         |
-| **Phase 5** | ✅ Done | Config & infra — config.yaml + env overrides, CSV infra adapter                                         |
+| **Phase 5** | ✅ Done | Config & infra — config.yaml + env overrides, PostgreSQL adapter                                         |
 | **Phase 6** | ✅ Done | Tests — test_core.py, test_api.py cover core math + API validation                                      |
 | **Phase 7** | ✅ Done | Documentation — README updated (ownership, endpoints, config, run, test)                                |
 
@@ -184,7 +183,7 @@ main.py  →  app.py (create_app)
                ├── api/routes.py       (mounts endpoints)
                │     └── api/endpoints.py  (HTTP handlers)
                │     └── api/deps.py       (DB + settings injection)
-               │           └── infrastructure/csv_database.py (DatabaseInterface impl)
+               │           └── infrastructure/unified_database.py (DatabaseInterface impl)
                └── core/                  (business logic, no frameworks)
                        ├── calculator.py  (ImportTaxCalculator, uses formulas)
                        ├── formulas.py    (pure math)
@@ -195,8 +194,8 @@ main.py  →  app.py (create_app)
 ## Key Design Decisions
 
 - **Framework-free core** — core/ has zero FastAPI/Flask/Pydantic/SQLAlchemy imports.
-- **Adapter pattern** — infrastructure implements `DatabaseInterface`; swap CSV → DB later without touching core/api.
+- **Adapter pattern** — infrastructure implements `DatabaseInterface`; swap DB implementations without touching core/api.
 - **create_app factory** — clean test isolation; override deps via `app.dependency_overrides`.
-- **Config via env** — `get_settings()` reads env (e.g., `DUTY_RATES_CSV_PATH`, `USD_TO_KHR_RATE`).
+- **Config via env** — `get_settings()` reads env (e.g., `CALCULATOR_DB_HOST`, `USD_TO_KHR_RATE`).
 - **Tests first** — API and core tests provided as reference for other services.
 - **Future (MCP)** — plan to evaluate Model Context Protocol for standardized API exposure to LLM orchestrators.

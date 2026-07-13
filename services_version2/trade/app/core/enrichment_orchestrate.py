@@ -95,7 +95,7 @@ def orchestrate_query_plan(scoped_plan: ScopedQueryPlan) -> FinalQueryPlan:
         frequency = "M"
 
     # Apply frequency default for range queries
-    from app.handlers.strategies import STRATEGIES
+    from app.registry.strategies import STRATEGIES
     strategy = STRATEGIES.get(scoped_plan.intent)
     default_frequency = strategy.default_frequency if strategy else None
 
@@ -138,7 +138,7 @@ def orchestrate_query_plan(scoped_plan: ScopedQueryPlan) -> FinalQueryPlan:
                 elif frequency == "S" and s_sub == "S1" and e_sub == "S2":
                     is_full_year_range = True
 
-        if is_full_year_range:
+        if is_full_year_range and start_period:
             period = start_period[:4]
             start_period = None
             end_period = None

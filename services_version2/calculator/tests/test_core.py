@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from services_version2.calculator_version2.core import formulas
-from services_version2.calculator_version2.core.calculator import CalculationRequest, ImportTaxCalculator, DatabaseInterface
+from calculator.app.services import formulas
+from calculator.app.services.calculator import CalculationRequest, ImportTaxCalculator, DatabaseInterface
 
 
 class FakeDB(DatabaseInterface):

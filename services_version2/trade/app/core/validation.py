@@ -10,7 +10,7 @@ import logging
 from typing import Any
 
 from app.core.exceptions import ValidationError
-from app.core.semantic_registry import DATASET_CONFIG, INTENT_RULES, STRUCTURE
+from app.registry.semantic_registry import DATASET_CONFIG, INTENT_RULES, STRUCTURE
 from app.schemas.query_plan import FinalQueryPlan
 
 logger = logging.getLogger(__name__)

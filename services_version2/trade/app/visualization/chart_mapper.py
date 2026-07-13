@@ -11,6 +11,18 @@ from app.visualization.transformers import (
 )
 
 
+def _normalize_flow_to_ex_im(flow: str) -> str:
+    """Standardize flow strings (e.g. 'EXPORT' or 'EX' -> 'EX', 'IMPORT' or 'IM' -> 'IM')."""
+    if not flow:
+        return ""
+    flow_clean = str(flow).strip().upper()
+    if flow_clean in ("EX", "EXPORT"):
+        return "EX"
+    if flow_clean in ("IM", "IMPORT"):
+        return "IM"
+    return flow_clean
+
+
 def _resolve_column_key(row: Dict[str, Any], target_key: str) -> str:
     """Find a matching key in the row, supporting exact and case-insensitive fallbacks."""
     if target_key in row:
@@ -29,7 +41,6 @@ def _resolve_column_key(row: Dict[str, Any], target_key: str) -> str:
         "HS_CODE": ["hs_code", "HS_CHAPTER", "hs_chapter", "HS_HEADING", "hs_heading"],
         "HS_CHAPTER": ["hs_chapter", "HS_CODE", "hs_code", "HS_HEADING", "hs_heading"],
         "HS_HEADING": ["hs_heading", "HS_CODE", "hs_code", "HS_CHAPTER", "hs_chapter"],
-        # Section 20: growth_rate_pct MUST NOT fall back to VALUE_USD or any other metric.
         # An empty list forces the catch-all path, which is intercepted by the growth guard below.
         "growth_rate_pct": [],
     }
@@ -48,7 +59,7 @@ def _resolve_group_by_column(first_row: Dict[str, Any], group_by: List[str]) -> 
     trend-intent secondary series resolution. Returns None if no group_by
     dimension can be matched against the row's keys.
     """
-    from app.core.semantic_registry import find_dimension_by_synonym
+    from app.registry.semantic_registry import find_dimension_by_synonym
 
     for g in group_by:
         mapped_g = find_dimension_by_synonym(str(g)) or str(g)
@@ -116,7 +127,6 @@ def generate_visualizations(
         if not years_list or len(years_list) <= 1:
             is_single_period = True
 
-    # Section 24: Detect monthly/quarterly/semester comparison queries with multiple countries
     is_time_series_comparison = False
     partner_col = next((k for k in first_row.keys() if k.upper() == "PARTNER_COUNTRY"), None)
     if intent == "comparison" and period_key and partner_col:
@@ -157,7 +167,6 @@ def generate_visualizations(
 
     value_col = _resolve_column_key(first_row, default_value_col)
 
-    # Section 20: Growth guard — strict priority, runs before ALL chart-type branching.
     # 1. growth_rate_pct present and non-null in ≥1 row AND growth_valid == True → allow chart
     # 2. Any other condition → empty state only
     # 3. VALUE_USD substitution under growth intent → PROHIBITED (structurally enforced here)
@@ -247,10 +256,11 @@ def generate_visualizations(
     requested_flow = params.get("trade_direction") or \
                      params.get("filters", {}).get("FLOW")
     if requested_flow and intent == "summary":
+        req_flow_norm = _normalize_flow_to_ex_im(requested_flow)
         chart_rows = [
             r for r in rows
             if not any(k.upper() == "FLOW" for k in r.keys()) or \
-               str(r.get(next(k for k in r.keys() if k.upper() == "FLOW"), r.get("flow", ""))).upper() == requested_flow.upper()
+               _normalize_flow_to_ex_im(r.get(next(k for k in r.keys() if k.upper() == "FLOW"), r.get("flow", ""))) == req_flow_norm
         ]
 
     if intent == "trade_balance":
@@ -318,11 +328,12 @@ def generate_visualizations(
     sort_param = params.get("sort") or ""
     if "NET_WEIGHT" in sort_param.upper() or "WEIGHT" in sort_param.upper():
         sort_col = "NET_WEIGHT"
+    sort_order = params.get("sort_order", "desc")
     visualization_data = None
     if chart_type == "bar":
         visualization_data = transform_to_bar_chart(
             chart_rows, label_col, value_col, title, dataset_label,
-            user_limit=user_limit, sort_col=sort_col
+            user_limit=user_limit, sort_col=sort_col, sort_order=sort_order
         )
     elif chart_type == "line":
         split_flow = (intent != "growth")
@@ -342,7 +353,7 @@ def generate_visualizations(
         FLOW_LABELS = {"EX": "Exports", "IM": "Imports"}
         lbl_str = str(lbl)
         if str(label_col).upper() == "FLOW":
-            lbl_str = FLOW_LABELS.get(lbl_str.upper(), lbl_str)
+            lbl_str = FLOW_LABELS.get(_normalize_flow_to_ex_im(lbl_str), lbl_str)
 
         # Extract requested metrics
         req_metrics = [str(m).upper() for m in (params.get("metrics") or [])]

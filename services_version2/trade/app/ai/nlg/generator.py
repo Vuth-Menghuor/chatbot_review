@@ -91,37 +91,11 @@ def generate_message(facts: Dict[str, Any]) -> str:
         return _append_data_quality_caveats(_generate_fallback_template(facts), facts)
 
 def _append_data_quality_caveats(message: str, facts: Dict[str, Any]) -> str:
-    """Ensure data quality and availability warnings are appended to the message."""
-    dq = facts.get("data_quality") or {}
-    notes = []
+    """Ensure data quality and availability warnings are appended to the message.
 
-    # 1. Mismatch warning
-    if dq.get("period_mismatch_note"):
-        notes.append(dq["period_mismatch_note"])
-
-    # 2. Range truncation warning
-    if dq.get("period_coverage_note"):
-        notes.append(dq["period_coverage_note"])
-
-    # 3. Row limit truncation warning
-    if dq.get("truncation_note"):
-        notes.append(dq["truncation_note"])
-
-    # 4. Partial/YTD year warning (only if not already in message)
-    if dq.get("is_partial_period") and dq.get("partial_year_note"):
-        note = dq["partial_year_note"]
-        if note not in message:
-            notes.append(note)
-
-    if notes:
-        # Strip trailing periods to format cleanly
-        clean_notes = []
-        for n in notes:
-            if n not in message:
-                clean_notes.append(n.strip().rstrip("."))
-        if clean_notes:
-            msg_clean = message.strip().rstrip(".")
-            return f"{msg_clean}. ({'; '.join(clean_notes)}.)"
+    NOTE: We now return the clean message directly to keep conversational text readable.
+    Technical warnings (truncation, partial year) remain in summary.data_quality for UI badges.
+    """
     return message
 
 def _generate_fallback_template(facts: Dict[str, Any]) -> str:

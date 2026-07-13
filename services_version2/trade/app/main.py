@@ -115,6 +115,7 @@ async def _general_error(request, exc: Exception):
 @app.on_event("startup")
 async def startup_event():
     logger.info("Trade Query Service starting...")
+    logger.info(f"Cache configuration: ENABLED={settings.cache_enabled}, REDIS_URL={settings.redis_url}")
     service = TradeService()
     set_service(service)
     logger.info("TradeService injected.")

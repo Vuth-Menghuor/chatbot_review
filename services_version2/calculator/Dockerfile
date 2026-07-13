@@ -8,14 +8,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . /app/services_version2/calculator_version2/
+# Copy the restructured calculator package into a 'calculator' subdir
+# so Python can import it as a module (calculator.main:app)
+COPY . /app/calculator/
 
-ENV PYTHONPATH=/app/services_version2
+ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8002
 
-CMD ["uvicorn", "calculator_version2.main:app", "--host", "0.0.0.0", "--port", "8002"]
+CMD ["uvicorn", "calculator.main:app", "--host", "0.0.0.0", "--port", "8002"]

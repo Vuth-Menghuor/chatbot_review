@@ -7,6 +7,18 @@ from app.visualization.base import COLUMN_MAP
 from app.visualization.numeric_utils import to_float
 
 
+def _normalize_flow_to_ex_im(flow: str) -> str:
+    """Standardize flow strings (e.g. 'EXPORT' or 'EX' -> 'EX', 'IMPORT' or 'IM' -> 'IM')."""
+    if not flow:
+        return ""
+    flow_clean = str(flow).strip().upper()
+    if flow_clean in ("EX", "EXPORT"):
+        return "EX"
+    if flow_clean in ("IM", "IMPORT"):
+        return "IM"
+    return flow_clean
+
+
 def transform_to_table(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Convert raw DAL rows into the standardized table schema."""
     if not rows:
@@ -48,6 +60,7 @@ def transform_to_bar_chart(
     dataset_label: str = "Trade Value (USD)",
     user_limit: Optional[int] = None,
     sort_col: Optional[str] = None,
+    sort_order: str = "desc",
 ) -> Dict[str, Any]:
     """Generate bar chart JSON payload."""
     if not rows:
@@ -65,7 +78,7 @@ def transform_to_bar_chart(
         periods = sorted(list(periods_set))
         flow_groups: Dict[str, Dict[str, float]] = {}
         for r in rows:
-            f = str(r.get(flow_key, "EX")).upper()
+            f = _normalize_flow_to_ex_im(r.get(flow_key, "EX"))
             p = str(r.get(period_key))
             val = 0.0
             try:
@@ -125,15 +138,11 @@ def transform_to_bar_chart(
 
     FLOW_LABELS = {"EX": "Exports", "IM": "Imports"}
 
-    # Sort and cap single series
+    # Cap single series while preserving original table/records order
     original_count = len(rows)
-    sorted_rows = list(rows)
-
-    effective_sort_col = sort_col if sort_col else value_col
-    sorted_rows.sort(key=lambda r: to_float(r.get(effective_sort_col) or r.get(effective_sort_col.lower())), reverse=True)
     settings = get_settings()
     limit_cap = user_limit if user_limit is not None else settings.max_chart_items
-    capped_rows = sorted_rows[:limit_cap]
+    capped_rows = rows[:limit_cap]
 
     labels = []
     full_labels = []
@@ -150,10 +159,10 @@ def transform_to_bar_chart(
 
         lbl_str = str(lbl)
         if str(label_col).upper() == "FLOW":
-            lbl_str = FLOW_LABELS.get(lbl_str.upper(), lbl_str)
-        elif has_multiple_flows:
+            lbl_str = FLOW_LABELS.get(_normalize_flow_to_ex_im(lbl_str), lbl_str)
+        elif has_multiple_flows and flow_key:
             flow_val = str(r.get(flow_key)).upper()
-            lbl_str = f"{lbl_str} ({FLOW_LABELS.get(flow_val, flow_val)})"
+            lbl_str = f"{lbl_str} ({FLOW_LABELS.get(_normalize_flow_to_ex_im(flow_val), flow_val)})"
 
         full_labels.append(lbl_str)
         display_lbl = lbl_str
@@ -255,7 +264,7 @@ def transform_to_line_chart(
     if has_flow and split_flow:
         flow_groups: Dict[str, Dict[str, float]] = {}
         for r in rows:
-            f = str(r.get(flow_key, "EX")).upper()
+            f = _normalize_flow_to_ex_im(r.get(flow_key, "EX"))
             period = str(r.get(label_col))
             val = to_float(r.get(value_col, 0.0))
 
@@ -306,14 +315,11 @@ def transform_to_pie_chart(
     """Generate pie chart JSON payload."""
     FLOW_LABELS = {"EX": "Exports", "IM": "Imports"}
 
-    # Sort and cap
+    # Cap single series while preserving original table/records order
     original_count = len(rows)
-    sorted_rows = list(rows)
-
-    sorted_rows.sort(key=lambda r: to_float(r.get(value_col)), reverse=True)
     settings = get_settings()
     limit_cap = user_limit if user_limit is not None else settings.max_chart_items
-    capped_rows = sorted_rows[:limit_cap]
+    capped_rows = rows[:limit_cap]
 
     labels = []
     full_labels = []
@@ -331,10 +337,10 @@ def transform_to_pie_chart(
 
         lbl_str = str(lbl)
         if str(label_col).upper() == "FLOW":
-            lbl_str = FLOW_LABELS.get(lbl_str.upper(), lbl_str)
-        elif has_multiple_flows:
+            lbl_str = FLOW_LABELS.get(_normalize_flow_to_ex_im(lbl_str), lbl_str)
+        elif has_multiple_flows and flow_key:
             flow_val = str(r.get(flow_key)).upper()
-            lbl_str = f"{lbl_str} ({FLOW_LABELS.get(flow_val, flow_val)})"
+            lbl_str = f"{lbl_str} ({FLOW_LABELS.get(_normalize_flow_to_ex_im(flow_val), flow_val)})"
 
         full_labels.append(lbl_str)
         display_lbl = lbl_str

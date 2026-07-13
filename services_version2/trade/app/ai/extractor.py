@@ -27,7 +27,7 @@ from typing import Any, Dict, Optional
 
 import httpx
 
-from app.core.countries import COUNTRY_TO_CODE_MAP, VALID_COUNTRY_CODES
+from app.registry.countries import COUNTRY_TO_CODE_MAP, VALID_COUNTRY_CODES
 
 logger = logging.getLogger(__name__)
 
@@ -261,7 +261,7 @@ def parse_and_resolve_parameters(raw: Dict[str, Any], question: str) -> Dict[str
         if any(sig in question_lower for sig in COMPARISON_SIGNALS):
             params["intent"] = "comparison"
 
-    # Fix #7: Post-extraction trend override — if LLM said summary but question
+    # Post-extraction trend override — if LLM said summary but question
     # clearly asks about change over time, force trend intent.
     if params.get("intent") == "summary":
         q_lower_trend = question.lower()
@@ -385,7 +385,7 @@ def parse_and_resolve_parameters(raw: Dict[str, Any], question: str) -> Dict[str
     elif isinstance(metrics, str) and metrics:
         params["metrics"] = [metrics.upper()]
 
-    # Fix #6: Volume = VALUE_USD guard.
+    # Volume = VALUE_USD guard.
     # "volume" / "trade volume" means dollar value UNLESS the question explicitly
     # asks for weight (in kg, tonnes, etc.). Reset both metrics and sort_metric.
     q_lower_vol = question.lower()
@@ -413,7 +413,7 @@ def parse_and_resolve_parameters(raw: Dict[str, Any], question: str) -> Dict[str
             params["group_by"] = ["hs_heading"]
             params["dimensions"] = ["hs_heading"]
 
-        # Section 21: Decline/decrease directional context detection
+        # Decline/decrease directional context detection
         # Route stays as "growth" (math is identical), but NLG uses this flag
         # to confirm/correct the user's directional expectation.
         decline_terms = ["decline", "decrease", "drop", "fall", "shrink", "contracted", "contract", "down"]
@@ -466,7 +466,7 @@ def parse_and_resolve_parameters(raw: Dict[str, Any], question: str) -> Dict[str
     _fill_transport_modes_from_regex(params, question)
     _fill_sitc_from_regex(params, question)
 
-    # Section 26: "Volume" Keyword Triggers NET_WEIGHT Inclusion
+    # "Volume" Keyword Triggers NET_WEIGHT Inclusion
     volume_keywords = ["volume", "quantity", "weight", "tonnage", "mass", "kg", "kilogram", "kilograms"]
     if any(kw in question.lower() for kw in volume_keywords):
         metrics = params.setdefault("metrics", [])
@@ -585,7 +585,7 @@ def _extract_semester_params_regex(question: str) -> Dict[str, Any]:
 
 def _extract_transport_modes_regex(question: str) -> list[str]:
     """Regex extractor for transport modes. FALLBACK ONLY -- see callers."""
-    from app.core.transport_modes import TRANSPORT_MODE_LABELS, TRANSPORT_MODE_SYNONYMS
+    from app.registry.transport_modes import TRANSPORT_MODE_LABELS, TRANSPORT_MODE_SYNONYMS
     q = question.lower()
     detected = []
 

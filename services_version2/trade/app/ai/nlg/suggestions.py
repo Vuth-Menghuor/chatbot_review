@@ -16,7 +16,25 @@ def _clean_label(label: Any) -> str:
     return s
 
 
+def _capitalize_first(s: str) -> str:
+    """Capitalize only the first character of the string, leaving the rest untouched."""
+    if not s:
+        return ""
+    return s[0].upper() + s[1:]
+
+
 from app.core.config import get_settings
+from app.registry.countries import CODE_TO_COUNTRY_NAME
+
+
+def _get_country_display_name(country: Any) -> str:
+    """Resolve a country code to its full name, or return the input string if not a code."""
+    if not country:
+        return ""
+    country_str = str(country).strip()
+    if len(country_str) == 2:
+        return CODE_TO_COUNTRY_NAME.get(country_str.upper(), country_str)
+    return country_str
 
 
 def get_suggestions(facts: Dict[str, Any], query_params: Dict[str, Any]) -> List[str]:
@@ -33,18 +51,20 @@ def get_suggestions(facts: Dict[str, Any], query_params: Dict[str, Any]) -> List
     flow_str = flow or "trade"
     flow_cap = flow_str.capitalize()
     partner_name = partner if isinstance(partner, str) else partner[0] if isinstance(partner, list) and partner else None
+    partner_name = _get_country_display_name(partner_name)
     partner_suffix = f" with {partner_name}" if partner_name else ""
 
     # Resolve target comparison country to prevent self-reference
-    first_default = default_countries[0]
-    second_default = default_countries[1]
-    third_default = default_countries[2]
+    first_default = _get_country_display_name(default_countries[0])
+    second_default = _get_country_display_name(default_countries[1])
+    third_default = _get_country_display_name(default_countries[2])
 
     target_country = second_default
     if partner_name:
-        partner_upper = str(partner_name).strip().upper()
-        first_default_upper = first_default.upper()
-        if partner_upper in (first_default_upper, "CN"):
+        from app.core.enrichment_semantic import resolve_country
+        partner_code = resolve_country(partner_name)
+        first_default_code = resolve_country(first_default)
+        if partner_code and partner_code in (first_default_code, "CN"):
             target_country = second_default
         else:
             target_country = first_default
@@ -56,7 +76,7 @@ def get_suggestions(facts: Dict[str, Any], query_params: Dict[str, Any]) -> List
     prod_name = None
     prod_code = facts.get("hs_code") or facts.get("hs_chapter") or facts.get("sitc_division") or facts.get("sitc_section")
     if prod_code:
-        from app.core.product_resolver import resolve_hs_to_name
+        from app.registry.product_resolver import resolve_hs_to_name
         prod_name = resolve_hs_to_name(str(prod_code))
     product_phrase = f" of {prod_name}" if prod_name else ""
 
@@ -77,10 +97,10 @@ def get_suggestions(facts: Dict[str, Any], query_params: Dict[str, Any]) -> List
     # Fix #15: Multi-entity comparisons address multiple partners
     if intent == "comparison":
         countries_list = query_params.get("partner_countries") or []
-        first_country = countries_list[0] if countries_list else partner_name or first_default
-        second_country = countries_list[1] if len(countries_list) >= 2 else second_default
+        first_country = _get_country_display_name(countries_list[0] if countries_list else partner_name or first_default)
+        second_country = _get_country_display_name(countries_list[1] if len(countries_list) >= 2 else second_default)
         if not countries_list and first_country == second_country:
-            second_country = third_default
+            second_country = _get_country_display_name(third_default)
         suggestions.append(f"Show the monthly trend of trade with {first_country}")
         suggestions.append(f"What is the trade balance with {second_country}{for_period}?")
         suggestions.append(f"Compare breakdown of trade by product for {first_country} vs {second_country}")
@@ -90,7 +110,7 @@ def get_suggestions(facts: Dict[str, Any], query_params: Dict[str, Any]) -> List
     elif breakdown_records := (facts.get("mode_breakdown_records") or facts.get("group_breakdown_records")):
         grouped_by = facts.get("grouped_by", "group")
         top_labels = [
-            _clean_label(r['label']).capitalize() if isinstance(r['label'], str) else _clean_label(r['label'])
+            _capitalize_first(_clean_label(r['label'])) if isinstance(r['label'], str) else _clean_label(r['label'])
             for r in breakdown_records[:2]
         ]
 

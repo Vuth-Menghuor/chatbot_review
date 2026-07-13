@@ -30,7 +30,7 @@ client = httpx.Client(timeout=TIMEOUT)
 
 def check_service() -> bool:
     try:
-        r = client.get(f"{CALCULATOR_URL}/health")
+        r = client.get(f"{CALCULATOR_URL}/docs")
         return r.status_code == 200
     except Exception as e:
         print(f"Calculator not reachable at {CALCULATOR_URL}: {e}")
@@ -691,7 +691,7 @@ CASES = [
 def main():
     if not check_service():
         print(f"\nPlease start the calculator first:")
-        print(f"    uvicorn services_version2.calculator_version2.main:app --reload --port 8002")
+        print(f"    uvicorn calculator.main:app --reload --port 8002")
         sys.exit(1)
 
     print(f"Calculator OK at {CALCULATOR_URL}")

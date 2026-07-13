@@ -1,7 +1,7 @@
 from typing import Any, Dict
 
-from app.core.countries import CODE_TO_COUNTRY_NAME as COUNTRY_NAMES
-from app.core.transport_modes import TRANSPORT_MODE_LABELS
+from app.registry.countries import CODE_TO_COUNTRY_NAME as COUNTRY_NAMES
+from app.registry.transport_modes import TRANSPORT_MODE_LABELS
 
 TRANSPORT_NAMES = TRANSPORT_MODE_LABELS
 
@@ -74,11 +74,17 @@ def extract_facts(payload: Dict[str, Any], query_params: Dict[str, Any]) -> Dict
     if isinstance(partner_raw, list) and len(partner_raw) == 1:
         partner_raw = partner_raw[0]
 
+    from app.core.enrichment_semantic import resolve_country
     partner_country = None
     if isinstance(partner_raw, str):
-        partner_country = COUNTRY_NAMES.get(partner_raw.upper(), partner_raw)
+        code = resolve_country(partner_raw)
+        partner_country = COUNTRY_NAMES.get(code, partner_raw) if code else partner_raw
     elif isinstance(partner_raw, list):
-        partner_country = [COUNTRY_NAMES.get(c.upper(), c) for c in partner_raw]
+        resolved_list = []
+        for c in partner_raw:
+            code = resolve_country(c)
+            resolved_list.append(COUNTRY_NAMES.get(code, c) if code else c)
+        partner_country = resolved_list
 
     transport_raw = filters.get("MODE_OF_TRANSPORT") or query_params.get("mode_of_transport")
     if isinstance(transport_raw, list) and len(transport_raw) == 1:

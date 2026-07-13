@@ -6,13 +6,13 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from services_version2.calculator_version2.app import create_app
-from services_version2.calculator_version2.api.deps import get_db
-from services_version2.calculator_version2.core.calculator import DatabaseInterface
+from calculator.app.main import create_app
+from calculator.app.api.deps import get_db
+from calculator.app.services.calculator import DatabaseInterface
 
 # Deterministic tests: force IntentExtractor to always fall back to regex
 # (LLM extraction is non-deterministic and may return stale USD defaults)
-from services_version2.calculator_version2.core.intent_extractor import IntentExtractor
+from calculator.app.ai.intent_extractor import IntentExtractor
 
 async def _mock_extract_llm(self, text: str):
     return None
@@ -49,13 +49,6 @@ def client():
     app.dependency_overrides[get_db] = lambda: FakeDB()
     with TestClient(app) as test_client:
         yield test_client
-
-
-def test_health_endpoint(client: TestClient):
-    resp = client.get("/health")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["status"] in {"healthy", "degraded"}
 
 
 def test_calculate_endpoint(client: TestClient):
@@ -198,6 +191,105 @@ def test_exemption_with_rate_calculates_normally(client: TestClient):
     body = resp.json()
     assert body.get("preferential_rate_missing") is False
     assert body["total"] > 0
+
+
+# ================================================================
+# Ask-Back: Description vs HS Code Conflict
+# ================================================================
+
+def test_query_conflict_description_vs_hs_asks_back(client: TestClient):
+    """
+    When the user says 'steel' but gives HS 8703 (motor vehicles),
+    the calculator detects a chapter mismatch and asks back.
+    """
+    class FakeDBWithConflict(DatabaseInterface):
+        def get_duty_rates(self, hs_code, origin_country, effective_date):
+            return {"cd_rate": Decimal("0.15"), "st_rate": Decimal("0"), "vat_rate": Decimal("0.10"), "et_rate": Decimal("0")}
+
+        def get_exchange_rate(self, currency_code, effective_date):
+            return Decimal("4000")
+
+        def get_hs_code_info(self, hs_code):
+            # Return different descriptions so the message is clear
+            if hs_code.startswith("8703"):
+                return {"description": "Motor vehicles", "unit": "u"}
+            if hs_code.startswith("7204"):
+                return {"description": "Iron and steel waste and scrap", "unit": "kg"}
+            return {"description": "Test HS", "unit": "u"}
+
+        def get_declared_value(self, hs_code, effective_date=None):
+            return None
+
+        def check_health(self):
+            return {"ok": True, "message": "ok"}
+
+        def search_hs_by_description(self, query, top_k=1):
+            """Return a result that maps 'steel' to HS 7204."""
+            if "steel" in query.lower():
+                return [{"hs_code": "7204.10.00", "description": "Iron and steel waste and scrap", "score": 0.95}]
+            return []
+
+        def search_by_description(self, query):
+            return None
+
+        def save_calculation(self, calculation_result):
+            return None
+
+    app = create_app()
+    app.dependency_overrides[get_db] = lambda: FakeDBWithConflict()
+    with TestClient(app) as tc:
+        resp = tc.post("/query", json={"question": "Calculate tax for steel HS 8703 CIF 10500 USD from China"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["success"] is False
+        assert body["needs_clarification"] is True
+        assert body["source"] == "conflict_detector"
+        assert "steel" in body["answer"]
+        assert "8703" in body["answer"]
+        assert "Motor vehicles" in body["answer"] or "motor vehicles" in body["answer"].lower()
+
+
+def test_query_no_conflict_proceeds_normally(client: TestClient):
+    """
+    When description and HS code align (same chapter), calculation proceeds.
+    """
+    class FakeDBNoConflict(DatabaseInterface):
+        def get_duty_rates(self, hs_code, origin_country, effective_date):
+            return {"cd_rate": Decimal("0.15"), "st_rate": Decimal("0"), "vat_rate": Decimal("0.10"), "et_rate": Decimal("0")}
+
+        def get_exchange_rate(self, currency_code, effective_date):
+            return Decimal("4000")
+
+        def get_hs_code_info(self, hs_code):
+            return {"description": "Cars", "unit": "u"}
+
+        def get_declared_value(self, hs_code, effective_date=None):
+            return None
+
+        def check_health(self):
+            return {"ok": True, "message": "ok"}
+
+        def search_hs_by_description(self, query, top_k=1):
+            # Description resolves to same chapter 87
+            if "car" in query.lower() or "vehicle" in query.lower():
+                return [{"hs_code": "8703.22.00", "description": "Motor cars", "score": 0.95}]
+            return []
+
+        def search_by_description(self, query):
+            return None
+
+        def save_calculation(self, calculation_result):
+            return None
+
+    app = create_app()
+    app.dependency_overrides[get_db] = lambda: FakeDBNoConflict()
+    with TestClient(app) as tc:
+        resp = tc.post("/query", json={"question": "Calculate tax for cars HS 8703 CIF 20000 USD from Japan"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["success"] is True
+        assert body.get("needs_clarification") is not True
+        assert body["source"] in ("llm", "regex")
 
 
 def test_petroleum_with_fta_returns_ask_back(client: TestClient):

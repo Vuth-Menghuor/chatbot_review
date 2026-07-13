@@ -96,7 +96,7 @@ def get_product_phrase(facts: Dict[str, Any]) -> str:
     """Format product label dynamically."""
     prod = facts.get("sitc_division") or facts.get("sitc_section") or facts.get("hs_code") or facts.get("hs_chapter")
     if prod:
-        from app.core.product_resolver import resolve_hs_to_name
+        from app.registry.product_resolver import resolve_hs_to_name
         friendly = resolve_hs_to_name(str(prod))
         if friendly:
             return f" of {friendly}"

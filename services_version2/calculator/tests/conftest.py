@@ -5,7 +5,7 @@ Shared pytest fixtures available across all test modules.
 
 Usage:
     Run from project root:
-        pytest services/calculator/tests/ -v
+        pytest calculator/tests/ -v
 
 Phase 2 TODO:
     - Add fixture: `test_client` (FastAPI TestClient with create_app())

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, List, Optional
 
 from app.core.enrichment_orchestrate import (
     apply_cambodia_perspective,
@@ -102,8 +102,9 @@ def convert_legacy_params(raw_params: dict[str, Any]) -> dict[str, Any]:
 
     # Flatten fields for compatibility with legacy test assertions
     res["trade_direction"] = final.filters.get("FLOW")
-    res["partner_countries"] = final.filters.get("PARTNER_COUNTRY") if isinstance(final.filters.get("PARTNER_COUNTRY"), list) else None
-    res["partner_country"] = final.filters.get("PARTNER_COUNTRY") if isinstance(final.filters.get("PARTNER_COUNTRY"), str) else None
+    partners = final.filters.get("PARTNER_COUNTRY")
+    res["partner_countries"] = partners if isinstance(partners, list) else None
+    res["partner_country"] = partners if isinstance(partners, str) else None
     res["mode_of_transport"] = _map_mot_to_names(final.filters.get("MODE_OF_TRANSPORT"))
     res["hs_code"] = final.filters.get("HS_HEADING") or final.filters.get("HS_CODE")
     res["hs_chapter"] = final.filters.get("HS_CHAPTER")
@@ -112,10 +113,10 @@ def convert_legacy_params(raw_params: dict[str, Any]) -> dict[str, Any]:
     return res
 
 
-def _map_mot_to_names(mot: Any) -> list[str] | None:
+def _map_mot_to_names(mot: Any) -> Optional[List[str]]:
     if not mot:
         return None
-    from app.core.semantic_registry import SEMANTIC_REGISTRY
+    from app.registry.semantic_registry import SEMANTIC_REGISTRY
     mot_entry = SEMANTIC_REGISTRY.get("MODE_OF_TRANSPORT")
     if not mot_entry:
         return [str(mot)] if not isinstance(mot, list) else [str(m) for m in mot]

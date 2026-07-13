@@ -24,10 +24,17 @@ class TradeService:
     ) -> None:
         self.dal_client = dal_client or DALClient.from_env()
         self.request_builder = request_builder or DALRequestBuilder()
+        from app.services.cache_service import CacheService
+        self.cache = CacheService()
 
     def query_from_question(self, question: str, extracted_params: dict[str, Any] | None = None) -> dict[str, Any]:
         """Full pipeline: NL question → extract (with repair loop) → transform → handle → normalise."""
         logger.info(f"[TradeService] Received query_from_question request. Question: '{question}'")
+
+        cached = self.cache.get(question)
+        if cached:
+            logger.info(f"[TradeService] Serving cached result for question: '{question}'")
+            return cached
 
         # Stage 1-5: extraction + enrichment + scoping + orchestration + validation,
         # with a validation-feedback repair loop around the LLM extraction call.
@@ -54,8 +61,9 @@ class TradeService:
 
         # Flatten helper keys for downstream consumption
         dal_params["trade_direction"] = final.filters.get("FLOW")
-        dal_params["partner_countries"] = final.filters.get("PARTNER_COUNTRY") if isinstance(final.filters.get("PARTNER_COUNTRY"), list) else None
-        dal_params["partner_country"] = final.filters.get("PARTNER_COUNTRY") if isinstance(final.filters.get("PARTNER_COUNTRY"), str) else None
+        partners = final.filters.get("PARTNER_COUNTRY")
+        dal_params["partner_countries"] = partners if isinstance(partners, list) else None
+        dal_params["partner_country"] = partners if isinstance(partners, str) else None
         dal_params["mode_of_transport"] = final.filters.get("MODE_OF_TRANSPORT")
         dal_params["hs_code"] = final.filters.get("HS_HEADING") or final.filters.get("HS_CODE")
         dal_params["hs_chapter"] = final.filters.get("HS_CHAPTER")
@@ -166,26 +174,35 @@ class TradeService:
         # Sanity check: if requested period differs from returned records,
         # post-filter to the requested period so we never silently serve wrong-year data.
         records = dal_response.get("records", [])
-        returned_period = None
         if records and final.period:
-            returned_period = records[0].get("PERIOD") or records[0].get("period")
-            if returned_period and str(returned_period) != str(final.period):
+            mismatched_periods = set()
+            req_p_str = str(final.period)
+            for r in records:
+                r_p = r.get("PERIOD") or r.get("period")
+                if r_p:
+                    r_p_str = str(r_p)
+                    if not (r_p_str == req_p_str or r_p_str.startswith(req_p_str + "-")):
+                        mismatched_periods.add(r_p_str)
+
+            if mismatched_periods:
+                returned_period = sorted(list(mismatched_periods))[0]
                 logger.warning(
                     f"[TradeService] Sanity Check Warning: Request period was '{final.period}', "
-                    f"but DAL returned records with period '{returned_period}'. "
+                    f"but DAL returned records with mismatched periods: {sorted(list(mismatched_periods))}. "
                     f"Post-filtering to requested period."
                 )
                 original_len = len(records)
                 filtered_by_period = [
                     r for r in records
-                    if str(r.get("PERIOD") or r.get("period", "")) == str(final.period)
+                    if str(r.get("PERIOD") or r.get("period", "")) == req_p_str
+                    or str(r.get("PERIOD") or r.get("period", "")).startswith(req_p_str + "-")
                 ]
                 if len(filtered_by_period) != original_len:
                     dal_response["records"] = filtered_by_period
                     extra = dal_params.get("extra") or {}
                     extra["period_mismatch"] = True
-                    extra["requested_period"] = str(final.period)
-                    extra["returned_period"] = str(returned_period)
+                    extra["requested_period"] = req_p_str
+                    extra["returned_period"] = returned_period
                     dal_params["extra"] = extra
                     logger.info(
                         f"[TradeService] Post-filtered from {original_len} to {len(filtered_by_period)} records "
@@ -228,7 +245,7 @@ class TradeService:
             result = generate_nlg_response(result, dal_params)
         except Exception as nlg_exc:
             logger.error(f"[TradeService] NLG generation failed — degrading gracefully: {nlg_exc}", exc_info=True)
-            # Fix #9: NLG failure should never crash the whole response.
+            # NLG failure should never crash the whole response.
             # Return normalised data with a fallback message.
             result.setdefault("message", "Data retrieved successfully. (Summary generation unavailable.)")
             result.setdefault("suggestion", [
@@ -243,6 +260,9 @@ class TradeService:
             "query_params", "table", "visualization", "message", "suggestion"
         }
         result = {k: v for k, v in result.items() if k in allowed_keys}
+
+        # Store in cache
+        self.cache.set(question, result)
 
         logger.info("[TradeService] Processing complete. Returning normalised query results to Orchestrator.")
         return result
@@ -338,6 +358,9 @@ class TradeService:
                 if llm_params is None:
                     raise ValidationError("LLM parameter extraction returned no parameters", field="question")
                 logger.info(f"[TradeService] Extraction attempt {attempt}/{attempts}: {llm_params}")
+
+            if llm_params is None:
+                llm_params = {}
 
             raw_plan = RawQueryPlan(
                 intent=llm_params.get("intent", "summary"),
@@ -444,7 +467,7 @@ def post_resolve_parameters(llm_params: dict[str, Any], question: str) -> dict[s
 
     validate_query_plan(final)
 
-    from app.core.semantic_registry import find_dimension_by_synonym
+    from app.registry.semantic_registry import find_dimension_by_synonym
 
     raw_group_by = raw_params.get("group_by")
     if raw_group_by:
@@ -535,12 +558,15 @@ def post_resolve_parameters(llm_params: dict[str, Any], question: str) -> dict[s
 
     if res.get("year") is None:
         sp = res.get("start_period")
-        if sp and len(sp) >= 4 and sp[:4].isdigit():
-            res["year"] = int(sp[:4])
+        if sp:
+            sp_str = str(sp)
+            if len(sp_str) >= 4 and sp_str[:4].isdigit():
+                res["year"] = int(sp_str[:4])
 
     res["trade_direction"] = final.filters.get("FLOW")
-    res["partner_countries"] = final.filters.get("PARTNER_COUNTRY") if isinstance(final.filters.get("PARTNER_COUNTRY"), list) else None
-    res["partner_country"] = final.filters.get("PARTNER_COUNTRY") if isinstance(final.filters.get("PARTNER_COUNTRY"), str) else None
+    partners = final.filters.get("PARTNER_COUNTRY")
+    res["partner_countries"] = partners if isinstance(partners, list) else None
+    res["partner_country"] = partners if isinstance(partners, str) else None
 
     res["hs_chapter"] = raw_params.get("hs_chapter") or final.filters.get("HS_CHAPTER")
     if raw_params.get("hs_chapter"):

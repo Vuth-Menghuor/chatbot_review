@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 
-from app.core.countries import ASEAN_MEMBER_CODES, EU_MEMBER_CODES
+from app.registry.countries import ASEAN_MEMBER_CODES, EU_MEMBER_CODES
 from app.dal.dal_models import DALRequest
 from app.dal.exceptions import DALError
 from app.dal.url_builder import DALUrlBuilder

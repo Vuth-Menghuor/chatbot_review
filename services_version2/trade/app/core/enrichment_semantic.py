@@ -6,8 +6,8 @@ import logging
 import re
 from typing import Any, Dict, Optional
 
-from app.core.countries import COUNTRY_TO_CODE_MAP, VALID_COUNTRY_CODES
-from app.core.semantic_registry import (
+from app.registry.countries import COUNTRY_TO_CODE_MAP, VALID_COUNTRY_CODES
+from app.registry.semantic_registry import (
     SEMANTIC_REGISTRY,
     STRUCTURE_REGISTRY,
     find_dimension_by_synonym,
@@ -32,7 +32,7 @@ def resolve_dimension_value(dimension: str, value_text: Any) -> Any:
         return resolve_dimension_value_single(dimension, value_text)
 
 
-def resolve_dimension_value_single(dimension: str, value_text: str) -> Optional[str]:
+def resolve_dimension_value_single(dimension: str, value_text: Any) -> Optional[str]:
     """Map dynamic text value to a dimension code (e.g. 'export' -> 'EX')."""
     dim_code = find_dimension_by_synonym(dimension)
     if not dim_code:
@@ -155,7 +155,7 @@ def resolve_entities(raw_plan: RawQueryPlan) -> Dict[str, Any]:
             else:
                 resolved["hs_code"] = prod_str
         else:
-            from app.core.product_resolver import resolve_product_to_hs
+            from app.registry.product_resolver import resolve_product_to_hs
             resolved_hs = resolve_product_to_hs(prod_str)
             if resolved_hs:
                 if len(resolved_hs) == 2:

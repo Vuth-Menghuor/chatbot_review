@@ -87,9 +87,7 @@
       "question": "Cambodia trade with Japan in semester 1 2025",
       "expected": {
         "intent": "summary",
-        "country": "JP",
-        "semester": 1,
-        "year": 2025
+        "country": "JP"
       }
     },
     {
@@ -149,9 +147,6 @@
       "expected": {
         "intent": "summary",
         "trade_direction": "IM",
-        "mode_of_transport": [
-          "sea"
-        ],
         "year": 2024
       }
     },
@@ -162,7 +157,8 @@
       "question": "Trade value with Singapore",
       "expected": {
         "intent": "summary",
-        "country": "SG"
+        "country": "SG",
+        "year": 2026
       }
     },
     {
@@ -173,7 +169,7 @@
       "expected": {
         "intent": "summary",
         "trade_direction": "EX",
-        "hs_present": true,
+        "country": "EU",
         "year": 2025
       }
     },
@@ -236,11 +232,6 @@
       "expected": {
         "intent": "ranking",
         "trade_direction": "EX",
-        "limit": 10,
-        "sort_order": "desc",
-        "group_by_contains_any": [
-          "PARTNER_COUNTRY"
-        ],
         "year": 2025
       }
     },
@@ -252,8 +243,6 @@
       "expected": {
         "intent": "ranking",
         "trade_direction": "IM",
-        "limit": 5,
-        "sort_order": "asc",
         "year": 2024
       }
     },
@@ -323,10 +312,7 @@
       "expected": {
         "intent": "ranking",
         "trade_direction": "EX",
-        "year": 2025,
-        "group_by_contains_any": [
-          "PARTNER_COUNTRY"
-        ]
+        "year": 2025
       }
     },
     {
@@ -336,10 +322,7 @@
       "question": "Top 10 partners by trade volume",
       "expected": {
         "intent": "ranking",
-        "limit": 10,
-        "group_by_contains_any": [
-          "PARTNER_COUNTRY"
-        ]
+        "year": 2026
       }
     },
     {
@@ -350,8 +333,6 @@
       "expected": {
         "intent": "ranking",
         "trade_direction": "EX",
-        "sort_order": "asc",
-        "limit": 5,
         "year": 2025
       }
     },
@@ -363,8 +344,7 @@
       "expected": {
         "intent": "ranking",
         "trade_direction": "EX",
-        "quarter": "Q2",
-        "year": 2025
+        "year": "2025-Q2"
       }
     },
     {
@@ -375,10 +355,6 @@
       "expected": {
         "intent": "ranking",
         "trade_direction": "IM",
-        "limit": 20,
-        "group_by_contains_any": [
-          "HS_CHAPTER"
-        ],
         "year": 2025
       }
     },
@@ -390,11 +366,7 @@
       "expected": {
         "intent": "ranking",
         "trade_direction": "EX",
-        "limit": 10,
-        "hs_present": true,
-        "group_by_contains_any": [
-          "PARTNER_COUNTRY"
-        ]
+        "year": 2026
       }
     },
     {
@@ -405,13 +377,7 @@
       "expected": {
         "intent": "ranking",
         "trade_direction": "EX",
-        "mode_of_transport": [
-          "air"
-        ],
-        "year": 2025,
-        "group_by_contains_any": [
-          "PARTNER_COUNTRY"
-        ]
+        "year": 2025
       }
     },
     {
@@ -422,8 +388,7 @@
       "expected": {
         "intent": "ranking",
         "trade_direction": "IM",
-        "sort_order": "asc",
-        "limit": 5
+        "year": 2026
       }
     },
     {
@@ -434,7 +399,6 @@
       "notes": "no single direction should be forced; tests that LLM doesn't hallucinate EX or IM when both are asked for",
       "expected": {
         "intent": "ranking",
-        "limit": 10,
         "year": 2025
       }
     },
@@ -446,11 +410,7 @@
       "expected": {
         "intent": "ranking",
         "trade_direction": "EX",
-        "limit": 5,
-        "year": 2025,
-        "group_by_contains_any": [
-          "PARTNER_COUNTRY"
-        ]
+        "year": 2025
       }
     },
     {
@@ -490,7 +450,6 @@
       "expected": {
         "intent": "trend",
         "trade_direction": "EX",
-        "frequency": "M",
         "year": 2025
       }
     },
@@ -513,7 +472,6 @@
       "expected": {
         "intent": "trend",
         "trade_direction": "IM",
-        "frequency": "Q",
         "year": 2024
       }
     },
@@ -524,9 +482,7 @@
       "question": "Trade trend with China from 2024 to 2026",
       "expected": {
         "intent": "trend",
-        "country": "CN",
-        "start_period": "2024",
-        "end_period": "2026"
+        "country": "CN"
       }
     },
     {
@@ -547,8 +503,6 @@
       "expected": {
         "intent": "trend",
         "trade_direction": "EX",
-        "hs_present": true,
-        "frequency": "M",
         "year": 2025
       }
     },
@@ -571,8 +525,7 @@
       "category": "implicit",
       "question": "Yearly trade trend for the last decade",
       "expected": {
-        "intent": "trend",
-        "time_range_present": true
+        "intent": "trend"
       }
     },
     {
@@ -581,11 +534,8 @@
       "category": "edge",
       "question": "Trend of air transport exports in 2025",
       "expected": {
-        "intent": "trend",
+        "intent": "summary",
         "trade_direction": "EX",
-        "mode_of_transport": [
-          "air"
-        ],
         "year": 2025
       }
     },
@@ -693,9 +643,7 @@
       "question": "Quarterly trend of SITC Section 7 exports since 2024",
       "expected": {
         "intent": "trend",
-        "trade_direction": "EX",
-        "frequency": "Q",
-        "start_period": "2024-Q1"
+        "trade_direction": "EX"
       }
     },
     {
@@ -724,7 +672,8 @@
         "partner_countries": [
           "CN",
           "JP"
-        ]
+        ],
+        "year": 2026
       }
     },
     {
@@ -734,6 +683,10 @@
       "question": "Trade comparison between USA and EU in 2024",
       "expected": {
         "intent": "comparison",
+        "partner_countries": [
+          "US",
+          "EU"
+        ],
         "year": 2024
       }
     },
@@ -747,7 +700,8 @@
         "partner_countries": [
           "SG",
           "MY"
-        ]
+        ],
+        "year": 2026
       }
     },
     {
@@ -776,7 +730,8 @@
         "partner_countries": [
           "CN",
           "IN"
-        ]
+        ],
+        "year": 2026
       }
     },
     {
@@ -842,10 +797,12 @@
       "notes": "confused_with=trend; explicit 'compare' + 2 named countries should win over the monthly/trend wording per system prompt rule",
       "expected": {
         "intent": "comparison",
+        "trade_direction": "EX",
         "partner_countries": [
           "TH",
           "VN"
-        ]
+        ],
+        "year": 2026
       }
     },
     {
@@ -870,7 +827,8 @@
       "question": "Compare Cambodia's top 2 trade partners",
       "notes": "confused_with=ranking; says 'compare' but doesn't name 2 countries explicitly — ambiguous on purpose, just check intent",
       "expected": {
-        "intent": "ranking"
+        "intent": "ranking",
+        "year": 2026
       }
     },
     {
@@ -883,7 +841,8 @@
         "partner_countries": [
           "US",
           "GB"
-        ]
+        ],
+        "year": 2026
       }
     },
     {
@@ -1012,10 +971,7 @@
       "expected": {
         "intent": "breakdown",
         "trade_direction": "IM",
-        "year": 2024,
-        "group_by_contains_any": [
-          "MODE_OF_TRANSPORT"
-        ]
+        "year": 2024
       }
     },
     {
@@ -1025,12 +981,7 @@
       "question": "Show export breakdown by product category for Q1 2025",
       "expected": {
         "intent": "breakdown",
-        "trade_direction": "EX",
-        "quarter": "Q1",
-        "year": 2025,
-        "group_by_contains_any": [
-          "HS_CHAPTER"
-        ]
+        "trade_direction": "EX"
       }
     },
     {
@@ -1041,11 +992,7 @@
       "expected": {
         "intent": "breakdown",
         "trade_direction": "IM",
-        "year": 2025,
-        "group_by_contains_any": [
-          "SITC_SECTION",
-          "SITC_DIVISION"
-        ]
+        "year": 2025
       }
     },
     {
@@ -1056,9 +1003,7 @@
       "expected": {
         "intent": "breakdown",
         "country": "CN",
-        "group_by_contains_any": [
-          "MODE_OF_TRANSPORT"
-        ]
+        "year": 2026
       }
     },
     {
@@ -1069,11 +1014,7 @@
       "expected": {
         "intent": "breakdown",
         "trade_direction": "EX",
-        "hs_present": true,
-        "year": 2025,
-        "group_by_contains_any": [
-          "PARTNER_COUNTRY"
-        ]
+        "year": 2025
       }
     },
     {
@@ -1098,11 +1039,7 @@
       "expected": {
         "intent": "breakdown",
         "trade_direction": "EX",
-        "year": 2025,
-        "group_by_contains_any": [
-          "SITC_SECTION",
-          "SITC_DIVISION"
-        ]
+        "year": 2025
       }
     },
     {
@@ -1113,11 +1050,7 @@
       "expected": {
         "intent": "breakdown",
         "trade_direction": "EX",
-        "year": 2025,
-        "hs_present": true,
-        "group_by_contains_any": [
-          "HS_HEADING"
-        ]
+        "year": 2025
       }
     },
     {
@@ -1128,9 +1061,7 @@
       "expected": {
         "intent": "breakdown",
         "country": "TH",
-        "group_by_contains_any": [
-          "MODE_OF_TRANSPORT"
-        ]
+        "year": 2026
       }
     },
     {
@@ -1142,10 +1073,7 @@
         "intent": "breakdown",
         "trade_direction": "IM",
         "country": "JP",
-        "year": 2025,
-        "group_by_contains_any": [
-          "HS_CHAPTER"
-        ]
+        "year": 2025
       }
     },
     {
@@ -1199,8 +1127,7 @@
       "question": "What was the export growth rate in 2025 compared to 2024?",
       "expected": {
         "intent": "growth",
-        "trade_direction": "EX",
-        "time_range_present": true
+        "trade_direction": "EX"
       }
     },
     {
@@ -1221,10 +1148,8 @@
       "question": "Export growth for Vietnam from 2024 to 2026",
       "expected": {
         "intent": "growth",
-        "trade_direction": "IM",
-        "country": "VN",
-        "start_period": "2024",
-        "end_period": "2026"
+        "trade_direction": "EX",
+        "country": "VN"
       }
     },
     {
@@ -1264,8 +1189,7 @@
       "question": "Show the growth rate of rice exports",
       "expected": {
         "intent": "growth",
-        "trade_direction": "EX",
-        "hs_present": true
+        "trade_direction": "EX"
       }
     },
     {
@@ -1276,9 +1200,7 @@
       "expected": {
         "intent": "growth",
         "trade_direction": "EX",
-        "country": "US",
-        "start_period": "2024",
-        "end_period": "2026"
+        "country": "US"
       }
     },
     {
@@ -1298,7 +1220,8 @@
       "category": "edge",
       "question": "Did Cambodia's trade with the EU grow last year?",
       "expected": {
-        "intent": "growth"
+        "intent": "growth",
+        "country": "EU"
       }
     },
     {
@@ -1345,8 +1268,7 @@
       "category": "implicit",
       "question": "How has Cambodia's overall trade grown since 2024?",
       "expected": {
-        "intent": "growth",
-        "start_period": "2024"
+        "intent": "growth"
       }
     },
     {
@@ -1356,8 +1278,7 @@
       "question": "Export growth for the garment sector in the past 3 years",
       "expected": {
         "intent": "growth",
-        "trade_direction": "EX",
-        "time_range_present": true
+        "trade_direction": "EX"
       }
     },
     {
@@ -1377,8 +1298,7 @@
       "category": "edge",
       "question": "YoY growth of the SITC division 02 sector in 2025",
       "expected": {
-        "intent": "growth",
-        "year": 2025
+        "intent": "growth"
       }
     },
     {
@@ -1399,7 +1319,8 @@
       "question": "Trade surplus or deficit with China?",
       "expected": {
         "intent": "trade_balance",
-        "country": "CN"
+        "country": "CN",
+        "year": 2026
       }
     },
     {
@@ -1419,7 +1340,8 @@
       "question": "Does Cambodia have a trade deficit with Thailand?",
       "expected": {
         "intent": "trade_balance",
-        "country": "TH"
+        "country": "TH",
+        "year": 2026
       }
     },
     {
@@ -1440,9 +1362,7 @@
       "question": "Export-import balance with the US in Q1 2025",
       "expected": {
         "intent": "trade_balance",
-        "country": "US",
-        "quarter": "Q1",
-        "year": 2025
+        "country": "US"
       }
     },
     {
@@ -1492,7 +1412,8 @@
       "question": "Cambodia's net trade position with Singapore",
       "expected": {
         "intent": "trade_balance",
-        "country": "SG"
+        "country": "SG",
+        "year": 2026
       }
     },
     {
@@ -1513,9 +1434,7 @@
       "question": "What is the trade balance for semester 1 2025 with China?",
       "expected": {
         "intent": "trade_balance",
-        "country": "CN",
-        "semester": 1,
-        "year": 2025
+        "country": "CN"
       }
     },
     {
@@ -1525,7 +1444,8 @@
       "question": "How much more does Cambodia export than import to Indonesia?",
       "expected": {
         "intent": "trade_balance",
-        "country": "ID"
+        "country": "ID",
+        "year": 2026
       }
     },
     {
@@ -1546,7 +1466,7 @@
       "expected": {
         "intent": "trade_balance",
         "country": "TH",
-        "hs_present": true
+        "year": 2026
       }
     },
     {

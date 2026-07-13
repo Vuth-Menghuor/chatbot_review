@@ -50,8 +50,8 @@ class Settings:
         self.default_gemini_model = os.getenv("DEFAULT_GEMINI_MODEL", "gemini-3.1-flash-lite")
         self.default_timeout_sec = float(os.getenv("DEFAULT_TIMEOUT_SEC", "45.0"))
 
-        self.dal_timeout = float(os.getenv("DAL_TIMEOUT", "20.0"))
-        self.dal_max_retries = int(os.getenv("DAL_MAX_RETRIES", "3"))
+        self.dal_timeout = float(os.getenv("DAL_TIMEOUT", "10.0"))
+        self.dal_max_retries = int(os.getenv("DAL_MAX_RETRIES", "2"))
         self.dal_backoff = float(os.getenv("DAL_BACKOFF", "1.0"))
 
         self.min_validation_year = int(os.getenv("MIN_VALIDATION_YEAR", "2000"))
@@ -60,6 +60,15 @@ class Settings:
 
         self.max_extraction_retries = int(os.getenv("MAX_EXTRACTION_RETRIES", "2"))
         self.max_chart_items = int(os.getenv("MAX_CHART_ITEMS", "15"))
+
+        # Redis Caching Settings
+        # CACHE_ENABLED enables or disables caching in the service.
+        self.cache_enabled = os.getenv("CACHE_ENABLED", "false").lower() == "true"
+        # REDIS_URL default value is 'redis://localhost:6380/0'.
+        # Note: 'localhost:6380' is for local dev outside Docker only.
+        # Inside Docker, the environment variable (defined in .env) overrides this default
+        # to connect to container host 'redis://trade-redis:6379/0'.
+        self.redis_url = os.getenv("REDIS_URL", "redis://localhost:6380/0")
 
 
 def get_settings() -> Settings:

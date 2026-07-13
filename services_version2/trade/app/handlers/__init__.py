@@ -9,7 +9,7 @@ from app.handlers.scopes import (
     ScopeConfig,
     get_scope_config,
 )
-from app.handlers.strategies import STRATEGIES, IntentStrategy
+from app.registry.strategies import STRATEGIES, IntentStrategy
 
 __all__ = [
     "IntentStrategy",

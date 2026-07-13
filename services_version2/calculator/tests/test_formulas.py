@@ -4,7 +4,7 @@ Quick test of calculator formulas
 """
 
 from decimal import Decimal
-import formulas
+from calculator.app.services import formulas
 
 print("=" * 70)
 print("GDCE Calculator Service - Formula Tests")

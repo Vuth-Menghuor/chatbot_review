@@ -1,31 +1,39 @@
-# Trade query service — port 8004
-# Setup: cp .env.example .env  (fill GEMINI_API_KEY, DAL_API_KEY)
-# Run: docker compose up -d --build
-# Requires shared network (once): docker network create gdce-network
-# DAL must be reachable on gdce-network (e.g. dal-app:8000)
+version: "3.8"
 
 services:
-  trade:
+  trade-redis:
+    image: redis:7-alpine
+    container_name: trade-redis
+    command: redis-server --maxmemory 256mb --maxmemory-policy volatile-ttl
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - dal_app-network
+    restart: unless-stopped
+
+  trade-service:
     build: .
-    container_name: trade
+    container_name: trade-service
     env_file:
-      - path: .env
-        required: true
+      - .env
     environment:
-      TRADE_SERVICE_HOST: 0.0.0.0
-      TRADE_SERVICE_PORT: 8004
-      DAL_BASE_URL: ${DAL_BASE_URL:-http://dal-app:8000}
+      - TZ=Asia/Phnom_Penh
     ports:
       - "8004:8004"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      gdce-network:
-        aliases:
-          - trade-service
+      - dal_app-network
+    depends_on:
+      trade-redis:
+        condition: service_healthy
     restart: unless-stopped
 
 networks:
-  gdce-network:
+  dal_app-network:
     external: true
-    name: gdce-network

@@ -6,7 +6,7 @@ import re
 
 from app.api.exceptions import InvalidInputError
 from app.core.config import get_settings
-from app.core.countries import VALID_COUNTRY_CODES
+from app.registry.countries import VALID_COUNTRY_CODES
 
 
 def validate_question(question: str | None) -> str:

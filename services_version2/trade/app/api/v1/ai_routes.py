@@ -68,7 +68,30 @@ async def query_trade_data(request: QueryRequest) -> dict[str, Any]:
         }
     except DALError as e:
         logger.error(f"DAL error: {e}")
-        raise map_core_exception_to_http(e)
+        try:
+            question_text = request.question if request and request.question else "your query"
+        except Exception:
+            question_text = "your query"
+        return {
+            "question": question_text,
+            "status": "error",
+            "count": 0,
+            "records": [],
+            "summary": {},
+            "query_params": None,
+            "table": {"columns": [], "rows": []},
+            "visualization": {"type": "empty", "title": "Database Connection Error", "labels": [], "datasets": []},
+            "metadata": {"intent": "summary"},
+            "message": (
+                "Sorry, we encountered an error retrieving trade data from our database. "
+                "Please try again in a moment or rephrase your question."
+            ),
+            "suggestion": [
+                "Try asking the same query again",
+                "Try a simpler query first, then add filters",
+                "Specify a specific partner country or year",
+            ],
+        }
     except NormalisationError as e:
         logger.error(f"Normalisation error: {e}")
         raise map_core_exception_to_http(e)

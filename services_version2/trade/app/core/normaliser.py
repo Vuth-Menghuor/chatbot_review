@@ -7,10 +7,10 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-from app.core.countries import ASEAN_MEMBER_CODES, EU_MEMBER_CODES
-from app.core.countries import CODE_TO_COUNTRY_NAME as COUNTRY_NAMES
+from app.registry.countries import ASEAN_MEMBER_CODES, EU_MEMBER_CODES
+from app.registry.countries import CODE_TO_COUNTRY_NAME as COUNTRY_NAMES
 from app.core.exceptions import NormalisationError
-from app.core.transport_modes import TRANSPORT_MODE_DISPLAY_NAMES
+from app.registry.transport_modes import TRANSPORT_MODE_DISPLAY_NAMES
 
 # Reverse lookup: full country name (uppercase) → ISO-2 code
 _NAME_TO_CODE = {v.upper(): k for k, v in COUNTRY_NAMES.items()}
@@ -28,7 +28,7 @@ def compute_growth_rates(
     Returns (result_records, data_quality) where data_quality["growth_valid"] is the
     single canonical truth flag consumed by NLG, chart_mapper, and summary builders.
 
-    Section 22: When a trade-bloc query is detected (PARTNER_COUNTRY is a list of >3
+    When a trade-bloc query is detected (PARTNER_COUNTRY is a list of >3
     countries, or extra.trade_bloc is set), records are pre-aggregated to one total per
     period before growth computation so the result is a single bloc-level rate.
     """
@@ -55,7 +55,7 @@ def compute_growth_rates(
         return records, empty_quality
 
     # ------------------------------------------------------------------ #
-    # Section 22: Bloc-level pre-aggregation                              #
+    # Bloc-level pre-aggregation                                         #
     # ------------------------------------------------------------------ #
     filters = params.get("filters") or {}
     extra = params.get("extra") or {}
@@ -122,7 +122,7 @@ def compute_growth_rates(
         result_records = records_copy
 
     # ------------------------------------------------------------------ #
-    # Single canonical data_quality truth flag (Section 19)              #
+    # Single canonical data_quality truth flag                           #
     # ------------------------------------------------------------------ #
     distinct_periods = len(set(str(r.get(period_key, "")) for r in result_records if r.get(period_key)))
     data_quality: dict[str, Any] = {
@@ -146,7 +146,9 @@ def normalise(
     if not isinstance(dal_response, dict):
         raise NormalisationError("DAL response must be a dict")
 
-    records = dal_response.get("records") or dal_response.get("data") or []
+    records = dal_response.get("records")
+    if records is None:
+        records = dal_response.get("data") or []
     if not isinstance(records, list):
         records = [records]
 
@@ -184,6 +186,16 @@ def normalise(
                 val = str(r_copy.get(k)).strip()
                 r_copy[k] = _TRANSPORT_NAMES.get(val, val)
 
+            # Translate Partner Country name to canonical display name (NLG/table consistency)
+            if k.upper() == "PARTNER_COUNTRY":
+                val = r_copy.get(k)
+                if val and val != "Other":
+                    from app.core.enrichment_semantic import resolve_country
+                    from app.registry.countries import CODE_TO_COUNTRY_NAME
+                    code = resolve_country(str(val))
+                    if code and code in CODE_TO_COUNTRY_NAME:
+                        r_copy[k] = CODE_TO_COUNTRY_NAME[code]
+
         # Ensure all group_by / dimension keys from query params exist in r_copy
         for gd in group_dims:
             found_k = None
@@ -207,7 +219,7 @@ def normalise(
     records = cleaned_records
 
     # ------------------------------------------------------------------ #
-    # Section 28: General Trade Bloc Aggregation                         #
+    # General Trade Bloc Aggregation                                     #
     # ------------------------------------------------------------------ #
     if intent != "ranking" and records and query_params:
         orig_partners = query_params.get("partner_countries") or []
@@ -270,7 +282,7 @@ def normalise(
             if len(records) != original_len:
                 did_filter = True
 
-    # Section 19: growth computation — compute_growth_rates is the SOLE authority.
+    # Growth computation — compute_growth_rates is the SOLE authority.
     _growth_data_quality: dict[str, Any] = {"growth_valid": False, "distinct_period_count": 0}
     if intent == "growth" and records:
         records, _growth_data_quality = compute_growth_rates(records, query_params)
@@ -440,7 +452,7 @@ def normalise(
         summary = {}
         if has_value_metric:
             summary["currency"] = "USD"
-            if intent == "ranking":
+            if intent in ("ranking", "breakdown"):
                 summary["subset_total_value"] = exports + imports
                 summary["subset_count"] = count
                 sort_order = (query_params or {}).get("sort_order", "desc")
@@ -452,26 +464,26 @@ def normalise(
             summary["total_trade_value"] = None
 
         if has_weight:
-            if intent == "ranking":
+            if intent in ("ranking", "breakdown"):
                 summary["subset_total_weight"] = exports_weight + imports_weight
             else:
                 summary["total_weight_kg"] = exports_weight + imports_weight
         else:
             summary["total_weight_kg"] = None
 
-        # Section 23 extension: growth intent also nulls out value fields when VALUE_USD not requested
+        # Growth intent also nulls out value fields when VALUE_USD not requested
         if intent == "trade_balance" or (intent == "summary" and has_both_flows):
             summary["trade_balance"] = exports - imports
             if has_weight:
                 summary["net_weight_balance"] = exports_weight - imports_weight
 
-        # Section 19: Write execution_mode and data_quality for growth queries
+        # Write execution_mode and data_quality for growth queries
         if intent == "growth":
             summary["data_quality"] = _growth_data_quality
             summary["execution_mode"] = "growth" if _growth_data_quality["growth_valid"] else "summary"
             if summary["execution_mode"] == "summary":
                 summary["growth_downgrade_reason"] = "Insufficient baseline data — prior period not available."
-            # Section 23/17 extension: null out value fields when VALUE_USD not requested under growth
+            # Null out value fields when VALUE_USD not requested under growth
             if not has_value_metric:
                 summary.pop("total_trade_value", None)
                 summary.pop("currency", None)
@@ -482,7 +494,7 @@ def normalise(
         summary = {}
         if has_value_metric:
             summary["currency"] = "USD"
-            if intent == "ranking":
+            if intent in ("ranking", "breakdown"):
                 summary["subset_total_value"] = 0.0
                 summary["subset_count"] = 0
                 zero_sort_order = (query_params or {}).get("sort_order", "desc")
@@ -494,7 +506,7 @@ def normalise(
             summary["total_trade_value"] = None
 
         if has_weight:
-            if intent == "ranking":
+            if intent in ("ranking", "breakdown"):
                 summary["subset_total_weight"] = 0.0
             else:
                 summary["total_weight_kg"] = 0.0
@@ -544,7 +556,7 @@ def _apply_data_quality_notes(
 
     dq = summary.get("data_quality") or {}
 
-    # ── Fix #1: partial-period flag ───────────────────────────────────────────
+    # ── Partial-period flag ───────────────────────────────────────────────────
     periods_in_records = set()
     for r in records:
         for k in r:
@@ -558,12 +570,12 @@ def _apply_data_quality_notes(
         dq["is_partial_period"] = True
         dq["partial_year"] = current_year
         dq["partial_year_note"] = (
-            f"{current_year} data is year-to-date only and may understate the full-year figure."
+            f" The {current_year} data is not complete yet."
         )
     else:
         dq.setdefault("is_partial_period", False)
 
-    # ── Fix #4: has_more / truncation flag ────────────────────────────────────
+    # ── Has_more / truncation flag ────────────────────────────────────────────
     extra = (query_params or {}).get("extra") or {}
     user_limit = extra.get("user_limit")
     if user_limit and total_raw_count >= user_limit:
@@ -575,7 +587,7 @@ def _apply_data_quality_notes(
     else:
         dq.setdefault("has_more", False)
 
-    # ── Fix #5: period-coverage gap ───────────────────────────────────────────
+    # ── Period-coverage gap ───────────────────────────────────────────────────
     req_start = (query_params or {}).get("start_period")
     req_end = (query_params or {}).get("end_period")
     if req_start and req_end and periods_in_records:
@@ -594,7 +606,7 @@ def _apply_data_quality_notes(
         except (ValueError, TypeError):
             pass
 
-    # ── Fix #3: period-mismatch check ─────────────────────────────────────────
+    # ── Period-mismatch check ─────────────────────────────────────────────────
     if extra.get("period_mismatch"):
         dq["period_mismatch"] = True
         dq["requested_period"] = extra.get("requested_period")
