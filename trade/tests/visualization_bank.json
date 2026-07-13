@@ -1,0 +1,1658 @@
+[
+  {
+    "id": "summary-01",
+    "question": "What was Cambodia's total export value in 2025?",
+    "expected_type": "kpi",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Summary"
+  },
+  {
+    "id": "summary-02",
+    "question": "Total trade with Vietnam last year",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Summary"
+  },
+  {
+    "id": "summary-03",
+    "question": "How much did Cambodia import in 2024?",
+    "expected_type": "kpi",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Summary"
+  },
+  {
+    "id": "summary-04",
+    "question": "Give me a summary of exports to Thailand in Q1 2024",
+    "expected_type": "kpi",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Summary"
+  },
+  {
+    "id": "summary-05",
+    "question": "Overall trade volume for 2024",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value",
+      "net_weight"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Summary"
+  },
+  {
+    "id": "summary-06",
+    "question": "What is the total import value from China in 2025?",
+    "expected_type": "kpi",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Summary"
+  },
+  {
+    "id": "summary-07",
+    "question": "Cambodia trade with Japan in semester 1 2025",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Summary"
+  },
+  {
+    "id": "summary-08",
+    "question": "Summary of air exports in 2025",
+    "expected_type": "kpi",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Summary"
+  },
+  {
+    "id": "summary-09",
+    "question": "How much rice did Cambodia export in 2025?",
+    "expected_type": "kpi",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Summary"
+  },
+  {
+    "id": "summary-10",
+    "question": "What's our total trade this year?",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Summary"
+  },
+  {
+    "id": "summary-11",
+    "question": "Exports to the US in March 2025",
+    "expected_type": "bar",
+    "expected_columns": [
+      "flow",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Summary"
+  },
+  {
+    "id": "summary-12",
+    "question": "Total imports by sea in 2024",
+    "expected_type": "kpi",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Summary"
+  },
+  {
+    "id": "summary-13",
+    "question": "Trade value with Singapore",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Summary"
+  },
+  {
+    "id": "summary-14",
+    "question": "How much footwear was exported to the EU in 2025?",
+    "expected_type": "kpi",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Summary"
+  },
+  {
+    "id": "summary-15",
+    "question": "What is Cambodia's total export value for H2 2024?",
+    "expected_type": "bar",
+    "expected_columns": [
+      "flow",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Summary"
+  },
+  {
+    "id": "summary-16",
+    "question": "What was the net weight in kilograms of exports to China in 2025?",
+    "expected_type": "kpi",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "net_weight"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Summary"
+  },
+  {
+    "id": "summary-17",
+    "question": "Total export value of SITC division 02 in 2025",
+    "expected_type": "kpi",
+    "expected_columns": [
+      "freq",
+      "period",
+      "sitc_division",
+      "flow",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Summary"
+  },
+  {
+    "id": "summary-18",
+    "question": "Summary of exports to Vietnam by air in March 2025",
+    "expected_type": "bar",
+    "expected_columns": [
+      "flow",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Summary"
+  },
+  {
+    "id": "ranking-01",
+    "question": "Top 10 export partners in 2025",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Ranking"
+  },
+  {
+    "id": "ranking-02",
+    "question": "Bottom 5 import countries in 2024",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Ranking"
+  },
+  {
+    "id": "ranking-03",
+    "question": "Which countries does Cambodia export the most to?",
+    "expected_type": "bar",
+    "expected_columns": [
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Ranking"
+  },
+  {
+    "id": "ranking-04",
+    "question": "Top 5 products exported in 2025",
+    "expected_type": "kpi",
+    "expected_columns": [
+      "freq",
+      "period",
+      "hs_heading",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Ranking"
+  },
+  {
+    "id": "ranking-05",
+    "question": "What are the leading import sources for 2024?",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Ranking"
+  },
+  {
+    "id": "ranking-06",
+    "question": "Top 3 transport modes used for imports in 2025",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "mode_of_transport",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Ranking"
+  },
+  {
+    "id": "ranking-07",
+    "question": "Highest export value countries last year",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Ranking"
+  },
+  {
+    "id": "ranking-08",
+    "question": "Top 10 partners by trade volume",
+    "expected_type": "bar",
+    "expected_columns": [
+      "partner_country",
+      "trade_value",
+      "period",
+      "frequency",
+      "net_weight"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Ranking"
+  },
+  {
+    "id": "ranking-09",
+    "question": "Lowest 5 export destinations in 2025",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Ranking"
+  },
+  {
+    "id": "ranking-10",
+    "question": "Best performing export markets in Q2 2025",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Ranking"
+  },
+  {
+    "id": "ranking-11",
+    "question": "Top 20 HS chapters for imports in 2025",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "hs_chapter",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Ranking"
+  },
+  {
+    "id": "ranking-12",
+    "question": "Which 10 countries import the most rice from Cambodia?",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Ranking"
+  },
+  {
+    "id": "ranking-13",
+    "question": "Top air freight export destinations in 2025",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Ranking"
+  },
+  {
+    "id": "ranking-14",
+    "question": "Smallest 5 trading partners by import value",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Ranking"
+  },
+  {
+    "id": "ranking-15",
+    "question": "Top 10 partner countries for both imports and exports in 2025",
+    "expected_type": "bar",
+    "expected_columns": [
+      "partner_country",
+      "trade_value",
+      "period",
+      "frequency"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Ranking"
+  },
+  {
+    "id": "ranking-16",
+    "question": "Top 5 export partners by weight in 2025",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "net_weight"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Ranking"
+  },
+  {
+    "id": "ranking-17",
+    "question": "Top 5 SITC divisions for imports in 2025",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "sitc_division",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Ranking"
+  },
+  {
+    "id": "ranking-18",
+    "question": "Which mode of transport had the highest import value in 2025?",
+    "expected_type": "kpi",
+    "expected_columns": [
+      "freq",
+      "period",
+      "mode_of_transport",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Ranking"
+  },
+  {
+    "id": "trend-01",
+    "question": "Show the monthly export trend in 2025",
+    "expected_type": "line",
+    "expected_columns": [
+      "period",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trend"
+  },
+  {
+    "id": "trend-02",
+    "question": "How has trade with Vietnam changed over the past 5 years?",
+    "expected_type": "line",
+    "expected_columns": [
+      "period",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trend"
+  },
+  {
+    "id": "trend-03",
+    "question": "Quarterly import trend for 2024",
+    "expected_type": "line",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_datasets_count": 0,
+    "expected_title": "Trade Trend over Time"
+  },
+  {
+    "id": "trend-04",
+    "question": "Trade trend with China from 2024 to 2026",
+    "expected_type": "line",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_datasets_count": 0,
+    "expected_title": "Trade Trend over Time"
+  },
+  {
+    "id": "trend-05",
+    "question": "Show me export trends over time",
+    "expected_type": "line",
+    "expected_columns": [
+      "period",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trend"
+  },
+  {
+    "id": "trend-06",
+    "question": "Monthly trend of rice exports in 2025",
+    "expected_type": "line",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_datasets_count": 0,
+    "expected_title": "Trade Trend over Time"
+  },
+  {
+    "id": "trend-07",
+    "question": "How did imports from Thailand evolve between 2024 and 2026?",
+    "expected_type": "line",
+    "expected_columns": [
+      "period",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trend"
+  },
+  {
+    "id": "trend-08",
+    "question": "Yearly trade trend for the last decade",
+    "expected_type": "line",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_datasets_count": 0,
+    "expected_title": "Trade Trend over Time"
+  },
+  {
+    "id": "trend-09",
+    "question": "Trend of air transport exports in 2025",
+    "expected_type": "kpi",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Volume Summary"
+  },
+  {
+    "id": "trend-10",
+    "question": "Compare this year's exports to last year",
+    "expected_type": "line",
+    "expected_columns": [
+      "period",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trend"
+  },
+  {
+    "id": "trend-11",
+    "question": "Semester trend for 2024 and 2025",
+    "expected_type": "line",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_datasets_count": 0,
+    "expected_title": "Trade Trend over Time"
+  },
+  {
+    "id": "trend-12",
+    "question": "Historical trade balance trend with Japan",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_labels": [
+      "EX",
+      "IM"
+    ],
+    "expected_datasets_count": 0,
+    "expected_title": "Trade Balance Analysis"
+  },
+  {
+    "id": "trend-13",
+    "question": "Show import trend for Q1 each year from 2024-2026",
+    "expected_type": "line",
+    "expected_columns": [
+      "period",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trend"
+  },
+  {
+    "id": "trend-14",
+    "question": "Track Cambodia's export performance monthly in 2024",
+    "expected_type": "line",
+    "expected_columns": [
+      "period",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trend"
+  },
+  {
+    "id": "trend-15",
+    "question": "Trend of trade with Malaysia",
+    "expected_type": "line",
+    "expected_columns": [
+      "period",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trend"
+  },
+  {
+    "id": "trend-16",
+    "question": "Show the trend of export weight for rice over time",
+    "expected_type": "line",
+    "expected_columns": [
+      "period",
+      "net_weight"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trend"
+  },
+  {
+    "id": "trend-17",
+    "question": "Track the monthly trend of imports from Thailand by sea between 2024 and 2026",
+    "expected_type": "line",
+    "expected_columns": [
+      "period",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trend"
+  },
+  {
+    "id": "trend-18",
+    "question": "Quarterly trend of SITC Section 7 exports since 2024",
+    "expected_type": "line",
+    "expected_columns": [
+      "freq",
+      "period",
+      "sitc_section",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Trend over Time"
+  },
+  {
+    "id": "comparison-01",
+    "question": "Compare exports to Vietnam vs Thailand in 2025",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Comparison Analysis"
+  },
+  {
+    "id": "comparison-02",
+    "question": "Compare imports from China and Japan",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value",
+      "net_weight"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Comparison Analysis"
+  },
+  {
+    "id": "comparison-03",
+    "question": "Trade comparison between USA and EU in 2024",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Comparison Analysis"
+  },
+  {
+    "id": "comparison-04",
+    "question": "How does trade with Singapore compare to Malaysia?",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Comparison Analysis"
+  },
+  {
+    "id": "comparison-05",
+    "question": "Compare Cambodia's exports to Vietnam, Thailand, and Laos in 2025",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Comparison Analysis"
+  },
+  {
+    "id": "comparison-06",
+    "question": "Versus China, how much do we trade with India?",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Comparison Analysis"
+  },
+  {
+    "id": "comparison-07",
+    "question": "Compare import value of China against South Korea in 2024",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Comparison Analysis"
+  },
+  {
+    "id": "comparison-08",
+    "question": "Difference in export value between Japan and Germany",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Comparison Analysis"
+  },
+  {
+    "id": "comparison-09",
+    "question": "Compare exports vs imports with Vietnam in 2025",
+    "expected_type": "bar",
+    "expected_columns": [
+      "flow",
+      "trade_value"
+    ],
+    "expected_labels": [
+      "EX",
+      "IM"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Balance"
+  },
+  {
+    "id": "comparison-10",
+    "question": "China vs Vietnam: which is a bigger trade partner in 2025?",
+    "expected_type": "bar",
+    "expected_columns": [
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Comparison"
+  },
+  {
+    "id": "comparison-11",
+    "question": "Compare monthly export trend between Thailand and Vietnam",
+    "expected_type": "line",
+    "expected_columns": [
+      "partner_country",
+      "period",
+      "trade_value"
+    ],
+    "expected_datasets_count": 2,
+    "expected_title": "Comparison"
+  },
+  {
+    "id": "comparison-12",
+    "question": "Imports: Japan compared to South Korea in 2024",
+    "expected_type": "bar",
+    "expected_columns": [
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Comparison"
+  },
+  {
+    "id": "comparison-13",
+    "question": "Compare Cambodia's top 2 trade partners",
+    "expected_type": "bar",
+    "expected_columns": [
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Ranking"
+  },
+  {
+    "id": "comparison-14",
+    "question": "Trade value with US relative to UK",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Comparison Analysis"
+  },
+  {
+    "id": "comparison-15",
+    "question": "How do exports to Vietnam stack up against exports to Indonesia in 2024?",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Comparison Analysis"
+  },
+  {
+    "id": "comparison-16",
+    "question": "Compare exports of SITC division 02 between Thailand and Vietnam",
+    "expected_type": "bar",
+    "expected_columns": [
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Comparison"
+  },
+  {
+    "id": "comparison-17",
+    "question": "Compare the volume of exports to Vietnam vs Thailand in 2025",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value",
+      "net_weight"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Comparison Analysis"
+  },
+  {
+    "id": "comparison-18",
+    "question": "Comparison of exports to China, Japan, and India in 2025",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Comparison Analysis"
+  },
+  {
+    "id": "breakdown-01",
+    "question": "Breakdown of exports by product in 2025",
+    "expected_type": "kpi",
+    "expected_columns": [
+      "freq",
+      "period",
+      "hs_heading",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Share Breakdown"
+  },
+  {
+    "id": "breakdown-02",
+    "question": "Show imports broken down by transport mode in 2025",
+    "expected_type": "pie",
+    "expected_columns": [
+      "freq",
+      "period",
+      "mode_of_transport",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Share Breakdown"
+  },
+  {
+    "id": "breakdown-03",
+    "question": "Breakdown of trade by economic sector in 2024",
+    "expected_type": "pie",
+    "expected_columns": [
+      "freq",
+      "period",
+      "sitc_section",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Share Breakdown"
+  },
+  {
+    "id": "breakdown-04",
+    "question": "What's the distribution of exports to Vietnam by HS chapter in 2025?",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "hs_chapter",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Share Breakdown"
+  },
+  {
+    "id": "breakdown-05",
+    "question": "Breakdown imports by mode of transport for 2024",
+    "expected_type": "pie",
+    "expected_columns": [
+      "freq",
+      "period",
+      "mode_of_transport",
+      "trade_value",
+      "net_weight"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Share Breakdown"
+  },
+  {
+    "id": "breakdown-06",
+    "question": "Show export breakdown by product category for Q1 2025",
+    "expected_type": "bar",
+    "expected_columns": [
+      "hs_chapter",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Breakdown"
+  },
+  {
+    "id": "breakdown-07",
+    "question": "Sector breakdown of imports in 2025",
+    "expected_type": "pie",
+    "expected_columns": [
+      "sitc_section",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Breakdown"
+  },
+  {
+    "id": "breakdown-08",
+    "question": "How is trade with China broken down by transport mode?",
+    "expected_type": "pie",
+    "expected_columns": [
+      "mode_of_transport",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Breakdown"
+  },
+  {
+    "id": "breakdown-09",
+    "question": "Breakdown of rice exports by destination country in 2025",
+    "expected_type": "bar",
+    "expected_columns": [
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Breakdown"
+  },
+  {
+    "id": "breakdown-10",
+    "question": "Distribution of imports by product chapter in 2024",
+    "expected_type": "bar",
+    "expected_columns": [
+      "hs_chapter",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Breakdown"
+  },
+  {
+    "id": "breakdown-11",
+    "question": "Show me the industry breakdown of exports in 2025",
+    "expected_type": "pie",
+    "expected_columns": [
+      "freq",
+      "period",
+      "sitc_section",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Share Breakdown"
+  },
+  {
+    "id": "breakdown-12",
+    "question": "Breakdown by HS heading for garment exports in 2025",
+    "expected_type": "kpi",
+    "expected_columns": [
+      "freq",
+      "period",
+      "hs_heading",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Share Breakdown"
+  },
+  {
+    "id": "breakdown-13",
+    "question": "Transport mode breakdown for trade with Thailand",
+    "expected_type": "pie",
+    "expected_columns": [
+      "freq",
+      "period",
+      "mode_of_transport",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Share Breakdown"
+  },
+  {
+    "id": "breakdown-14",
+    "question": "Product breakdown of imports from Japan in 2025",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "hs_chapter",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Share Breakdown"
+  },
+  {
+    "id": "breakdown-15",
+    "question": "Breakdown of exports by partner country in 2024",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Share Breakdown"
+  },
+  {
+    "id": "breakdown-16",
+    "question": "How are imports from Thailand distributed by mode of transport in 2025?",
+    "expected_type": "pie",
+    "expected_columns": [
+      "freq",
+      "period",
+      "mode_of_transport",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Share Breakdown"
+  },
+  {
+    "id": "breakdown-17",
+    "question": "Economic sector breakdown of imports in 2025",
+    "expected_type": "pie",
+    "expected_columns": [
+      "freq",
+      "period",
+      "sitc_section",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Share Breakdown"
+  },
+  {
+    "id": "growth-01",
+    "question": "What was the export growth rate in 2025 compared to 2024?",
+    "expected_type": "line",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value",
+      "growth_rate_pct"
+    ],
+    "expected_datasets_count": 10,
+    "expected_title": "Trade Growth Analysis"
+  },
+  {
+    "id": "growth-02",
+    "question": "How much did imports from China grow year-over-year?",
+    "expected_type": "line",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value",
+      "growth_rate_pct"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Growth Analysis"
+  },
+  {
+    "id": "growth-03",
+    "question": "Export growth for Vietnam from 2024 to 2026",
+    "expected_type": "line",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value",
+      "growth_rate_pct"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Growth Analysis"
+  },
+  {
+    "id": "growth-04",
+    "question": "Which products had the fastest growth in exports in 2025?",
+    "expected_type": "bar",
+    "expected_columns": [
+      "hs_heading",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Growth"
+  },
+  {
+    "id": "growth-05",
+    "question": "Did imports increase or decrease in 2025 vs 2024?",
+    "expected_type": "bar",
+    "expected_columns": [
+      "period",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Growth"
+  },
+  {
+    "id": "growth-06",
+    "question": "YoY growth of trade with Thailand",
+    "expected_type": "line",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value",
+      "growth_rate_pct"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Growth Analysis"
+  },
+  {
+    "id": "growth-07",
+    "question": "Show the growth rate of rice exports",
+    "expected_type": "line",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value",
+      "growth_rate_pct"
+    ],
+    "expected_datasets_count": 10,
+    "expected_title": "Trade Growth Analysis"
+  },
+  {
+    "id": "growth-08",
+    "question": "How fast did exports to the US grow between 2024 and 2026?",
+    "expected_type": "line",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value",
+      "growth_rate_pct"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Growth Analysis"
+  },
+  {
+    "id": "growth-09",
+    "question": "Growth comparison for imports from Japan and Korea",
+    "expected_type": "line",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value",
+      "growth_rate_pct"
+    ],
+    "expected_datasets_count": 2,
+    "expected_title": "Trade Growth Analysis"
+  },
+  {
+    "id": "growth-10",
+    "question": "Did Cambodia's trade with the EU grow last year?",
+    "expected_type": "line",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value",
+      "growth_rate_pct"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Growth Analysis"
+  },
+  {
+    "id": "growth-11",
+    "question": "Month over month growth in exports for 2025",
+    "expected_type": "line",
+    "expected_columns": [
+      "period",
+      "trade_value"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Growth"
+  },
+  {
+    "id": "growth-12",
+    "question": "Decline in imports from Vietnam in 2025",
+    "expected_type": "line",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value",
+      "growth_rate_pct"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Growth Analysis"
+  },
+  {
+    "id": "growth-13",
+    "question": "Growth rate of air transport exports in 2025",
+    "expected_type": "line",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value",
+      "growth_rate_pct"
+    ],
+    "expected_datasets_count": 10,
+    "expected_title": "Trade Growth Analysis"
+  },
+  {
+    "id": "growth-14",
+    "question": "How has Cambodia's overall trade grown since 2024?",
+    "expected_type": "line",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value",
+      "growth_rate_pct"
+    ],
+    "expected_datasets_count": 10,
+    "expected_title": "Trade Growth Analysis"
+  },
+  {
+    "id": "growth-15",
+    "question": "Export growth for the garment sector in the past 3 years",
+    "expected_type": "line",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value",
+      "growth_rate_pct"
+    ],
+    "expected_datasets_count": 10,
+    "expected_title": "Trade Growth Analysis"
+  },
+  {
+    "id": "growth-16",
+    "question": "Did the weight of exports to Vietnam increase or decrease in 2025 vs 2024?",
+    "expected_type": "line",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "net_weight",
+      "growth_rate_pct"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Growth Analysis"
+  },
+  {
+    "id": "growth-17",
+    "question": "YoY growth of the SITC division 02 sector in 2025",
+    "expected_type": "line",
+    "expected_columns": [
+      "freq",
+      "period",
+      "partner_country",
+      "trade_value",
+      "growth_rate_pct"
+    ],
+    "expected_datasets_count": 10,
+    "expected_title": "Trade Growth Analysis"
+  },
+  {
+    "id": "tradebalance-01",
+    "question": "What is Cambodia's trade balance with Vietnam in 2025?",
+    "expected_type": "bar",
+    "expected_columns": [
+      "flow",
+      "trade_value"
+    ],
+    "expected_labels": [
+      "EX",
+      "IM"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Balance"
+  },
+  {
+    "id": "tradebalance-02",
+    "question": "Trade surplus or deficit with China?",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_labels": [
+      "EX",
+      "IM"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Balance Analysis"
+  },
+  {
+    "id": "tradebalance-03",
+    "question": "Show the trade balance for 2024",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_labels": [
+      "EX",
+      "IM"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Balance Analysis"
+  },
+  {
+    "id": "tradebalance-04",
+    "question": "Does Cambodia have a trade deficit with Thailand?",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_labels": [
+      "EX",
+      "IM"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Balance Analysis"
+  },
+  {
+    "id": "tradebalance-05",
+    "question": "Net trade with Japan in 2025",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_labels": [
+      "EX",
+      "IM"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Balance Analysis"
+  },
+  {
+    "id": "tradebalance-06",
+    "question": "Export-import balance with the US in Q1 2025",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_labels": [
+      "EX",
+      "IM"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Balance Analysis"
+  },
+  {
+    "id": "tradebalance-07",
+    "question": "What's our overall trade balance over the years?",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_labels": [
+      "EX",
+      "IM"
+    ],
+    "expected_datasets_count": 0,
+    "expected_title": "Trade Balance Analysis"
+  },
+  {
+    "id": "tradebalance-08",
+    "question": "Balance of trade with South Korea",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_labels": [
+      "EX",
+      "IM"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Balance Analysis"
+  },
+  {
+    "id": "tradebalance-09",
+    "question": "Is Cambodia importing more than exporting from Vietnam?",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_labels": [
+      "EX",
+      "IM"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Balance Analysis"
+  },
+  {
+    "id": "tradebalance-10",
+    "question": "Trade balance with the EU in 2025",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_labels": [
+      "EX",
+      "IM"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Balance Analysis"
+  },
+  {
+    "id": "tradebalance-11",
+    "question": "Cambodia's net trade position with Singapore",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value",
+      "net_weight"
+    ],
+    "expected_labels": [
+      "EX",
+      "IM"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Balance Analysis"
+  },
+  {
+    "id": "tradebalance-12",
+    "question": "Surplus or deficit with Malaysia in 2024",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_labels": [
+      "EX",
+      "IM"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Balance Analysis"
+  },
+  {
+    "id": "tradebalance-13",
+    "question": "What is the trade balance for semester 1 2025 with China?",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_labels": [
+      "EX",
+      "IM"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Balance Analysis"
+  },
+  {
+    "id": "tradebalance-14",
+    "question": "How much more does Cambodia export than import to Indonesia?",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_labels": [
+      "EX",
+      "IM"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Balance Analysis"
+  },
+  {
+    "id": "tradebalance-15",
+    "question": "Total trade balance for 2024",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_labels": [
+      "EX",
+      "IM"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Balance Analysis"
+  },
+  {
+    "id": "tradebalance-16",
+    "question": "What is the trade surplus or deficit of HS chapter 10 with Thailand?",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_labels": [
+      "EX",
+      "IM"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Balance Analysis"
+  },
+  {
+    "id": "tradebalance-17",
+    "question": "Cambodia's net trade balance by air in 2025",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_labels": [
+      "EX",
+      "IM"
+    ],
+    "expected_datasets_count": 1,
+    "expected_title": "Trade Balance Analysis"
+  },
+  {
+    "id": "tradebalance-18",
+    "question": "Track the trade balance with Vietnam monthly in 2025",
+    "expected_type": "bar",
+    "expected_columns": [
+      "freq",
+      "period",
+      "flow",
+      "trade_value"
+    ],
+    "expected_labels": [
+      "EX",
+      "IM"
+    ],
+    "expected_datasets_count": 0,
+    "expected_title": "Trade Balance Analysis"
+  }
+]

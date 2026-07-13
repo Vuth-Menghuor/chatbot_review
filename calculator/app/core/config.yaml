@@ -1,0 +1,130 @@
+# Calculator Service Configuration
+# ==================================
+# This file documents all configuration options for the Calculator microservice.
+# All values can be overridden via environment variables (see section below).
+#
+# For local development, copy the relevant variables into your .env file.
+#
+# Version: 2.0  |  Last Updated: 2026-03-25
+
+# ---------------------------------------------------------------------------
+# Server
+# ---------------------------------------------------------------------------
+server:
+  host: "127.0.0.1" # env: CALCULATOR_HOST
+  port: 8002 # env: CALCULATOR_PORT
+  reload: false # env: CALCULATOR_RELOAD  (set true for dev)
+
+# ---------------------------------------------------------------------------
+# Service Identity
+# ---------------------------------------------------------------------------
+service:
+  name: "GDCE Calculator Service"
+  version: "2.0.0"
+  description: "Import tax calculation service for Cambodia customs (GDCE)"
+  jurisdiction: "Cambodia"
+  issuing_authority: "GDCE (General Department of Customs and Excise)"
+
+# ---------------------------------------------------------------------------
+# Upstreams: other microservices this service calls
+# ---------------------------------------------------------------------------
+upstreams:
+  retrieval_service:
+    url: "" # env: RETRIEVAL_SERVICE_URL  (required in prod)
+    timeout_seconds: 30
+    fallback: "csv_description_search"
+    # If the retrieval service is unavailable, the calculator falls back
+    # to a simple token-match search against duty_rates.csv descriptions.
+
+# ---------------------------------------------------------------------------
+# Security / Middleware
+# ---------------------------------------------------------------------------
+security:
+  rate_limit_requests: 60 # env: RATE_LIMIT_REQUESTS  (requests/min per client)
+  max_payload_size_mb: 5 # env: MAX_PAYLOAD_SIZE_MB
+  allowed_origins: # env: ALLOWED_ORIGINS  (comma-separated)
+    - "*"
+  # NOTE: In production, replace "*" with the explicit origin of the chatbot/UI.
+
+# ---------------------------------------------------------------------------
+# Data / Infrastructure
+# ---------------------------------------------------------------------------
+infrastructure:
+  duty_rates_csv:
+    path: "data/processed/structured/duty_rates.csv" # env: DUTY_RATES_CSV_PATH
+    # Path is relative to the project root (e.g. e:\GDCE-ChatBot\).
+    # Override via env var for containerised deployments.
+    reload_on_startup: true
+    cache_in_memory: true
+
+  exchange_rates:
+    default_usd_to_khr: 4022 # env: USD_TO_KHR_RATE
+    source: "Ministry of Economy and Finance (MEF)"
+    effective_date: "2026-02-19"
+    update_frequency: "Daily (manual update required)"
+
+# ---------------------------------------------------------------------------
+# Tax Calculation Rules
+# ---------------------------------------------------------------------------
+calculation:
+  output_currency: "KHR"
+  rounding:
+    intermediate: "ROUND_HALF_UP to whole number"
+    final_payment: "CEILING to nearest 100 KHR"
+  vat_rate: 0.10 # 10% — Law on Taxation 2023
+
+  calculation_order:
+    step_1: "Convert customs value to USD if needed"
+    step_2: "Lookup HS code duty rates from CSV"
+    step_3: "Convert USD → KHR using exchange rate"
+    step_4: "Calculate COP (Customs Duty)"
+    step_5: "Calculate SOP (Special Tax)"
+    step_6: "Calculate VOP (VAT) — conditional base"
+    step_7: "Sum totals and round UP to nearest 100 KHR"
+
+  supported_regimes:
+    - import
+    - export
+    - transit
+    - temporary_admission
+    - bonded_warehouse
+    - duty_free
+    - qip
+    - sez
+    - diplomatic
+    - ngo_humanitarian
+    - passenger_personal
+    - other
+
+  special_cases:
+    petroleum:
+      requires: [net_mass_kg, volume_liter]
+      formula: "Two-phase CPP/ATP/SPP/VPP calculation"
+    rubber:
+      requires: [net_mass_kg]
+      formula: "ETR (Export Tax on Rubber) based on mass"
+    fta_dv:
+      requires: [fta_applicable: true]
+      formula: "Normal case with 0% or reduced duty rate"
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+logging:
+  level: "INFO" # DEBUG | INFO | WARNING | ERROR
+  format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+
+# ---------------------------------------------------------------------------
+# Environment Variable Reference
+# ---------------------------------------------------------------------------
+# Variable                 Default          Description
+# ----------------------   ---------------  -------------------------------------------
+# CALCULATOR_HOST          127.0.0.1        Bind address
+# CALCULATOR_PORT          8002             TCP port
+# CALCULATOR_RELOAD        false            Enable uvicorn hot reload
+# RETRIEVAL_SERVICE_URL    (empty)          URL of the retrieval microservice
+# RATE_LIMIT_REQUESTS      60               Max requests/min per client IP
+# MAX_PAYLOAD_SIZE_MB      5                Max request body size in MB
+# ALLOWED_ORIGINS          *                Comma-separated CORS origins
+# DUTY_RATES_CSV_PATH      (see above)      Absolute path to duty_rates.csv
+# USD_TO_KHR_RATE          4022.0           Fallback exchange rate

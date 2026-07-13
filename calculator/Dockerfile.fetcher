@@ -1,0 +1,16 @@
+# Fetcher Dockerfile — lightweight image for exchange_rate_fetcher.py
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy only the fetcher script and .env
+COPY exchange_rate_fetcher.py .
+COPY .env .
+
+ENV PYTHONUNBUFFERED=1
+
+# Default: run the fetcher once and exit
+CMD ["python", "exchange_rate_fetcher.py"]

@@ -1,0 +1,1359 @@
+{
+  "version": "2.0",
+  "effective_date": "2026-01-01",
+  "jurisdiction": "Cambodia",
+  "issuing_authority": "GDCE",
+  "description": "Formula registry for calculating import duties, taxes, fees, and configured export taxes",
+
+  "constants": {
+    "vat_standard_rate": {
+      "value": 0.1,
+      "unit": "fraction",
+      "percentage": 10,
+      "description": "Standard VAT rate per Law on Taxation 2023",
+      "applies_to": "CIF + Import Duty + Special Tax + Excise Tax",
+      "reference": "configs/rounding_rules.json"
+    },
+    "rounding_mode": {
+      "value": "CEILING",
+      "unit": "function",
+      "description": "Always round UP to nearest 100",
+      "formula": "CEILING(amount / 100) * 100",
+      "applies_to": "All intermediate and final calculations"
+    },
+    "rounding_precision": {
+      "value": 100,
+      "unit": "KHR",
+      "description": "Round to nearest 100 KHR",
+      "applies_when": "All calculation steps per rounding_rules.json"
+    }
+  },
+
+  "calculation_flow": {
+    "step_1": {
+      "name": "Currency Conversion",
+      "formula_key": "currency_conversion",
+      "description": "Convert CIF to KHR if needed"
+    },
+    "step_2": {
+      "name": "Rate Lookup",
+      "formula_key": "rate_determination",
+      "description": "Determine applicable duty rate based on HS code",
+      "data_source": "data/processed/structured/duty_rates.csv",
+      "lookup_fields": ["hs_code"]
+    },
+    "step_3": {
+      "name": "Duty Calculation",
+      "formula_key": "import_duty",
+      "description": "Calculate import duty"
+    },
+    "step_4": {
+      "name": "Special Tax Calculation",
+      "formula_key": "special_tax",
+      "description": "Calculate special tax if applicable"
+    },
+    "step_5": {
+      "name": "VAT Calculation",
+      "formula_key": "vat",
+      "description": "Calculate VAT on sum"
+    },
+    "step_6": {
+      "name": "Total Duties and Taxes",
+      "formula_key": "total_duties_and_taxes",
+      "description": "Sum all duties and taxes (round UP)"
+    },
+    "step_7": {
+      "name": "Fees Calculation",
+      "formula_key": "fees",
+      "description": "Calculate processing and inspection fees if applicable"
+    },
+    "step_8": {
+      "name": "Final Total",
+      "formula_key": "total_payable",
+      "description": "Sum duties, taxes, and fees (round UP to final amount)"
+    }
+  },
+
+  "formulas": {
+    "currency_conversion": {
+      "formula_id": "CC_001",
+      "sequence": 1,
+      "formula": "customs_value_khr = cif_value * exchange_rate (if currency is USD)",
+      "description": "Convert CIF value from external currency to KHR using official MEF rate",
+      "inputs": [
+        {
+          "name": "cif_value",
+          "type": "number",
+          "unit": "currency_value",
+          "description": "CIF value in source currency"
+        },
+        {
+          "name": "currency",
+          "type": "string",
+          "values": ["USD", "KHR"],
+          "description": "Source currency code"
+        },
+        {
+          "name": "exchange_rate",
+          "type": "number",
+          "unit": "KHR per unit",
+          "source": "configs/exchange_rates.json",
+          "description": "Official MEF exchange rate"
+        }
+      ],
+      "output": {
+        "name": "customs_value_khr",
+        "type": "number",
+        "unit": "KHR",
+        "rounding": "CEILING(result / 100) * 100"
+      },
+      "conditions": {
+        "applies_when": "currency == 'USD'",
+        "skip_when": "currency already KHR"
+      },
+      "critical_notes": [
+        "MUST execute FIRST before any tax calculations",
+        "Use official MEF exchange rates - lookup by currency code and date",
+        "Use exchange rate EXACTLY as published - DO NOT round it",
+        "Round conversion result to whole number only"
+      ]
+    },
+
+    "rate_determination": {
+      "formula_id": "RD_001",
+      "sequence": 1.5,
+      "description": "Determine which duty rate to apply",
+      "decision_logic": [
+        {
+          "if": "manual_rates provided",
+          "then": "Use manual_rates.customs_duty (skip CSV lookup)"
+        },
+        {
+          "if": "no manual_rates provided",
+          "then": "Look up hs_code in duty_rates.csv and extract duty_rate from column 4"
+        }
+      ],
+      "lookup_details": {
+        "file": "data/processed/structured/duty_rates.csv",
+        "search_by": "hs_code (exact 8-digit match in column 1)",
+        "extract_duty_rate": "Column 4 (general duty rate as percentage)",
+        "also_available": "Column 5 = special_tax_rate, Column 6 = vat_rate, Column 3 = unit_of_measure"
+      },
+      "output": {
+        "name": "applicable_duty_rate",
+        "type": "number",
+        "unit": "percentage",
+        "range": [0, 100],
+        "source": "manual_rates or duty_rates.csv"
+      },
+      "notes": "FTA preferential rates not implemented yet - use manual_rates if special agreement applies"
+    },
+
+    "cop_amount": {
+      "formula_id": "ID_001",
+      "sequence": 3,
+      "formula": "cop_amount = customs_value_khr * duty_rate",
+      "description": "Calculate COP (Import Taxes) based on customs value and import tax rate",
+      "inputs": [
+        {
+          "name": "customs_value_khr",
+          "type": "number",
+          "unit": "KHR",
+          "description": "Customs value in KHR (converted if needed)"
+        },
+        {
+          "name": "duty_rate",
+          "type": "number",
+          "unit": "fraction",
+          "range": [0, 1],
+          "description": "Duty rate from lookup (percentage expressed as decimal)"
+        }
+      ],
+      "output": {
+        "name": "cop_amount",
+        "type": "number",
+        "unit": "KHR",
+        "rounding": "CEILING(result / 100) * 100"
+      },
+      "notes": "Varies by HS code and preferential agreements. Always check for exemptions."
+    },
+
+    "sop_amount": {
+      "formula_id": "ST_001",
+      "sequence": 4,
+      "formula": "sop_amount = (customs_value_khr + cop_amount) * special_tax_rate",
+      "description": "Calculate SOP (Special Tariff / Special Tax) for specific product categories (Cambodia terminology)",
+      "applies_to": [
+        "alcoholic_beverages",
+        "tobacco_products",
+        "petroleum_products",
+        "motor_vehicles",
+        "luxury_goods"
+      ],
+      "inputs": [
+        {
+          "name": "customs_value_khr",
+          "type": "number",
+          "unit": "KHR"
+        },
+        {
+          "name": "cop_amount",
+          "type": "number",
+          "unit": "KHR",
+          "description": "COP amount (already rounded) from previous calculation step"
+        },
+        {
+          "name": "special_tax_rate",
+          "type": "number",
+          "unit": "fraction",
+          "description": "Rate specific to product category from duty_rates.csv"
+        }
+      ],
+      "output": {
+        "name": "sop_amount",
+        "type": "number",
+        "unit": "KHR",
+        "rounding": "CEILING(result / 100) * 100"
+      },
+      "default": 0
+    },
+
+    "vop_amount": {
+      "formula_id": "VAT_001",
+      "sequence": 5,
+      "formula": "vop_amount = vop_base * vat_rate (where vop_base depends on if taxable or non-taxable goods)",
+      "description": "Calculate VOP (Value Added Tax per Cambodia customs) based on conditional base (taxable vs non-taxable goods)",
+      "inputs": [
+        {
+          "name": "vop_base",
+          "type": "number",
+          "unit": "KHR",
+          "description": "VOP base determined by goods category: (CIF+COP) for non-taxable; (CIF+COP+SOP) for taxable"
+        },
+        {
+          "name": "vat_rate",
+          "type": "number",
+          "unit": "fraction",
+          "default_value": 0.1,
+          "description": "Standard VAT rate = 10% (per Law on Taxation 2023)"
+        }
+      ],
+      "output": {
+        "name": "vop_amount",
+        "type": "number",
+        "unit": "KHR",
+        "rounding": "CEILING(result / 100) * 100"
+      },
+      "regulatory_basis": "Law on Taxation 2023",
+      "critical_notes": [
+        "VOP base is conditional: determined in step 4 of rounding_rules.json execution_order",
+        "For non-taxable goods (SOP=0): VOP_base = CIF + COP",
+        "For general taxable goods (SOP>0): VOP_base = CIF + COP + SOP",
+        "Always apply this rule AFTER determining goods category and calculating SOP"
+      ]
+    },
+
+    "total_duties_and_taxes": {
+      "formula_id": "TDT_001",
+      "sequence": 6,
+      "formula": "total_duties_and_taxes = cop_amount + sop_amount + vop_amount",
+      "description": "Sum all duty and tax components (COP + SOP + VOP; excludes fees)",
+      "inputs": [
+        {
+          "name": "cop_amount",
+          "type": "number",
+          "unit": "KHR",
+          "description": "Import Taxes (COP) - already rounded"
+        },
+        {
+          "name": "sop_amount",
+          "type": "number",
+          "unit": "KHR",
+          "description": "Special Tariff (Special Tax) - already rounded"
+        },
+        {
+          "name": "vop_amount",
+          "type": "number",
+          "unit": "KHR",
+          "description": "Value Added Tax (VAT) - already rounded"
+        }
+      ],
+      "output": {
+        "name": "total_duties_and_taxes",
+        "type": "number",
+        "unit": "KHR",
+        "rounding": "CEILING(result / 100) * 100"
+      },
+      "notes": "Rounded UP to nearest 100. This is intermediate, not final payment amount."
+    },
+
+    "total_payable": {
+      "formula_id": "TP_001",
+      "sequence": 8,
+      "formula": "total_payable = CEILING((total_duties_and_taxes + processing_fee + inspection_fee + other_fees) / 100) * 100",
+      "description": "Final amount payable including all duties, taxes, and fees",
+      "inputs": [
+        {
+          "name": "total_duties_and_taxes",
+          "type": "number",
+          "unit": "KHR"
+        },
+        {
+          "name": "processing_fee",
+          "type": "number",
+          "unit": "KHR",
+          "default": 0
+        },
+        {
+          "name": "inspection_fee",
+          "type": "number",
+          "unit": "KHR",
+          "default": 0
+        },
+        {
+          "name": "other_fees",
+          "type": "number",
+          "unit": "KHR",
+          "default": 0
+        }
+      ],
+      "output": {
+        "name": "total_payable",
+        "type": "number",
+        "unit": "KHR",
+        "rounding": "CEILING(result / 100) * 100"
+      },
+      "critical_notes": [
+        "This is the final payment amount shown on payment receipt",
+        "ALWAYS round UP to nearest 100 (no exceptions)",
+        "Example: 12345.01 → 12400, 12345.00 → 12400 even if already at 100"
+      ]
+    },
+
+    "duty_exemption": {
+      "formula_id": "DE_001",
+      "formula": "import_duty = 0",
+      "description": "Apply zero duty when valid exemption exists",
+      "conditions": {
+        "requires": [
+          "valid_exemption_certificate",
+          "authorized_exemption_category"
+        ],
+        "categories": [
+          "diplomatic",
+          "qip",
+          "ngo",
+          "government",
+          "development_projects"
+        ]
+      },
+      "notes": "Exemptions require proper documentation per applicable sub-decrees"
+    },
+
+    "excise_tax": {
+      "formula_id": "ET_001",
+      "sequence": 4,
+      "formula": "excise_tax = customs_value_khr * excise_rate OR quantity * specific_rate",
+      "description": "Calculate excise tax (ad-valorem or specific) - NOTE: In Cambodia, excise is typically included in SOP or separate duty",
+      "applies_to": [
+        "alcoholic_beverages",
+        "tobacco_products",
+        "petroleum_products",
+        "motor_vehicles"
+      ],
+      "variations": [
+        {
+          "type": "ad_valorem",
+          "formula": "cif_value_khr * excise_rate",
+          "applies_to": "Most product categories"
+        },
+        {
+          "type": "specific",
+          "formula": "quantity * specific_rate",
+          "applies_to": "Certain petroleum products, beverages by volume",
+          "unit": "per liter or per unit"
+        }
+      ],
+      "output": {
+        "name": "excise_tax",
+        "type": "number",
+        "unit": "KHR",
+        "rounding": "CEILING(result / 100) * 100"
+      }
+    },
+
+    "processing_fee": {
+      "formula_id": "PF_001",
+      "formula": "processing_fee = fixed_amount_per_declaration_type",
+      "description": "Fixed processing fee for customs declaration",
+      "inputs": [
+        {
+          "name": "declaration_type",
+          "type": "string",
+          "values": ["normal", "express", "special"]
+        }
+      ],
+      "output": {
+        "name": "processing_fee",
+        "type": "number",
+        "unit": "KHR",
+        "default": 0
+      },
+      "notes": "Check current fee schedule for applicable amounts"
+    },
+
+    "inspection_fee": {
+      "formula_id": "IF_001",
+      "formula": "inspection_fee = base_fee + (cif_value_khr * percentage_fee)",
+      "description": "Fee for customs scanning or physical inspection",
+      "applies_when": [
+        "red_channel_routing",
+        "yellow_channel_routing",
+        "requested_inspection"
+      ],
+      "inputs": [
+        {
+          "name": "base_fee",
+          "type": "number",
+          "unit": "KHR"
+        },
+        {
+          "name": "cif_value_khr",
+          "type": "number",
+          "unit": "KHR"
+        },
+        {
+          "name": "percentage_fee",
+          "type": "number",
+          "unit": "fraction",
+          "example": 0.001
+        }
+      ],
+      "output": {
+        "name": "inspection_fee",
+        "type": "number",
+        "unit": "KHR",
+        "rounding": "CEILING(result / 100) * 100"
+      }
+    }
+  },
+
+  "special_formulas": {
+    "acfta_duty": {
+      "description": "ACFTA (ASEAN-China Free Trade Area) duty = 0% with Form E",
+      "formula": "cif_value * 0.00",
+      "certificate_type": "Form E",
+      "agreement": "ASEAN-China FTA"
+    },
+    "atiga_duty": {
+      "description": "ATIGA agreement duty = 0% with Form D for ASEAN countries",
+      "formula": "cif_value * 0.00",
+      "certificate_type": "Form D",
+      "origin_eligible": [
+        "BN",
+        "KH",
+        "ID",
+        "LA",
+        "MY",
+        "MM",
+        "PH",
+        "SG",
+        "TH",
+        "VN"
+      ]
+    },
+    "akfta_duty": {
+      "description": "AKFTA (ASEAN-Korea FTA) typically 0% duty",
+      "certificate_type": "Form AK",
+      "agreement": "ASEAN-Korea FTA"
+    },
+    "ajcep_duty": {
+      "description": "AJCEP (ASEAN-Japan CEPA) typically reduced or 0% duty",
+      "certificate_type": "Form AJ",
+      "agreement": "ASEAN-Japan Comprehensive Economic Partnership"
+    }
+  },
+
+  "extended_formulas": {
+    "duty_exemption_detailed": {
+      "conditions": {
+        "requires": [
+          "valid_exemption_certificate",
+          "authorized_exemption_category"
+        ],
+        "categories": [
+          "diplomatic",
+          "qip",
+          "ngo",
+          "government",
+          "development_projects"
+        ]
+      },
+      "notes": "Exemptions require proper documentation and authorization per applicable sub-decrees"
+    },
+
+    "dv_declared_value": {
+      "formula": "fair_market_value",
+      "inputs": ["fair_market_value"],
+      "output": "dv_amount",
+      "description": "DV (Declared Value) - Fair amount of price used to keep the market in the middle, not too high or too low",
+      "unit": "KHR",
+      "notes": "DV is used as the customs valuation basis. Only applies to imports, not exports."
+    },
+
+    "acfta_duty": {
+      "formula": "cif_value * 0.00",
+      "inputs": ["cif_value"],
+      "output": "acfta_duty_amount",
+      "description": "ACFTA (ASEAN-China Free Trade Area) makes customs duty rate 0.00",
+      "unit": "KHR",
+      "conditions": {
+        "requires": ["acfta_certificate_of_origin", "eligible_commodity"],
+        "agreement": "ASEAN-China FTA",
+        "certificate_type": "Form E"
+      },
+      "notes": "ACFTA agreement sets duty to 0% for eligible goods with proper documentation (Form E)"
+    },
+
+    "atiga_duty": {
+      "formula": "cif_value * 0.00",
+      "inputs": ["cif_value"],
+      "output": "atiga_duty_amount",
+      "description": "ATIGA (ASEAN Trade in Goods Agreement) makes customs duty rate 0.00 for intra-ASEAN trade",
+      "unit": "KHR",
+      "conditions": {
+        "requires": [
+          "certificate_of_origin",
+          "eligible_commodity",
+          "asean_origin"
+        ],
+        "agreement": "ASEAN Trade in Goods Agreement (ATIGA)",
+        "certificate_type": "Form D",
+        "origin_countries": [
+          "Brunei",
+          "Cambodia",
+          "Indonesia",
+          "Laos",
+          "Malaysia",
+          "Myanmar",
+          "Philippines",
+          "Singapore",
+          "Thailand",
+          "Vietnam"
+        ]
+      },
+      "notes": "ATIGA is the most commonly used FTA in Cambodia for trade with ASEAN members. Requires Form D Certificate of Origin."
+    },
+
+    "akfta_duty": {
+      "formula": "cif_value * akfta_rate",
+      "inputs": ["cif_value", "akfta_rate"],
+      "output": "akfta_duty_amount",
+      "description": "AKFTA (ASEAN-Korea Free Trade Agreement) duty calculation - rate typically 0% or reduced",
+      "unit": "KHR",
+      "conditions": {
+        "requires": [
+          "certificate_of_origin",
+          "eligible_commodity",
+          "korean_or_asean_origin"
+        ],
+        "agreement": "ASEAN-Korea FTA (AKFTA)",
+        "certificate_type": "Form AK"
+      },
+      "notes": "AKFTA provides preferential rates for Korean goods imported to Cambodia. Most goods have 0% duty with Form AK."
+    },
+
+    "ajcep_duty": {
+      "formula": "cif_value * ajcep_rate",
+      "inputs": ["cif_value", "ajcep_rate"],
+      "output": "ajcep_duty_amount",
+      "description": "AJCEP (ASEAN-Japan Comprehensive Economic Partnership) duty calculation - rate typically 0% or reduced",
+      "unit": "KHR",
+      "conditions": {
+        "requires": [
+          "certificate_of_origin",
+          "eligible_commodity",
+          "japanese_or_asean_origin"
+        ],
+        "agreement": "ASEAN-Japan Comprehensive Economic Partnership (AJCEP)",
+        "certificate_type": "Form AJ"
+      },
+      "notes": "AJCEP provides preferential rates for Japanese goods imported to Cambodia. Most goods have 0% or reduced duty with Form AJ."
+    },
+
+    "rcep_duty": {
+      "formula": "cif_value * rcep_rate",
+      "inputs": ["cif_value", "rcep_rate"],
+      "output": "rcep_duty_amount",
+      "description": "RCEP (Regional Comprehensive Economic Partnership) duty calculation - rate varies by origin and commodity",
+      "unit": "KHR",
+      "conditions": {
+        "requires": [
+          "certificate_of_origin",
+          "eligible_commodity",
+          "rcep_origin"
+        ],
+        "agreement": "Regional Comprehensive Economic Partnership (RCEP)",
+        "certificate_type": "Form RCEP",
+        "origin_countries": [
+          "ASEAN members",
+          "China",
+          "Japan",
+          "South Korea",
+          "Australia",
+          "New Zealand"
+        ]
+      },
+      "notes": "RCEP is the newest and largest FTA covering 15 countries. Tariff elimination schedules vary by country pair and commodity. Entered into force 2022."
+    },
+
+    "aanzfta_duty": {
+      "formula": "cif_value * aanzfta_rate",
+      "inputs": ["cif_value", "aanzfta_rate"],
+      "output": "aanzfta_duty_amount",
+      "description": "AANZFTA (ASEAN-Australia-New Zealand Free Trade Agreement) duty calculation",
+      "unit": "KHR",
+      "conditions": {
+        "requires": ["certificate_of_origin", "eligible_commodity"],
+        "agreement": "ASEAN-Australia-New Zealand FTA (AANZFTA)",
+        "certificate_type": "Form AANZ"
+      },
+      "notes": "AANZFTA provides preferential rates for Australian and New Zealand goods. Most tariffs reduced to 0% or minimal rates."
+    },
+
+    "dq_adjustment": {
+      "formula": "government_agreed_price - market_price",
+      "inputs": ["government_agreed_price", "market_price"],
+      "output": "dq_adjustment_amount",
+      "description": "DQ (Deal/Trade Agreement) - Real deal or trade agreement between one company and the government, specific to Cambodia Customs",
+      "unit": "KHR",
+      "notes": "DQ is a user-provided adjustment factor. No backend registry — the user must supply dq_factor directly when dq_applicable is true."
+    },
+
+    "sop_amount": {
+      "formula": "CEILING((cif_value + import_duty + excise_tax + vat) / 100) * 100",
+      "inputs": ["cif_value", "import_duty", "excise_tax", "vat"],
+      "output": "sop_amount",
+      "description": "SOP Amount - Calculated result, optionally adjusted by company-specific DQ when applicable, ALWAYS rounded UP to nearest 100",
+      "unit": "KHR",
+      "rounding": "always_round_up_to_hundred",
+      "notes": "SOP includes all standard calculations. When DQ applies, the company-specific dq_factor adjusts the SOP amount before rounding. Final amount ALWAYS rounds UP to nearest 100, never down."
+    },
+
+    "cop_amount": {
+      "formula": "CEILING((cif_value * customs_duty_rate) / 100) * 100",
+      "inputs": ["cif_value", "customs_duty_rate"],
+      "output": "cop_amount",
+      "description": "COP Amount - Calculated WITH Customs Duty Rate applied, ALWAYS rounded UP to nearest 100",
+      "unit": "KHR",
+      "rounding": "always_round_up_to_hundred",
+      "notes": "COP is the amount calculated with the official customs duty rate. Final amount ALWAYS rounds UP to nearest 100, never down."
+    },
+
+    "commodity_tax_by_mass": {
+      "formula": "net_mass_kg * rate_per_kg",
+      "inputs": ["net_mass_kg", "rate_per_kg"],
+      "output": "tax_amount_by_mass",
+      "description": "Calculate tax based on net mass in kilograms (used for commodities like rubber)",
+      "unit": "KHR",
+      "applies_to": ["rubber", "certain_agricultural_products"],
+      "notes": "Some commodities are taxed based on weight rather than value. Net mass must be accurately declared."
+    },
+
+    "commodity_tax_by_volume": {
+      "formula": "volume_ltr * rate_per_ltr",
+      "inputs": ["volume_ltr", "rate_per_ltr"],
+      "output": "tax_amount_by_volume",
+      "description": "Calculate tax based on volume in liters (used for commodities like petroleum)",
+      "unit": "KHR",
+      "applies_to": ["petroleum_products", "certain_liquids"],
+      "notes": "Petroleum and similar products are typically taxed per liter. Volume must be temperature-corrected to standard conditions."
+    },
+
+    "commodity_tax_hybrid": {
+      "formula": "(net_mass_kg * mass_rate) + (volume_ltr * volume_rate)",
+      "inputs": ["net_mass_kg", "mass_rate", "volume_ltr", "volume_rate"],
+      "output": "tax_amount_hybrid",
+      "description": "Calculate tax using both net mass and volume (for certain rubber and petroleum cases)",
+      "unit": "KHR",
+      "applies_to": ["specific_rubber_types", "specific_petroleum_types"],
+      "notes": "Most frequently used case for rubber and petroleum where both mass and volume determine the tax liability."
+    },
+
+    "final_amount_with_rounding": {
+      "formula": "CEILING(calculated_amount / 100) * 100",
+      "inputs": ["calculated_amount"],
+      "output": "final_rounded_amount",
+      "description": "Apply rounding ONLY when money is ready to pay - ALWAYS round UP to nearest 100, never down",
+      "unit": "KHR",
+      "applies_to": ["total_payable", "sop_amount", "cop_amount"],
+      "examples": [
+        { "input": 12345678, "output": 12345700 },
+        { "input": 12345601, "output": 12345700 },
+        { "input": 12345649, "output": 12345700 },
+        { "input": 12345600, "output": 12345600 }
+      ],
+      "notes": "CRITICAL: Apply this ONLY to final payment amounts when ready to pay. Do NOT apply to tax base amounts (CIF, duty, excise, VAT, total_duties_and_taxes)."
+    },
+
+    "normal_case_customs_value": {
+      "formula": "exchange_rate * item_price",
+      "inputs": ["exchange_rate", "item_price"],
+      "output": "customs_value",
+      "description": "NORMAL CASE: Calculate customs value from item price and exchange rate",
+      "unit": "KHR",
+      "case": "normal",
+      "notes": "Standard customs valuation for regular imports"
+    },
+
+    "normal_case_cop": {
+      "formula": "customs_value * cop_rate",
+      "inputs": ["customs_value", "cop_rate"],
+      "output": "cop_amount",
+      "description": "NORMAL CASE: COP (Customs of Payment) = customs value × rate",
+      "unit": "KHR",
+      "case": "normal",
+      "notes": "COP is the customs duty amount in normal import scenarios"
+    },
+
+    "normal_case_sop": {
+      "formula": "(customs_value + cop_amount) * sop_rate",
+      "inputs": ["customs_value", "cop_amount", "sop_rate"],
+      "output": "sop_amount",
+      "description": "NORMAL CASE: SOP (Special tax/Excise) = (customs value + COP amount) × rate",
+      "unit": "KHR",
+      "case": "normal",
+      "notes": "SOP is calculated on the base of customs value plus COP"
+    },
+
+    "vop_non_taxable_goods": {
+      "formula": "(customs_value + cop_amount) * vop_rate",
+      "inputs": ["customs_value", "cop_amount", "vop_rate"],
+      "output": "vop_amount",
+      "description": "VOP for NON-TAXABLE GOODS: VOP = (Customs Value + COP) × 10%",
+      "unit": "KHR",
+      "applies_to": ["medical_equipment", "some_qip_goods", "exempted_goods"],
+      "condition": "When SOP rate is 0% or good is exempted from special tax",
+      "notes": "Non-taxable goods: SOP = 0%, so VOP includes only CIF + COP"
+    },
+
+    "vop_taxable_goods": {
+      "formula": "(customs_value + cop_amount + sop_amount) * vop_rate",
+      "inputs": ["customs_value", "cop_amount", "sop_amount", "vop_rate"],
+      "output": "vop_amount",
+      "description": "VOP for TAXABLE GOODS: VOP = (Customs Value + COP + SOP) × 10%",
+      "unit": "KHR",
+      "applies_to": [
+        "beer",
+        "spirits",
+        "tobacco",
+        "smartphones",
+        "luxury_goods"
+      ],
+      "condition": "When SOP rate > 0% (good has special tax/excise)",
+      "notes": "Taxable goods: SOP applies, so VOP includes CIF + COP + SOP"
+    },
+
+    "normal_case_vop": {
+      "formula": "CONDITIONAL: (CIF + COP) × 10% OR (CIF + COP + SOP) × 10%",
+      "inputs": [
+        "customs_value",
+        "cop_amount",
+        "sop_amount",
+        "vop_rate",
+        "sop_rate"
+      ],
+      "output": "vop_amount",
+      "description": "NORMAL CASE: VOP (VAT on Payment) - CONDITIONAL based on good type",
+      "unit": "KHR",
+      "case": "normal",
+      "conditional": {
+        "if_sop_is_zero": {
+          "formula": "(customs_value + cop_amount) * vop_rate",
+          "description": "Non-taxable goods: VOP = (CIF + COP) × 10%",
+          "examples": ["medical equipment (HS 9018)", "some exempted goods"]
+        },
+        "if_sop_greater_than_zero": {
+          "formula": "(customs_value + cop_amount + sop_amount) * vop_rate",
+          "description": "Taxable goods: VOP = (CIF + COP + SOP) × 10%",
+          "examples": [
+            "beer (HS 2204)",
+            "spirits (HS 2208)",
+            "smartphones (HS 8517.62)"
+          ]
+        }
+      },
+      "notes": "CRITICAL: Check SOP rate first. If SOP = 0%, exclude SOP from VOP base. If SOP > 0%, include SOP in VOP base."
+    },
+
+    "petroleum_phase1_cpp_base": {
+      "formula": "(dv * exchange_rate * net_mass) / 1000",
+      "inputs": ["dv", "exchange_rate", "net_mass"],
+      "output": "cpp_base",
+      "description": "PETROLEUM PHASE 1: CPP base = (DV × Exchange Rate × Net Mass) / 1000",
+      "unit": "KHR",
+      "case": "petroleum",
+      "phase": 1,
+      "notes": "CPP base for petroleum using Declared Value and net mass in kg"
+    },
+
+    "petroleum_phase1_cpp": {
+      "formula": "cpp_base * cpp_rate",
+      "inputs": ["cpp_base", "cpp_rate"],
+      "output": "cpp_amount",
+      "description": "PETROLEUM PHASE 1: CPP (Customs Petroleum Payment) = CPP base × Rate",
+      "unit": "KHR",
+      "case": "petroleum",
+      "phase": 1,
+      "rounding": "ROUND to whole number, then CEILING to nearest 100",
+      "notes": "Customs duty for petroleum in phase 1. SAD standard: round to whole first, then round UP to nearest 100."
+    },
+
+    "petroleum_phase1_atp": {
+      "formula": "atp_base * atp_rate * exchange_rate",
+      "inputs": ["atp_base", "atp_rate", "exchange_rate"],
+      "output": "atp_amount",
+      "description": "PETROLEUM PHASE 1: ATP (Additional Tax Petroleum) = LTR × Rate × Exchange Rate",
+      "unit": "KHR",
+      "case": "petroleum",
+      "phase": 1,
+      "rounding": "ROUND to whole number, then CEILING to nearest 100",
+      "notes": "ATP base = LTR (Liter volume). SAD standard: round to whole first, then round UP to nearest 100."
+    },
+
+    "petroleum_phase1_spp": {
+      "formula": "(cpp_base + cpp_amount + atp_amount) * spp_rate",
+      "inputs": ["cpp_base", "cpp_amount", "atp_amount", "spp_rate"],
+      "output": "spp_amount",
+      "description": "PETROLEUM PHASE 1: SPP (Special tax Petroleum) = (CPP base + CPP + ATP) × Rate",
+      "unit": "KHR",
+      "case": "petroleum",
+      "phase": 1,
+      "rounding": "ROUND to whole number, then CEILING to nearest 100",
+      "notes": "Special tax/excise for petroleum phase 1. SAD standard: round to whole first, then round UP to nearest 100."
+    },
+
+    "petroleum_phase1_vpp_base": {
+      "formula": "spp_base + spp_amount",
+      "inputs": ["spp_base", "spp_amount"],
+      "output": "vpp_base",
+      "description": "PETROLEUM PHASE 1: VPP base = SPP base + SPP Amount",
+      "unit": "KHR",
+      "case": "petroleum",
+      "phase": 1,
+      "notes": "Base for VAT calculation in petroleum phase 1. SPP base = CPP base + CPP + ATP"
+    },
+
+    "petroleum_phase1_vpp": {
+      "formula": "vpp_base * vpp_rate",
+      "inputs": ["vpp_base", "vpp_rate"],
+      "output": "vpp_amount",
+      "description": "PETROLEUM PHASE 1: VPP (VAT Petroleum) = VPP base × Rate",
+      "unit": "KHR",
+      "case": "petroleum",
+      "phase": 1,
+      "rounding": "ROUND to whole number, then CEILING to nearest 100",
+      "notes": "VAT for petroleum in phase 1. SAD standard: round to whole first, then round UP to nearest 100."
+    },
+
+    "petroleum_phase2": {
+      "formula": "same_as_phase1_but_replace_cpp_base_with_customs_value",
+      "inputs": [
+        "customs_value",
+        "cpp_rate",
+        "atp_amount",
+        "spp_rate",
+        "vpp_rate"
+      ],
+      "output": "phase2_amounts",
+      "description": "PETROLEUM PHASE 2: Same as Phase 1 but replace CPP base with actual CUSTOMS VALUE",
+      "unit": "KHR",
+      "case": "petroleum",
+      "phase": 2,
+      "notes": "Phase 2 uses actual customs value instead of calculated CPP base"
+    },
+
+    "petroleum_dpp": {
+      "formula": "ABS(phase1_total - phase2_total)",
+      "inputs": ["phase1_total", "phase2_total"],
+      "output": "dpp_amount",
+      "description": "PETROLEUM: DPP (Partial subsidy by the state) = ABS(Phase 1 - Phase 2)",
+      "unit": "KHR",
+      "case": "petroleum",
+      "notes": "DPP is informational only. If Phase 2 > Phase 1: Additional charge (state collects). If Phase 1 > Phase 2: Subsidy by the state (state pays). Importer always pays Phase 1 regardless."
+    },
+
+    "rubber_etr": {
+      "formula": "(dv * exchange_rate * net_mass) / 1000",
+      "inputs": ["dv", "exchange_rate", "net_mass"],
+      "output": "etr_amount",
+      "description": "RUBBER CASE: ETR (Export Tax on Rubber) = (DV × Exchange Rate × Net Mass) / 1000",
+      "unit": "KHR",
+      "case": "rubber",
+      "notes": "Export tax on rubber based on Declared Value and net mass in kg"
+    },
+
+    "fta_dv_case_cop": {
+      "formula": "customs_value * cop_rate",
+      "inputs": ["customs_value", "cop_rate"],
+      "output": "cop_amount",
+      "description": "FTA/DV CASE: COP = Customs Value × Rate = 0 (typically)",
+      "unit": "KHR",
+      "case": "fta_dv",
+      "default_result": 0,
+      "notes": "For FTA (Free Trade Agreement) with DV, COP is typically 0%"
+    },
+
+    "fta_dv_case_cop_amount": {
+      "formula": "customs_value * customs_duty_rate",
+      "inputs": ["customs_value", "customs_duty_rate"],
+      "output": "cop_amount",
+      "description": "FTA/DV CASE: COP Amount = Customs Value × Customs Duty Rate",
+      "unit": "KHR",
+      "case": "fta_dv",
+      "notes": "Even when duty is 0%, this shows the calculated customs duty amount"
+    },
+
+    "fta_dv_case_sop": {
+      "formula": "(customs_value + cop_amount) * sop_rate",
+      "inputs": ["customs_value", "cop_amount", "sop_rate"],
+      "output": "sop_amount",
+      "description": "FTA/DV CASE: SOP = (Custom Value + COP Amount) × Rate",
+      "unit": "KHR",
+      "case": "fta_dv",
+      "notes": "SOP calculated even when COP is 0 under FTA"
+    },
+
+    "fta_dv_case_vop_non_taxable": {
+      "formula": "(customs_value + cop_amount) * vop_rate",
+      "inputs": ["customs_value", "cop_amount", "vop_rate"],
+      "output": "vop_amount",
+      "description": "FTA/DV CASE (Non-Taxable): VOP = (CIF + COP) × 10%",
+      "unit": "KHR",
+      "case": "fta_dv",
+      "condition": "When good under FTA has 0% special tax",
+      "notes": "FTA non-taxable goods: COP typically 0%, SOP = 0%, VOP on (CIF + COP)"
+    },
+
+    "fta_dv_case_vop_taxable": {
+      "formula": "(customs_value + cop_amount + sop_amount) * vop_rate",
+      "inputs": ["customs_value", "cop_amount", "sop_amount", "vop_rate"],
+      "output": "vop_amount",
+      "description": "FTA/DV CASE (Taxable): VOP = (CIF + COP + SOP) × 10%",
+      "unit": "KHR",
+      "case": "fta_dv",
+      "condition": "When good under FTA still has special tax (e.g., smartphones with ATIGA)",
+      "notes": "FTA taxable goods: COP typically 0% but SOP applies, VOP on (CIF + COP + SOP)"
+    },
+
+    "fta_dv_case_vop": {
+      "formula": "CONDITIONAL: (CIF + COP) × 10% OR (CIF + COP + SOP) × 10%",
+      "inputs": [
+        "customs_value",
+        "cop_amount",
+        "sop_amount",
+        "vop_rate",
+        "sop_rate"
+      ],
+      "output": "vop_amount",
+      "description": "FTA/DV CASE: VOP - CONDITIONAL based on good type",
+      "unit": "KHR",
+      "case": "fta_dv",
+      "conditional": {
+        "if_sop_is_zero": {
+          "formula": "(customs_value + cop_amount) * vop_rate",
+          "description": "FTA non-taxable: VOP = (CIF + COP) × 10%",
+          "example": "Most FTA goods with 0% duty and 0% special tax"
+        },
+        "if_sop_greater_than_zero": {
+          "formula": "(customs_value + cop_amount + sop_amount) * vop_rate",
+          "description": "FTA taxable: VOP = (CIF + COP + SOP) × 10%",
+          "example": "Smartphones with ATIGA Form D still have 5% ST"
+        }
+      },
+      "notes": "Even under FTA (0% COP), VAT still applies. Check SOP to determine if it's included in VOP base."
+    },
+
+    "fta_dv_dq_case_cop": {
+      "formula": "cop_base * cop_rate",
+      "inputs": ["cop_base", "cop_rate"],
+      "output": "cop_amount",
+      "description": "FTA/DV & DQ CASE: COP = COP base × Rate = 0",
+      "unit": "KHR",
+      "case": "fta_dv_dq",
+      "default_result": 0,
+      "notes": "COP is 0 under FTA even with DQ adjustment"
+    },
+
+    "fta_dv_dq_case_sop_base": {
+      "formula": "customs_value + cop_amount",
+      "inputs": ["customs_value", "cop_amount"],
+      "output": "sop_base",
+      "description": "FTA/DV & DQ CASE: SOP base = Customs Value + COP Amount",
+      "unit": "KHR",
+      "case": "fta_dv_dq",
+      "notes": "Base calculation for SOP before DQ adjustment"
+    },
+
+    "fta_dv_dq_case_sop": {
+      "formula": "(sop_base + cop_base) * sop_rate * dq",
+      "inputs": ["sop_base", "cop_base", "sop_rate", "dq"],
+      "output": "sop_amount",
+      "description": "FTA/DV & DQ CASE: SOP = (SOP base + COP base) × Rate × DQ",
+      "unit": "KHR",
+      "case": "fta_dv_dq",
+      "notes": "SOP with DQ (Deal/Trade Agreement) adjustment applied"
+    },
+
+    "fta_dv_dq_case_vop_base": {
+      "formula": "CONDITIONAL: (CIF + COP) OR (CIF + COP + DQ-adjusted SOP)",
+      "inputs": ["customs_value", "cop_amount", "sop_amount", "sop_rate"],
+      "output": "vop_base",
+      "description": "FTA/DV & DQ CASE: VOP base - CONDITIONAL based on good type",
+      "unit": "KHR",
+      "case": "fta_dv_dq",
+      "conditional": {
+        "if_sop_is_zero": "(CIF + COP) - Non-taxable goods",
+        "if_sop_greater_than_zero": "(CIF + COP + DQ-adjusted SOP) - Taxable goods"
+      },
+      "notes": "Check SOP rate first. DQ adjustment only applies to SOP when SOP > 0%"
+    },
+
+    "fta_dv_dq_case_vop_non_taxable": {
+      "formula": "(customs_value + cop_amount) * vop_rate",
+      "inputs": ["customs_value", "cop_amount", "vop_rate"],
+      "output": "vop_amount",
+      "description": "FTA/DV & DQ CASE (Non-Taxable): VOP = (CIF + COP) × 10%",
+      "unit": "KHR",
+      "case": "fta_dv_dq",
+      "condition": "When good has 0% special tax",
+      "notes": "FTA/DQ non-taxable: VOP on (CIF + COP), DQ adjustment not needed"
+    },
+
+    "fta_dv_dq_case_vop_taxable": {
+      "formula": "(customs_value + cop_amount + sop_amount) * vop_rate",
+      "inputs": ["customs_value", "cop_amount", "sop_amount", "vop_rate"],
+      "output": "vop_amount",
+      "description": "FTA/DV & DQ CASE (Taxable): VOP = (CIF + COP + DQ-adjusted SOP) × 10%",
+      "unit": "KHR",
+      "case": "fta_dv_dq",
+      "condition": "When good has special tax (and DQ-adjusted SOP is included)",
+      "notes": "FTA/DQ taxable: VOP on (CIF + COP + DQ-adjusted SOP). Use SOP amount after DQ adjustment."
+    },
+
+    "fta_dv_dq_case_vop": {
+      "formula": "CONDITIONAL: (CIF + COP) × 10% OR (CIF + COP + DQ-adjusted SOP) × 10%",
+      "inputs": [
+        "customs_value",
+        "cop_amount",
+        "sop_amount",
+        "vop_rate",
+        "sop_rate"
+      ],
+      "output": "vop_amount",
+      "description": "FTA/DV & DQ CASE: VOP - CONDITIONAL based on good type",
+      "unit": "KHR",
+      "case": "fta_dv_dq",
+      "conditional": {
+        "if_sop_is_zero": {
+          "formula": "(customs_value + cop_amount) * vop_rate",
+          "description": "Non-taxable: VOP = (CIF + COP) × 10%"
+        },
+        "if_sop_greater_than_zero": {
+          "formula": "(customs_value + cop_amount + sop_amount_dq_adjusted) * vop_rate",
+          "description": "Taxable: VOP = (CIF + COP + DQ-adjusted SOP) × 10%"
+        }
+      },
+      "notes": "DQ adjustment affects SOP calculation. Include DQ-adjusted SOP in VOP base when SOP > 0%."
+    }
+  },
+
+  "calculation_cases": {
+    "normal_case": {
+      "description": "Standard import calculation for regular goods",
+      "when_to_use": "Default case for most imports without special conditions",
+      "sequence": [
+        "0. Currency Conversion: If USD, convert to KHR using MEF exchange rate",
+        "1. Customs Value = Exchange Rate × Item Price",
+        "2. COP = Customs Value × COP Rate",
+        "3. SOP = (Customs Value + COP) × SOP Rate",
+        "4a. IF SOP = 0% (Non-taxable goods): VOP = (CIF + COP) × 10%",
+        "4b. IF SOP > 0% (Taxable goods): VOP = (CIF + COP + SOP) × 10%",
+        "5. Apply final rounding (round UP to 100)"
+      ],
+      "formulas_used": [
+        "currency_conversion",
+        "normal_case_customs_value",
+        "normal_case_cop",
+        "normal_case_sop",
+        "vop_non_taxable_goods",
+        "vop_taxable_goods"
+      ],
+      "example": {
+        "scenario": "Company A imports 20 cases of beer with Customs Value of 4,000,000 KHR",
+        "rates": {
+          "cop_rate": "35%",
+          "sop_rate": "25%",
+          "vop_rate": "10%"
+        },
+        "calculation": [
+          "Import Taxes (COP) = 4,000,000 × 35% = 1,400,000 KHR",
+          "Special Tariff (SOP) = (4,000,000 + 1,400,000) × 25% = 1,350,000 KHR",
+          "VOP = (4,000,000 + 1,400,000 + 1,350,000) × 10% = 675,000 KHR",
+          "Total Duties and Taxes = 1,400,000 + 1,350,000 + 675,000 = 3,425,000 KHR"
+        ]
+      },
+      "important_note": "CRITICAL: Check SOP rate BEFORE calculating VOP. Non-taxable goods (SOP=0%) use simpler VOP formula. Taxable goods (SOP>0%) include SOP in VOP base."
+    },
+
+    "petroleum_case": {
+      "description": "Two-phase calculation for petroleum products",
+      "when_to_use": "When importing petroleum products that require volume and mass-based calculations",
+      "phase_1": [
+        "0. Currency Conversion: If USD, convert to KHR using MEF exchange rate",
+        "1. CPP base = (DV × Exchange Rate × Net Mass) / 1000",
+        "2. CPP = CPP base × CPP Rate",
+        "3. ATP = LTR × ATP Rate × Exchange Rate",
+        "4. SPP = (CPP base + CPP + ATP) × SPP Rate",
+        "5. VPP base = SPP base + SPP",
+        "6. VPP = VPP base × VPP Rate"
+      ],
+      "phase_2": [
+        "Same as Phase 1 but replace CPP base with actual CUSTOMS VALUE"
+      ],
+      "final": "Total Payable = Phase 1 Total (importer always pays Phase 1). DPP = ABS(Phase 1 Total - Phase 2 Total) — informational only, handled separately by the state",
+      "formulas_used": [
+        "currency_conversion",
+        "petroleum_phase1_cpp_base",
+        "petroleum_phase1_cpp",
+        "petroleum_phase1_atp",
+        "petroleum_phase1_spp",
+        "petroleum_phase1_vpp_base",
+        "petroleum_phase1_vpp",
+        "petroleum_phase2",
+        "petroleum_dpp"
+      ],
+      "note": "Petroleum requires both mass (Net Mass in kg) and volume (LTR) measurements. DV is now an external input when provided; otherwise it is derived from customs value for backward compatibility."
+    },
+
+    "rubber_case": {
+      "description": "Export tax calculation for rubber based on mass",
+      "when_to_use": "When exporting rubber products",
+      "sequence": [
+        "0. Currency Conversion: If USD, convert to KHR using MEF exchange rate",
+        "1. ETR = (DV × Exchange Rate × Net Mass) / 1000"
+      ],
+      "formulas_used": ["currency_conversion", "rubber_etr"],
+      "note": "Net Mass must be in kilograms. DV is now an external input when provided; otherwise customs value is used for backward compatibility."
+    },
+
+    "fta_dv_case": {
+      "description": "Free Trade Agreement with Declared Value (duty typically 0%)",
+      "when_to_use": "When goods qualify for FTA preferential treatment with DV valuation",
+      "sequence": [
+        "0. Currency Conversion: If USD, convert to KHR using MEF exchange rate",
+        "1. COP = Customs Value × Rate = 0 (typically, FTA rate)",
+        "2. COP Amount = Customs Value × Customs Duty Rate (shows 0 amount)",
+        "3. SOP = (Customs Value + COP Amount) × SOP Rate",
+        "4a. IF SOP = 0% (Non-taxable FTA goods): VOP = (CIF + COP) × 10%",
+        "4b. IF SOP > 0% (Taxable FTA goods): VOP = (CIF + COP + SOP) × 10%",
+        "5. Apply final rounding (round UP to 100)"
+      ],
+      "formulas_used": [
+        "currency_conversion",
+        "fta_dv_case_cop",
+        "fta_dv_case_cop_amount",
+        "fta_dv_case_sop",
+        "fta_dv_case_vop_non_taxable",
+        "fta_dv_case_vop_taxable"
+      ],
+      "note": "Even though COP is 0% under FTA, SOP and VAT are still calculated. DV can be provided as the customs valuation basis; otherwise customs value is used. Check SOP to determine VOP base. Example: Smartphones with ATIGA Form D have 0% CD but 5% ST."
+    },
+
+    "fta_dv_dq_case": {
+      "description": "FTA with DV and DQ Deal/Trade Agreement adjustment",
+      "when_to_use": "When goods qualify for FTA and there is a DQ agreement between one company and the government",
+      "sequence": [
+        "0. Currency Conversion: If USD, convert to KHR using MEF exchange rate",
+        "1. COP = COP base × Rate = 0 (FTA rate)",
+        "2. COP Amount = Customs Value × Customs Duty Rate (shows 0 amount)",
+        "3. SOP base = Customs Value + COP Amount",
+        "4. SOP = (SOP base + COP base) × SOP Rate × DQ (with DQ adjustment)",
+        "5a. IF SOP = 0% (Non-taxable): VOP = (CIF + COP) × 10%",
+        "5b. IF SOP > 0% (Taxable): VOP = (CV + COP + DQ-adjusted SOP) × 10%",
+        "6. Apply final rounding (round UP to 100)"
+      ],
+      "formulas_used": [
+        "currency_conversion",
+        "fta_dv_dq_case_cop",
+        "fta_dv_dq_case_sop_base",
+        "fta_dv_dq_case_sop",
+        "fta_dv_dq_case_vop_non_taxable",
+        "fta_dv_dq_case_vop_taxable"
+      ],
+      "note": "DQ factor is now an external input for future changes. It adjusts the SOP calculation. Use DQ-adjusted SOP in VOP base for taxable goods."
+    }
+  },
+
+  "acronym_definitions": {
+    "COP": "Import Taxes - Customs value multiplied by import tax rate",
+    "SOP": "Special Tariff - (Customs Value + Import Taxes) multiplied by special tariff rate",
+    "VOP": "VAT of Payment - Value Added Tax amount",
+    "CPP": "Customs Petroleum Payment - Customs duty for petroleum",
+    "ATP": "Additional Tax Petroleum - Volume-based tax on petroleum",
+    "SPP": "Special Petroleum Payment - Excise tax for petroleum",
+    "VPP": "VAT Petroleum Payment - VAT for petroleum",
+    "DPP": "Difference / Partial subsidy by the state for petroleum products. Informational only — importer always pays Phase 1 total. DPP shows whether the state pays a subsidy (Phase 1 > Phase 2) or collects an additional charge (Phase 2 > Phase 1)",
+    "ETR": "Export Tax on Rubber - Export tax for rubber based on mass",
+    "DV": "Declared Value - Fair amount of price that keeps the market in the middle, not too high or too low",
+    "DQ": "Deal/Trade Agreement - Cambodia Customs-specific agreement between one company and the government",
+    "FTA": "Free Trade Agreement - Preferential trade agreement with 0% or reduced duty",
+    "ATIGA": "ASEAN Trade in Goods Agreement - Intra-ASEAN FTA (Form D) - Most commonly used in Cambodia",
+    "ACFTA": "ASEAN-China Free Trade Agreement (Form E)",
+    "AKFTA": "ASEAN-Korea Free Trade Agreement (Form AK)",
+    "AJCEP": "ASEAN-Japan Comprehensive Economic Partnership (Form AJ)",
+    "RCEP": "Regional Comprehensive Economic Partnership (Form RCEP) - Covers 15 countries",
+    "AANZFTA": "ASEAN-Australia-New Zealand Free Trade Agreement (Form AANZ)"
+  },
+
+  "calculation_sequence": [
+    "currency_conversion (if currency is USD, convert to KHR FIRST)",
+    "dv_declared_value OR cif_value",
+    "acfta_duty OR import_duty OR preferential_duty OR duty_exemption",
+    "excise_tax OR specific_tax OR commodity_tax_by_mass OR commodity_tax_by_volume OR commodity_tax_hybrid",
+    "vat",
+    "dq_adjustment (if applicable)",
+    "total_duties_and_taxes (round to whole number, do NOT round to 100)",
+    "processing_fee",
+    "inspection_fee",
+    "sop_amount (with company-specific DQ when applicable) - ROUND UP to 100",
+    "cop_amount (with customs duty rate) - ROUND UP to 100",
+    "total_payable - ROUND UP to 100",
+    "final_amount_with_rounding (apply ONLY when money is ready to pay)"
+  ],
+
+  "cambodia_specific_rules": {
+    "dv": "Declared Value is the fair amount of price used as the customs valuation basis to keep the market in the middle, not too high or too low",
+    "acfta": "ASEAN-China FTA makes duty rate 0% for eligible goods",
+    "dq": "DQ is a Cambodia Customs-specific real deal or trade agreement between one company and the government; it is not a formal customs term used in other countries. Each company can have a different DQ factor/agreement.",
+    "sop_vs_cop": "SOP/SPP/ETR can be adjusted by company-specific DQ when applicable; COP includes customs duty rate calculation",
+    "commodity_units": "Rubber and petroleum are most common cases requiring net mass (kg) and/or volume (LTR) based calculations",
+    "rounding": "All amounts round UP to nearest 100 (12345.04 → 12400, 12345.05 → 12400).",
+    "export_note": "These calculations apply to IMPORTS only; exports do not use DV"
+  },
+
+  "rounding_rules": {
+    "default": "always_round_up_to_hundred",
+    "all_amounts": "always_round_up_to_hundred",
+    "reference_file": "configs/rounding_rules.json",
+    "note": "All amounts (intermediate and final) round UP to nearest 100 (12345.04 → 12400, 12345.05 → 12400)."
+  },
+
+  "legal_references": [
+    {
+      "name": "Law on Customs",
+      "reference": "GDCE-L001",
+      "date": "2007-07-20",
+      "scope": "Foundational customs law"
+    },
+    {
+      "name": "Law on Taxation 2023",
+      "reference": "MEF-2023-LoT",
+      "date": "2023-05-16",
+      "scope": "VAT and income tax rules"
+    },
+    {
+      "name": "Sub-Decree No. 139",
+      "reference": "SD-139-25",
+      "date": "2025-08-08",
+      "scope": "Preferential tariff for USA origin goods"
+    },
+    {
+      "name": "Notification No. 6069/25",
+      "reference": "GDCE-6069-25",
+      "date": "2025-12-23",
+      "scope": "2026 duty reductions for EVs and Food"
+    },
+    {
+      "name": "ACFTA Agreement",
+      "reference": "ASEAN-China-FTA",
+      "date": "Various implementation dates",
+      "scope": "Sets duty rate to 0% for ASEAN-China trade on eligible commodities (Form E)"
+    },
+    {
+      "name": "ATIGA Agreement",
+      "reference": "ASEAN-ATIGA",
+      "date": "2010-01-01 (fully implemented)",
+      "scope": "Eliminates tariffs for intra-ASEAN trade on most goods (Form D) - Most commonly used FTA in Cambodia"
+    },
+    {
+      "name": "AKFTA Agreement",
+      "reference": "ASEAN-Korea-FTA",
+      "date": "2007 (goods), phased implementation",
+      "scope": "Preferential tariffs for ASEAN-Korea trade (Form AK)"
+    },
+    {
+      "name": "AJCEP Agreement",
+      "reference": "ASEAN-Japan-AJCEP",
+      "date": "2008-12-01",
+      "scope": "Comprehensive economic partnership including tariff elimination for ASEAN-Japan trade (Form AJ)"
+    },
+    {
+      "name": "RCEP Agreement",
+      "reference": "RCEP-2022",
+      "date": "2022-01-01 (entered into force for Cambodia)",
+      "scope": "Regional FTA covering 15 countries (ASEAN+5): progressive tariff elimination over 10-20 years (Form RCEP)"
+    },
+    {
+      "name": "AANZFTA Agreement",
+      "reference": "ASEAN-ANZ-FTA",
+      "date": "2010-01-01",
+      "scope": "Preferential tariffs for ASEAN-Australia-New Zealand trade (Form AANZ)"
+    }
+  ],
+
+  "data_sources": {
+    "duty_rates": "data/processed/structured/duty_rates.csv",
+    "excise_rules": "data/processed/structured/excise_rules.json",
+    "vat_policy": "data/processed/structured/vat_policy.json",
+    "fees": "data/processed/structured/fees.csv",
+    "exemptions": "data/processed/structured/exemptions.json",
+    "hs_master": "data/processed/structured/hs_master.csv"
+  },
+
+  "notes": [
+    "All calculations use CIF value or DV (Declared Value) as the customs valuation basis",
+    "VAT is calculated on the aggregate of CIF + Duty + Excise",
+    "Preferential rates require valid Certificate of Origin",
+    "Exemptions require proper authorization and documentation",
+    "Currency conversion: Use fixed table method with official MEF exchange rates (see exchange_rate_policy.json for complete policy)",
+    "Special procedures (QIP, bonded warehouse, temporary admission) may have different calculation rules",
+    "CRITICAL: Round UP to 100 ONLY for final payment amounts (total_payable, sop_amount, cop_amount) - NOT for tax base amounts",
+    "All amounts (CIF, duty, excise, VAT, total_duties_and_taxes) round UP to nearest 100 (12345.04 → 12400, 12345.05 → 12400)",
+    "FTA AGREEMENTS - Cambodia participates in multiple FTAs. Most commonly used:",
+    "  1. ATIGA (Form D) - Intra-ASEAN trade, 0% duty on most goods - MOST COMMONLY USED IN CAMBODIA",
+    "  2. ACFTA (Form E) - ASEAN-China trade, 0% duty on eligible goods",
+    "  3. RCEP (Form RCEP) - Regional agreement covering 15 countries, progressive tariff elimination",
+    "  4. AKFTA (Form AK) - ASEAN-Korea trade, preferential rates (typically 0%)",
+    "  5. AJCEP (Form AJ) - ASEAN-Japan trade, preferential rates (typically 0% or reduced)",
+    "  6. AANZFTA (Form AANZ) - ASEAN-Australia-NZ trade, preferential rates",
+    "All FTAs require valid Certificate of Origin and commodity eligibility verification",
+    "Even with 0% customs duty under FTA, SOP (excise) and VOP (VAT) still apply to most goods",
+    "DQ (Deal/Trade Agreement) is Cambodia Customs-specific and represents a real deal or trade agreement between one company and the government; different companies can have different DQ factors",
+    "SOP/SPP/ETR Amount = calculation with company-specific DQ adjustment when applicable (rounded UP to 100 when ready to pay)",
+    "COP Amount = calculation with customs duty rate applied (rounded UP to 100 when ready to pay)",
+    "Rubber and petroleum commonly require calculations based on Net Mass (kg) and/or Volume (LTR)",
+    "Even if not counted in COP section, amounts must still be calculated for SOP",
+    "These rules apply to IMPORTS only; exports do not use DV or these specific calculations",
+    "Net mass and volume measurements must be accurate and verified during customs inspection",
+    "CALCULATION CASES: Use 'calculation_cases' section to determine which formulas to apply based on product type and trade conditions",
+    "NORMAL CASE: Standard imports use COP → SOP → VOP sequence",
+    "PETROLEUM CASE: Requires two-phase calculation with DPP = Phase1 - Phase2",
+    "RUBBER CASE: Uses ETR (Export Tax on Rubber) formula based on DV, exchange rate, and net mass",
+    "FTA/DV CASE: Free trade agreement with 0% duty but SOP and VOP still apply",
+    "FTA/DV & DQ CASE: FTA with Deal/Trade Agreement adjustment affecting SOP calculation",
+    "See 'acronym_definitions' for meaning of COP, SOP, VOP, CPP, ATP, SPP, VPP, DPP, ETR",
+    "See 'exchange_rate_policy.json' for currency conversion rules, rate selection, and data source specifications",
+    "See 'rounding_rules.json' for all rounding policies (quantities, rates, amounts, and conversions)"
+  ]
+}

@@ -1,0 +1,39 @@
+version: "3.8"
+
+services:
+  trade-redis:
+    image: redis:7-alpine
+    container_name: trade-redis
+    command: redis-server --maxmemory 256mb --maxmemory-policy volatile-ttl
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - dal_app-network
+    restart: unless-stopped
+
+  trade-service:
+    build: .
+    container_name: trade-service
+    env_file:
+      - .env
+    environment:
+      - TZ=Asia/Phnom_Penh
+    ports:
+      - "8004:8004"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - dal_app-network
+    depends_on:
+      trade-redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  dal_app-network:
+    external: true
