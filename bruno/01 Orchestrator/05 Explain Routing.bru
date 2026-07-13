@@ -1,0 +1,22 @@
+meta {
+  name: Explain Routing
+  type: http
+  seq: 5
+}
+
+post {
+  url: http://127.0.0.1:8001/query/explain
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "question": "Top 10 export countries in 2023",
+    "session_id": "{{session_id}}"
+  }
+}

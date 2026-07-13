@@ -1,0 +1,22 @@
+meta {
+  name: Query - HS Code
+  type: http
+  seq: 2
+}
+
+post {
+  url: http://127.0.0.1:8001/query
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "question": "What is the HS code for cotton fabric?",
+    "session_id": "{{session_id}}"
+  }
+}

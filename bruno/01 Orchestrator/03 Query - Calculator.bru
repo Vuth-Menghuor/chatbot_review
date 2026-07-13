@@ -1,0 +1,22 @@
+meta {
+  name: Query - Calculator
+  type: http
+  seq: 3
+}
+
+post {
+  url: http://127.0.0.1:8001/query
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "question": "Calculate import tax for HS 01022911 with CIF 800 USD from Thailand",
+    "session_id": "{{session_id}}"
+  }
+}

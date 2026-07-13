@@ -1,0 +1,21 @@
+meta {
+  name: Calculator Direct Query
+  type: http
+  seq: 3
+}
+
+post {
+  url: http://127.0.0.1:8002/query
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "question": "Calculate tax for HS 01022911 CIF 800 USD from Thailand"
+  }
+}

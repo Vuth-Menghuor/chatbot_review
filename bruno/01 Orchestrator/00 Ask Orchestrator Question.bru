@@ -1,0 +1,22 @@
+meta {
+  name: Ask Orchestrator Question
+  type: http
+  seq: 0
+}
+
+post {
+  url: http://127.0.0.1:8001/query
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "question": "What documents do I need to import goods into Cambodia?",
+    "session_id": "bruno-local-session-001"
+  }
+}
