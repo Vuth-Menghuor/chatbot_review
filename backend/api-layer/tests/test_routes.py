@@ -1,7 +1,12 @@
 from types import SimpleNamespace
 from uuid import uuid4
 
-from app.api.v1.endpoints.chat import upstream_payload
+from app.api.v1.endpoints.chat import (
+    adapt_orchestrator_sse_block,
+    orchestrator_query_payload,
+    orchestrator_stream_payload,
+    upstream_payload,
+)
 from app.main import app
 from app.schemas.common import ChatRequest
 
@@ -31,3 +36,24 @@ def test_upstream_identity_and_existing_project_come_from_gateway():
     assert forwarded["chat_id"] == str(chat_id)
     assert forwarded["project_id"] == str(project_id)
     assert forwarded["user_id"] == str(user_id)
+
+
+def test_orchestrator_stream_payload_uses_message_and_chat_session():
+    chat_id = uuid4()
+    payload = ChatRequest(message="What is the HS code for rice?")
+
+    expected = {
+        "question": "What is the HS code for rice?",
+        "session_id": str(chat_id),
+    }
+    assert orchestrator_query_payload(payload, SimpleNamespace(id=chat_id)) == expected
+    assert orchestrator_stream_payload(payload, SimpleNamespace(id=chat_id)) == expected
+
+
+def test_orchestrator_stream_chunk_is_adapted_to_frontend_token_event():
+    adapted = adapt_orchestrator_sse_block(
+        'data: {"chunk": "hello"}',
+        SimpleNamespace(id=uuid4(), project_id=None),
+    ).decode()
+
+    assert adapted == 'event: token\ndata: {"content": "hello"}\n\n'

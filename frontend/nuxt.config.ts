@@ -27,6 +27,11 @@ export default defineNuxtConfig({
   css: ['./app/assets/styles/vuetify.scss', './app/assets/styles/index.scss', './app/assets/styles/tailwind.css'],
   build: { transpile: ['vuetify'] },
   vite: {
+    server: {
+      watch: {
+        ignored: ['**/node_modules/**', '**/.nuxt/**', '**/.output/**', '**/dist/**', '**/.git/**'],
+      },
+    },
     optimizeDeps: { include: ['lucide-vue-next', 'markdown-it', 'dompurify', 'shiki', 'mermaid', 'echarts/core'] },
     build: {
       cssMinify: 'lightningcss',
@@ -46,6 +51,11 @@ export default defineNuxtConfig({
           },
         },
       },
+    },
+  },
+  nitro: {
+    watchOptions: {
+      ignored: ['**/node_modules/**', '**/.nuxt/**', '**/.output/**', '**/dist/**', '**/.git/**'],
     },
   },
   postcss: { plugins: { '@tailwindcss/postcss': {} } },

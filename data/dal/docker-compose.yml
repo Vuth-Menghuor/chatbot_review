@@ -17,8 +17,6 @@ services:
       redis:
         condition: service_healthy
     command: ["sh", "scripts/start.sh", "--reload"]
-    volumes:
-      - .:/app
     restart: unless-stopped
     networks:
       app-network:

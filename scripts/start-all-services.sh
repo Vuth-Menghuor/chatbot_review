@@ -7,7 +7,7 @@ if ! docker network inspect gdce-network >/dev/null 2>&1; then
   echo "Created docker network: gdce-network"
 fi
 
-ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 start_stack() {
   local dir="$1"

@@ -1,0 +1,4 @@
+FROM postgres:18-alpine
+
+COPY dump-gdce_calculator-202607031116.sql /docker-entrypoint-initdb.d/gdce_calculator.dump
+COPY init-calculator-db.sh /docker-entrypoint-initdb.d/01-init-calculator-db.sh
