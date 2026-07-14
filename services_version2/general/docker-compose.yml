@@ -1,6 +1,4 @@
-# General Q&A — port 8005
-# Run: docker compose up -d --build
-# Requires shared network (once): docker network create gdce-network
+version: "3.8"
 
 services:
   qdrant-general:
@@ -26,19 +24,16 @@ services:
       - gdce-network
     restart: unless-stopped
 
-  general:
+  general-service:
     build: .
-    container_name: general
+    container_name: general-service
     env_file:
-      - path: .env
-        required: false
+      - .env
     environment:
-      GENERAL_HOST: 0.0.0.0
-      GENERAL_PORT: 8005
-      QDRANT_HOST: qdrant-general
-      QDRANT_PORT: 6333
-      REDIS_HOST: redis-general
-      REDIS_PORT: 6379
+      - QDRANT_HOST=qdrant-general
+      - QDRANT_PORT=6333
+      - REDIS_HOST=redis-general
+      - REDIS_PORT=6379
     ports:
       - "8005:8005"
     depends_on:
@@ -55,4 +50,3 @@ volumes:
 networks:
   gdce-network:
     external: true
-    name: gdce-network

@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     database_url: str = "postgresql+asyncpg://api_user:api_password@api-postgres:5432/api_layer_db"
     redis_url: str = "redis://api-redis:6379/0"
-    main_chatbot_service_url: str = "http://main-chatbot-service:8000"
+    main_chatbot_service_url: str = "http://orchestrator-service-orches:8001"
     jwt_secret_key: str = "change-me"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30

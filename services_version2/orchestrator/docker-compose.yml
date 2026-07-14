@@ -1,23 +1,76 @@
-version: '3.8'
+version: "3.8"
 
 services:
-  orchestrator-service:
+  gdce-postgres-orches:
+    image: postgres:15-alpine
+    container_name: gdce-postgres-orches
+    restart: unless-stopped
+    ports:
+      - "5438:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=gdce_chat_history
+    volumes:
+      - gdce_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d gdce_chat_history"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gdce-network
+
+  gdce-redis-orches:
+    image: redis:alpine
+    container_name: gdce-redis-orches
+    restart: unless-stopped
+    ports:
+      - "6371:6379"
+    command: redis-server --requirepass redis_orchestrator
+    volumes:
+      - gdce_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis_orchestrator", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - gdce-network
+
+  orchestrator-service-orches:
     build: .
-    container_name: orchestrator-service
+    container_name: orchestrator-service-orches
     env_file:
       - .env
     environment:
       - ORCHESTRATOR_HOST=0.0.0.0
       - ORCHESTRATOR_PORT=8001
-      - RETRIEVAL_SERVICE_URL=http://retrieval:8003
+      - RETRIEVAL_SERVICE_URL=http://retrieval-service:8003
       - CALCULATOR_SERVICE_URL=http://calculator:8002
       - TRADE_DATA_SERVICE_URL=http://trade-service:8004
-      - GENERAL_SERVICE_URL=http://general:8005
+      - GENERAL_SERVICE_URL=http://general-service:8005
+      - POSTGRES_HOST=gdce-postgres-orches
+      - POSTGRES_PORT=5432
+      - PG_HOST=gdce-postgres-orches
+      - PG_PORT=5432
+      - REDIS_HOST=gdce-redis-orches
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=redis_orchestrator
     ports:
       - "8001:8001"
     networks:
       - gdce-network
+    depends_on:
+      gdce-postgres-orches:
+        condition: service_healthy
+      gdce-redis-orches:
+        condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  gdce_postgres_data:
+  gdce_redis_data:
 
 networks:
   gdce-network:

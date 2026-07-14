@@ -1,0 +1,4 @@
+FROM postgres:16-alpine
+
+COPY dal_metadata.backup /dump/dal_metadata.backup
+COPY dal_operational.backup /dump/dal_operational.backup
