@@ -17,6 +17,7 @@ import WorkflowRenderer from '~/components/renderers/WorkflowRenderer.vue';
 import ImageRenderer from '~/components/renderers/ImageRenderer.vue';
 import PredictionRenderer from '~/components/renderers/PredictionRenderer.vue';
 import ReportTaskRenderer from '~/components/renderers/ReportTaskRenderer.vue';
+import SuggestionsRenderer from '~/components/renderers/SuggestionsRenderer.vue';
 import CodeBlockRenderer from '~/components/renderers/CodeBlockRenderer.vue';
 import ToolOutputRenderer from '~/components/renderers/ToolOutputRenderer.vue';
 import ErrorRenderer from '~/components/renderers/ErrorRenderer.vue';
@@ -34,6 +35,7 @@ export const rendererMap: Record<string, Component> = {
   image: ImageRenderer,
   prediction: PredictionRenderer,
   report: ReportTaskRenderer,
+  suggestions: SuggestionsRenderer,
   code: CodeBlockRenderer,
   ocr: OCRRenderer,
   interaction: InteractionRenderer,
@@ -47,7 +49,7 @@ export const rendererMap: Record<string, Component> = {
 export const blockTypeLabels: Record<string, string> = {
   markdown: 'Markdown', reasoning: 'Reasoning', table: 'Table', chart: 'Chart',
   workflow: 'Workflow', image: 'Image', prediction: 'Prediction', report: 'Report',
-  code: 'Code', ocr: 'OCR', interaction: 'Interaction', tool_output: 'Tool Output',
+  suggestions: 'Suggestions', code: 'Code', ocr: 'OCR', interaction: 'Interaction', tool_output: 'Tool Output',
   error: 'Error', fallback: 'Fallback',
 };
 

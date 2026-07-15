@@ -149,7 +149,9 @@ const textTarget = computed(() => {
   return normalizeLatexInMarkdown(base);
 });
 
-const typewriterEnabled = computed(() => !props.loading);
+const typewriterEnabled = computed(() =>
+  Boolean(!props.loading && props.block.meta?.typewriter === true),
+);
 const { typedText, flush: flushTypewriter } = useTypewriter(textTarget, typewriterEnabled, {
   config: defaultTypingConfig,
 });

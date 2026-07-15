@@ -201,6 +201,12 @@ export function useChat(chatId?: string) {
     action: string;
     values: Record<string, unknown>;
   }) {
+    if (payload.action === 'send_suggestion') {
+      const message = String(payload.values.message ?? '').trim();
+      if (message) await send(message);
+      return;
+    }
+
     const text = JSON.stringify({
       message: '',
       meta: { continuation: payload },

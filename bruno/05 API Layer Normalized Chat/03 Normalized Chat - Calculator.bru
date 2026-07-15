@@ -12,12 +12,12 @@ post {
 
 headers {
   Content-Type: application/json
-  Authorization: Bearer {{access_token}}
+  Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIzMGIyZTI3ZC1hZTg5LTQ4NDQtYjU4Mi04YTllNzQ0MzI1ODUiLCJ0eXBlIjoiYWNjZXNzIiwicm9sZSI6InVzZXIiLCJqdGkiOiIxYzIyN2FiMC0wNDgxLTQ3ZGEtOTJiZi02ZjQyZDBhOWFkZjAiLCJpYXQiOjE3ODQwODU4NzksImV4cCI6MTc4NDA4NzY3OX0.h_rI9fyIkBKSAi4eMeMG_BbRBjl3SwB3a1fF0jFS-_I
 }
 
 body:json {
   {
-    "message": "Calculate import tax for HS code 5208.11.00 cotton woven fabric from Thailand with CIF value 1000 USD on 2026-03-04"
+    "message": "Calculate import tax for live male cattle with CIF value 800 USD from Thailand"
   }
 }
 
@@ -27,5 +27,9 @@ tests {
     const body = res.getBody();
     expect(body).to.have.property("intent");
     expect(body.message.content).to.be.an("array");
+    expect(body.message.content[0].text).to.include("IMPORT TAX CALCULATION");
+    expect(body.message.content[0].text).to.include("571,700 KHR");
+    expect(body.message.content[0].text).to.not.include("[Amount]");
+    expect(body.message.content[0].text).to.not.include("[Rate]");
   });
 }

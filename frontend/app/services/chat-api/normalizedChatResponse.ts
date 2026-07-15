@@ -78,6 +78,14 @@ export function normalizedChatResponseToMessageParts(
   const blocks = response.message.content.map((block, index) =>
     normalizedBlockToMessageBlock(block, `${response.request_id || fallbackId}-${index}`),
   );
+  if (response.suggestions?.length) {
+    blocks.push({
+      id: `${response.request_id || fallbackId}-suggestions`,
+      type: 'suggestions',
+      content: response.suggestions,
+      isComplete: true,
+    });
+  }
   const content = blocksToMarkerText(blocks) || markdownTextFromBlocks(response.message.content);
 
   return {
@@ -155,6 +163,7 @@ function errorBlockToMessageBlock(block: NormalizedErrorBlock, id: string): Mess
 }
 
 function chartBlockToMessageBlock(block: NormalizedChartBlock, id: string): MessageBlock {
+  const output = normalizedChartDataToOutput(block);
   return {
     id,
     type: 'chart',
@@ -164,13 +173,82 @@ function chartBlockToMessageBlock(block: NormalizedChartBlock, id: string): Mess
       title: block.title ?? block.data.title,
       status: 'completed',
       state: 'output-available',
-      output: {
-        ...block.data,
-        title: block.title ?? block.data.title,
-      },
+      output,
     },
     isComplete: true,
   };
+}
+
+function normalizedChartDataToOutput(block: NormalizedChartBlock): Record<string, unknown> {
+  const data = block.data;
+  const title = block.title ?? data.title;
+  const chartType = normalizeChartType(data.type ?? data.chartType);
+
+  if (Array.isArray(data.labels) && Array.isArray(data.datasets)) {
+    const labels = data.labels.map((label) => String(label));
+    const datasets = data.datasets.filter(isRecord);
+    const renderType = chartType === 'line' && labels.length < 2 ? 'bar' : chartType;
+    const rows = labels.map((label, index) => {
+      const row: Record<string, string | number> = { label };
+      datasets.forEach((dataset, datasetIndex) => {
+        const key = chartSeriesKey(dataset, datasetIndex);
+        const values = Array.isArray(dataset.data) ? dataset.data : [];
+        row[key] = numericCell(values[index]);
+      });
+      return row;
+    });
+
+    return {
+      title,
+      chartType: renderType,
+      xKey: 'label',
+      xLabel: 'Label',
+      yLabel: datasets[0]?.label ? String(datasets[0].label) : undefined,
+      data: rows,
+      series: datasets.map((dataset, index) => ({
+        key: chartSeriesKey(dataset, index),
+        name: String(dataset.label ?? `Series ${index + 1}`),
+        color: chartColor(index),
+        type: renderType === 'line' ? 'line' : 'bar',
+      })),
+    };
+  }
+
+  return {
+    ...data,
+    title,
+    chartType,
+  };
+}
+
+function normalizeChartType(value: unknown): string {
+  const raw = String(value || 'bar').toLowerCase();
+  if (raw === 'horizontalbar') return 'horizontal-bar';
+  if (raw === 'doughnut') return 'donut';
+  return raw;
+}
+
+function chartSeriesKey(dataset: Record<string, unknown>, index: number): string {
+  const label = String(dataset.label ?? `series_${index + 1}`)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return label || `series_${index + 1}`;
+}
+
+function numericCell(value: unknown): number {
+  if (typeof value === 'number') return value;
+  const parsed = parseFloat(String(value ?? '0'));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function chartColor(index: number): string {
+  return ['#2563eb', '#16a34a', '#dc2626', '#9333ea', '#ea580c', '#0891b2'][index % 6];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
 function normalizedCitationsToSources(citations: NormalizedChatResponse['citations']): MessageSource[] {

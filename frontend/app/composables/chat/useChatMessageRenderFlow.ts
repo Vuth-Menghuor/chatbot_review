@@ -200,7 +200,7 @@ export function useChatMessageRenderFlow(props: UseChatMessageRenderFlowProps) {
 
   const isLatestVisibleBlock = (index: number) => index === visibleBlocks.value.length - 1;
   const isBlockLoading = (block: MessageBlock, index: number) =>
-    Boolean(props.loading && (!block.isComplete || isLatestVisibleBlock(index)));
+    Boolean(props.loading && !block.isComplete && isLatestVisibleBlock(index));
   const BLOCKS_WITHOUT_TYPING_INDICATOR = new Set<MessageBlockType>([
     'markdown',
     'reasoning',

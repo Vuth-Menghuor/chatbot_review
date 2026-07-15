@@ -28,6 +28,7 @@ export type CanonicalMessageBlockType =
   | 'ocr'
   | 'prediction'
   | 'report'
+  | 'suggestions'
   | 'interaction'
   | 'tool_output'
   | 'error'

@@ -119,40 +119,27 @@ async def stream_chat(payload: ChatRequest, request: Request, user: User = Depen
     await db.commit()
     request_id = str(uuid4())
     body = orchestrator_stream_payload(payload, chat)
-    client = httpx.AsyncClient(timeout=httpx.Timeout(settings.http_timeout_seconds, read=None))
-    stream_context = client.stream("POST", f"{settings.main_service_url}/query/stream", json=body, headers={"Accept": "text/event-stream"})
-    try:
-        upstream = await stream_context.__aenter__()
-        upstream.raise_for_status()
-    except (httpx.RequestError, httpx.HTTPStatusError) as exc:
-        await client.aclose()
-        status_code = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else 503
-        raise HTTPException(status_code=status_code, detail="Main Chatbot Service is temporarily unavailable") from exc
 
     async def events():
-        buffer = ""
         try:
             yield sse_event("start", {"chat_id": str(chat.id), "project_id": str(chat.project_id) if chat.project_id else None, "request_id": request_id})
-            async for chunk in upstream.aiter_bytes():
-                if await request.is_disconnected():
-                    break
-                if chunk:
-                    buffer += chunk.decode(errors="replace").replace("\r\n", "\n")
-                    blocks = buffer.split("\n\n")
-                    buffer = blocks.pop() or ""
-                    for block in blocks:
-                        adapted = adapt_orchestrator_sse_block(block, chat, user)
-                        if adapted:
-                            yield adapted
+            if await request.is_disconnected():
+                return
+
+            result = await main_chatbot_client.request("POST", "/query", json=body)
+            normalized = normalize_chat_response(
+                result,
+                chat=chat,
+                include_debug=should_include_debug(user),
+            ).model_dump(mode="json", exclude_none=True)
+            yield sse_event("done", normalized)
+        except httpx.HTTPStatusError as exc:
+            detail = "Main Chatbot Service is temporarily unavailable"
+            yield sse_event("error", {"detail": detail, "status_code": exc.response.status_code})
+        except httpx.RequestError:
+            yield sse_event("error", {"detail": "Main Chatbot Service is temporarily unavailable"})
         except Exception:
-            yield f"event: error\ndata: {json.dumps({'detail': 'Main Chatbot Service stream interrupted'})}\n\n".encode()
-        finally:
-            if buffer.strip():
-                adapted = adapt_orchestrator_sse_block(buffer, chat, user)
-                if adapted:
-                    yield adapted
-            await stream_context.__aexit__(None, None, None)
-            await client.aclose()
+            yield sse_event("error", {"detail": "Main Chatbot Service stream interrupted"})
 
     return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"})
 

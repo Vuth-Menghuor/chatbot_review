@@ -9,6 +9,7 @@ export const CANONICAL_BLOCK_TYPES = [
   'ocr',
   'prediction',
   'report',
+  'suggestions',
   'interaction',
   'tool_output',
   'error',
@@ -40,6 +41,9 @@ const BLOCK_TYPE_ALIASES: Record<string, CanonicalBlockType> = {
   graph: 'chart',
 
   report_task: 'report',
+  suggestion: 'suggestions',
+  followups: 'suggestions',
+  follow_ups: 'suggestions',
 
   tool: 'tool_output',
   toolresult: 'tool_output',
