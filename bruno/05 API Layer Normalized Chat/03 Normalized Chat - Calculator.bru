@@ -1,0 +1,31 @@
+meta {
+  name: Normalized Chat - Calculator
+  type: http
+  seq: 3
+}
+
+post {
+  url: http://localhost:8000/api/v1/chat/send
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer {{access_token}}
+}
+
+body:json {
+  {
+    "message": "Calculate import tax for HS code 5208.11.00 cotton woven fabric from Thailand with CIF value 1000 USD on 2026-03-04"
+  }
+}
+
+tests {
+  test("returns normalized calculator response", function () {
+    expect(res.status).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.have.property("intent");
+    expect(body.message.content).to.be.an("array");
+  });
+}

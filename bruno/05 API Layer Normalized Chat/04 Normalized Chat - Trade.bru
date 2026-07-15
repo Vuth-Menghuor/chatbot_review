@@ -1,0 +1,31 @@
+meta {
+  name: Normalized Chat - Trade
+  type: http
+  seq: 4
+}
+
+post {
+  url: http://localhost:8000/api/v1/chat/send
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer {{access_token}}
+}
+
+body:json {
+  {
+    "message": "Show top 10 Cambodia export partner countries by value for 2024"
+  }
+}
+
+tests {
+  test("returns normalized trade response", function () {
+    expect(res.status).to.equal(200);
+    const body = res.getBody();
+    expect(body.message.content).to.be.an("array");
+    expect(body.message.content.some((block) => block.type === "table" || block.type === "markdown")).to.equal(true);
+  });
+}

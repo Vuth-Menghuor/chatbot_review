@@ -13,6 +13,7 @@ from app.dependencies.auth import get_current_user
 from app.models import User
 from app.schemas.common import ChatRequest, FeedbackRequest
 from app.services.audit_service import add_audit_log
+from app.services.chat_response_normalizer import normalize_chat_response
 from app.services.main_chatbot_client import main_chatbot_client
 from app.services.ownership import create_or_get_chat, owned_chat, touch_chat
 from app.services.rate_limit_service import enforce_rate_limit
@@ -42,7 +43,11 @@ def sse_event(event: str, data: dict) -> bytes:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n".encode()
 
 
-def adapt_orchestrator_sse_block(block: str, chat) -> bytes:
+def should_include_debug(user: User) -> bool:
+    return settings.environment.lower() in {"development", "local", "dev"} or user.role == "admin"
+
+
+def adapt_orchestrator_sse_block(block: str, chat, user: User | None = None) -> bytes:
     if not block.strip():
         return b""
     if block.lstrip().startswith(":"):
@@ -70,6 +75,12 @@ def adapt_orchestrator_sse_block(block: str, chat) -> bytes:
     if event == "done" and isinstance(data, dict):
         data.setdefault("chat_id", str(chat.id))
         data.setdefault("project_id", str(chat.project_id) if chat.project_id else None)
+        if "answer" in data or "final_answer" in data or "citations" in data or "errors" in data:
+            data = normalize_chat_response(
+                data,
+                chat=chat,
+                include_debug=should_include_debug(user) if user else False,
+            ).model_dump(mode="json", exclude_none=True)
         return sse_event("done", data)
 
     if event == "error" and isinstance(data, dict):
@@ -94,10 +105,8 @@ async def send_chat(payload: ChatRequest, request: Request, user: User = Depends
     await touch_chat(db, chat, payload.message)
     await db.commit()
     result = await main_chatbot_client.request("POST", "/query", json=orchestrator_query_payload(payload, chat))
-    if isinstance(result, dict):
-        result.setdefault("chat_id", str(chat.id))
-        result.setdefault("project_id", str(chat.project_id) if chat.project_id else None)
-    return result
+    include_debug = should_include_debug(user)
+    return normalize_chat_response(result, chat=chat, include_debug=include_debug).model_dump(mode="json", exclude_none=True)
 
 
 @router.post("/stream")
@@ -132,14 +141,14 @@ async def stream_chat(payload: ChatRequest, request: Request, user: User = Depen
                     blocks = buffer.split("\n\n")
                     buffer = blocks.pop() or ""
                     for block in blocks:
-                        adapted = adapt_orchestrator_sse_block(block, chat)
+                        adapted = adapt_orchestrator_sse_block(block, chat, user)
                         if adapted:
                             yield adapted
         except Exception:
             yield f"event: error\ndata: {json.dumps({'detail': 'Main Chatbot Service stream interrupted'})}\n\n".encode()
         finally:
             if buffer.strip():
-                adapted = adapt_orchestrator_sse_block(buffer, chat)
+                adapted = adapt_orchestrator_sse_block(buffer, chat, user)
                 if adapted:
                     yield adapted
             await stream_context.__aexit__(None, None, None)

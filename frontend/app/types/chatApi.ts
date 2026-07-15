@@ -1,3 +1,5 @@
+import type { MessageSource, MessageStatus } from './chat';
+
 export interface ChatApiIntegrationEphemeralMcp {
   type: 'ephemeral_mcp';
   server_label: string;
@@ -162,6 +164,78 @@ export interface ChatApiSendOptions {
 }
 
 export type ChatApiTransport = 'gdce';
+
+export interface NormalizedChatTableColumn {
+  key: string;
+  label: string;
+}
+
+export interface NormalizedMarkdownBlock {
+  type: 'markdown';
+  text: string;
+}
+
+export interface NormalizedTableBlock {
+  type: 'table';
+  title?: string;
+  columns: NormalizedChatTableColumn[];
+  rows: Record<string, string | number | boolean | null>[];
+}
+
+export interface NormalizedClarificationBlock {
+  type: 'clarification';
+  title?: string;
+  questions: string[];
+}
+
+export interface NormalizedErrorBlock {
+  type: 'error';
+  message: string;
+}
+
+export interface NormalizedChartBlock {
+  type: 'chart';
+  title?: string;
+  data: Record<string, unknown>;
+}
+
+export type NormalizedChatContentBlock =
+  | NormalizedMarkdownBlock
+  | NormalizedTableBlock
+  | NormalizedClarificationBlock
+  | NormalizedErrorBlock
+  | NormalizedChartBlock;
+
+export interface NormalizedChatMessage {
+  role: 'assistant';
+  content: NormalizedChatContentBlock[];
+}
+
+export interface NormalizedChatDebug {
+  latency_ms?: number;
+  confidence?: 'high' | 'medium' | 'low';
+  answer_source?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface NormalizedCitation extends MessageSource {
+  id: string;
+  label?: string;
+  score?: number;
+}
+
+export interface NormalizedChatResponse {
+  request_id: string;
+  session_id: string;
+  chat_id?: string;
+  project_id?: string | null;
+  status: Extract<MessageStatus, 'completed' | 'processing' | 'failed'>;
+  intent: string;
+  message: NormalizedChatMessage;
+  citations: NormalizedCitation[];
+  suggestions?: string[];
+  debug?: NormalizedChatDebug;
+}
 
 export interface ChatApiStreamingConfig {
   baseUrl: string;

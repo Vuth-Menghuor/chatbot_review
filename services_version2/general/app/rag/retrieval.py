@@ -94,6 +94,14 @@ class RetrievalOrchestrator:
                 collection_name=collection_name,
             )
 
+            if not results and hasattr(self.vector_store, "keyword_search"):
+                logger.info("Semantic search returned no results; using keyword fallback")
+                results = await self.vector_store.keyword_search(
+                    query=query,
+                    top_k=top_k,
+                    collection_name=collection_name,
+                )
+
             logger.info(f"Found {len(results)} documents from semantic search (collection: {active_collection})")
             return results
 

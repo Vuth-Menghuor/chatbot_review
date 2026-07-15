@@ -57,3 +57,17 @@ def test_orchestrator_stream_chunk_is_adapted_to_frontend_token_event():
     ).decode()
 
     assert adapted == 'event: token\ndata: {"content": "hello"}\n\n'
+
+
+def test_orchestrator_stream_done_payload_is_normalized_when_complete():
+    chat_id = uuid4()
+    adapted = adapt_orchestrator_sse_block(
+        'event: done\ndata: {"request_id": "req-1", "answer": "hello", "intent": "general", "status": "success"}',
+        SimpleNamespace(id=chat_id, project_id=None),
+    ).decode()
+
+    assert adapted.startswith("event: done\n")
+    assert '"request_id": "req-1"' in adapted
+    assert '"session_id": "' + str(chat_id) + '"' in adapted
+    assert '"type": "markdown"' in adapted
+    assert '"text": "hello"' in adapted

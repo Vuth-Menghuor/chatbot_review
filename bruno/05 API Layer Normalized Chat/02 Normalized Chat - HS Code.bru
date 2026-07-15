@@ -1,0 +1,32 @@
+meta {
+  name: Normalized Chat - HS Code
+  type: http
+  seq: 2
+}
+
+post {
+  url: http://localhost:8000/api/v1/chat/send
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIzMGIyZTI3ZC1hZTg5LTQ4NDQtYjU4Mi04YTllNzQ0MzI1ODUiLCJ0eXBlIjoiYWNjZXNzIiwicm9sZSI6InVzZXIiLCJqdGkiOiI1MGNmMDZjMy0xNmJiLTQ4MjctOTM3My1iNjBmOTEyMmQ2YzYiLCJpYXQiOjE3ODQwODM5NzAsImV4cCI6MTc4NDA4NTc3MH0.NQeas-vB0-UWyf69jswQWKs4KOttb-U5GEJ7gVVE8d0
+}
+
+body:json {
+  {
+    "message": "What is the HS code for cotton woven fabric?"
+  }
+}
+
+tests {
+  test("returns normalized HS response blocks", function () {
+    expect(res.status).to.equal(200);
+    const body = res.getBody();
+    expect(body.message.content).to.be.an("array");
+    expect(body.message.content[0]).to.have.property("type");
+    expect(body).to.have.property("citations");
+  });
+}

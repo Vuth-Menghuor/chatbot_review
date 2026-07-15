@@ -1,0 +1,23 @@
+meta {
+  name: Normalized Chat - Stream
+  type: http
+  seq: 5
+}
+
+post {
+  url: http://localhost:8000/api/v1/chat/stream
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  Accept: text/event-stream
+  Authorization: Bearer {{access_token}}
+}
+
+body:json {
+  {
+    "message": "What is the HS code for cotton woven fabric?"
+  }
+}

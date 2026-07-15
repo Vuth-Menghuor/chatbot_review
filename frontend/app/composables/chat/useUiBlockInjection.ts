@@ -1,4 +1,4 @@
-import type { MessageBlock, MessageStatus, UiBlockInjectionOptions } from '~/types/message';
+import type { MessageBlock, MessageSource, MessageStatus, UiBlockInjectionOptions } from '~/types/message';
 import { normalizeAssistantContentForUi } from '~/utils/chat';
 import { blocksToMarkerText, parseAiResponse } from '~/utils/message';
 
@@ -15,7 +15,12 @@ export function useUiBlockInjection({ messages }: UiBlockInjectionOptions) {
   function upsertAssistantMessage(
     messageId: string,
     content: string,
-    meta?: { generationDurationMs?: number; status?: MessageStatus; blocks?: MessageBlock[] },
+    meta?: {
+      generationDurationMs?: number;
+      status?: MessageStatus;
+      blocks?: MessageBlock[];
+      sources?: MessageSource[];
+    },
   ) {
     const messages = getMessages();
     const index = messages.findIndex((msg) => msg.id === messageId);
@@ -43,7 +48,7 @@ export function useUiBlockInjection({ messages }: UiBlockInjectionOptions) {
       files: existingMessage.files,
       createdAt: existingMessage.createdAt,
       blocks: nextBlocks,
-      sources: existingMessage.sources,
+      sources: meta?.sources ?? existingMessage.sources,
       generationDurationMs: meta?.generationDurationMs ?? existingMessage.generationDurationMs,
     };
   }

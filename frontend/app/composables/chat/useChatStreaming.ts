@@ -4,7 +4,13 @@ import {
   normalizeUnifiedToolResponse,
   unifiedResponseToMarkerText,
 } from '~/utils/tool';
-import { isChatApiConfigured, streamGdceChat } from '~/services/chat-api';
+import {
+  isChatApiConfigured,
+  isNormalizedChatResponse,
+  legacyChatResponseToMessageParts,
+  normalizedChatResponseToMessageParts,
+  streamGdceChat,
+} from '~/services/chat-api';
 import { uploadImageFile } from '~/services/files-api';
 import { useAuthStore } from '~/stores/auth.store';
 import { getImageUploadLimits, validateImageFile } from '~/utils/file/imageUpload';
@@ -95,6 +101,7 @@ export function useChatStreaming(deps: StreamingDeps) {
     deps.currentRenderType.value = 'thinking';
     const startedAt = Date.now();
     let currentContent = '';
+    let normalizedDone: Record<string, unknown> | null = null;
     let firstToken = true;
     const storageKey = `gdce:upstream-chat:${deps.chatId || 'default'}`;
     const upstreamChatId = localStorage.getItem(storageKey) || undefined;
@@ -120,9 +127,33 @@ export function useChatStreaming(deps: StreamingDeps) {
         currentContent += content;
         deps.upsertAssistantMessage(assistantMsgId, currentContent, { status: 'streaming' });
       },
+      onDone: (data) => {
+        normalizedDone = data;
+      },
     });
 
     if (deps.stopStreaming.value || controller.signal.aborted) return;
+    if (isNormalizedChatResponse(normalizedDone)) {
+      const parts = normalizedChatResponseToMessageParts(normalizedDone, assistantMsgId);
+      deps.upsertAssistantMessage(assistantMsgId, parts.content, {
+        blocks: parts.blocks,
+        sources: parts.sources,
+        generationDurationMs: Date.now() - startedAt,
+        status: parts.status,
+      });
+      return;
+    }
+    const legacyParts = legacyChatResponseToMessageParts(normalizedDone, assistantMsgId);
+    if (legacyParts) {
+      deps.upsertAssistantMessage(assistantMsgId, legacyParts.content || currentContent, {
+        blocks: legacyParts.blocks,
+        sources: legacyParts.sources,
+        generationDurationMs: Date.now() - startedAt,
+        status: legacyParts.status,
+      });
+      return;
+    }
+
     const unified = {
       requestId: assistantMsgId,
       mode: 'stream',

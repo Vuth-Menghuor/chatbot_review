@@ -1,0 +1,37 @@
+meta {
+  name: Normalized Chat - General
+  type: http
+  seq: 1
+}
+
+post {
+  url: http://localhost:8000/api/v1/chat/send
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIzMGIyZTI3ZC1hZTg5LTQ4NDQtYjU4Mi04YTllNzQ0MzI1ODUiLCJ0eXBlIjoiYWNjZXNzIiwicm9sZSI6InVzZXIiLCJqdGkiOiI1MGNmMDZjMy0xNmJiLTQ4MjctOTM3My1iNjBmOTEyMmQ2YzYiLCJpYXQiOjE3ODQwODM5NzAsImV4cCI6MTc4NDA4NTc3MH0.NQeas-vB0-UWyf69jswQWKs4KOttb-U5GEJ7gVVE8d0
+}
+
+body:json {
+  {
+    "message": "What documents do I need to import goods into Cambodia?"
+  }
+}
+
+tests {
+  test("returns normalized chat envelope", function () {
+    expect(res.status).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.have.property("request_id");
+    expect(body).to.have.property("session_id");
+    expect(body).to.have.property("status");
+    expect(body).to.have.property("intent");
+    expect(body).to.have.property("message");
+    expect(body.message).to.have.property("role", "assistant");
+    expect(body.message.content).to.be.an("array");
+    expect(body.citations).to.be.an("array");
+  });
+}

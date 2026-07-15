@@ -6,6 +6,7 @@ Falls back to keyword-based embeddings if torch is unavailable.
 
 import logging
 import hashlib
+import os
 from typing import Optional, Dict, Any, List
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,8 @@ def get_embedder(model_name: str):
         try:
             from sentence_transformers import SentenceTransformer
             logger.info(f"Loading embedder: {model_name}")
-            _embedder = SentenceTransformer(model_name)
+            local_files_only = (os.environ.get("EMBEDDING_LOCAL_FILES_ONLY") or "true").lower() == "true"
+            _embedder = SentenceTransformer(model_name, local_files_only=local_files_only)
             _embedder_name = model_name
             _use_fallback = False
         except Exception as e:
