@@ -193,11 +193,11 @@ class OrchestratorConfig:
         self.enable_policy_engine = os.getenv("ENABLE_POLICY_ENGINE", "true").lower() == "true"
 
         # Postgres Configuration
-        self.pg_host = os.getenv("POSTGRES_HOST") or os.getenv("PG_HOST") or "localhost"
-        self.pg_port = int(os.getenv("POSTGRES_PORT") or os.getenv("PG_PORT") or "5432")
-        self.pg_database = os.getenv("POSTGRES_DB") or os.getenv("PG_DATABASE") or "gdce_chat_history"
-        self.pg_user = os.getenv("POSTGRES_USER") or os.getenv("PG_USER") or "postgres"
-        self.pg_password = os.getenv("POSTGRES_PASSWORD") or os.getenv("PG_PASSWORD") or ""
+        self.pg_host = os.getenv("POSTGRES_HOST") or os.getenv("PG_HOST")
+        self.pg_port = int(os.getenv("POSTGRES_PORT") or os.getenv("PG_PORT"))
+        self.pg_database = os.getenv("POSTGRES_DB") or os.getenv("PG_DATABASE")
+        self.pg_user = os.getenv("POSTGRES_USER") or os.getenv("PG_USER")
+        self.pg_password = os.getenv("POSTGRES_PASSWORD") or os.getenv("PG_PASSWORD")
 
         # Session Transcript Flusher Configuration
         self.transcript_flush_interval = int(os.getenv("TRANSCRIPT_FLUSH_INTERVAL", "300"))

@@ -3,55 +3,39 @@ Prometheus metrics for Orchestrator v2 Service
 Tracks query counts, durations, service errors, and cache hit rates.
 """
 
-from prometheus_client import REGISTRY, Counter, Histogram
-
-
-def _counter(name: str, documentation: str, labelnames: tuple[str, ...] = ()) -> Counter:
-    """Return an existing counter if already registered (e.g. during test re-import)."""
-    for collector, names in REGISTRY._collector_to_names.items():
-        if name in names and isinstance(collector, Counter):
-            return collector
-    return Counter(name, documentation, list(labelnames))
-
-
-def _histogram(name: str, documentation: str, labelnames: tuple[str, ...] = ()) -> Histogram:
-    for collector, names in REGISTRY._collector_to_names.items():
-        if name in names and isinstance(collector, Histogram):
-            return collector
-    return Histogram(name, documentation, list(labelnames))
-
+from prometheus_client import Counter, Histogram
 
 # Query Metrics
-QUERY_COUNT = _counter(
-    "gdce_query_count_total",
-    "Total number of queries processed",
-    ("intent", "status"),
+QUERY_COUNT = Counter(
+    'gdce_query_count_total', 
+    'Total number of queries processed', 
+    ['intent', 'status']
 )
 
-QUERY_DURATION = _histogram(
-    "gdce_query_duration_seconds",
-    "Time taken to process queries",
-    ("intent",),
+QUERY_DURATION = Histogram(
+    'gdce_query_duration_seconds', 
+    'Time taken to process queries', 
+    ['intent']
 )
 
 # Service Error Metrics
-SERVICE_ERRORS = _counter(
-    "gdce_service_errors_total",
-    "Total number of downstream service errors",
-    ("service_name", "error_type"),
+SERVICE_ERRORS = Counter(
+    'gdce_service_errors_total', 
+    'Total number of downstream service errors', 
+    ['service_name', 'error_type']
 )
 
 # Cache Metrics
-CACHE_HITS = _counter(
-    "gdce_cache_hits_total",
-    "Total cache hits",
-    ("cache_level",),
+CACHE_HITS = Counter(
+    'gdce_cache_hits_total', 
+    'Total cache hits', 
+    ['cache_level']
 )
 
-CACHE_MISSES = _counter(
-    "gdce_cache_misses_total",
-    "Total cache misses",
-    ("cache_level",),
+CACHE_MISSES = Counter(
+    'gdce_cache_misses_total', 
+    'Total cache misses', 
+    ['cache_level']
 )
 
 def record_query(intent: str, status: str, duration_sec: float):

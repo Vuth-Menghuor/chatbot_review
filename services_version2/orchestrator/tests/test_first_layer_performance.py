@@ -11,12 +11,12 @@ test_dir = os.path.dirname(os.path.abspath(__file__))
 orchestrator_dir = os.path.dirname(test_dir)
 services_v2_dir = os.path.dirname(orchestrator_dir)
 workspace_root = os.path.dirname(services_v2_dir)
-sys.path.insert(0, workspace_root)
+sys.path.insert(0, orchestrator_dir)
 
-from services_version2.orchestrator.app.services.session_context import SessionContext, SessionManager
-from services_version2.orchestrator.app.services.coordinator import ServiceCoordinator, WorkflowIntent
-from services_version2.orchestrator.app.core.config import LLMFirstLayerConfig
-from services_version2.orchestrator.app.ai.analyzer import get_llm_first_layer_service, FirstLayerPipeline
+from app.services.session_context import SessionContext, SessionManager
+from app.services.coordinator import ServiceCoordinator, WorkflowIntent
+from app.core.config import LLMFirstLayerConfig
+from app.ai.analyzer import get_llm_first_layer_service, FirstLayerPipeline
 
 
 @pytest.mark.asyncio
@@ -151,7 +151,7 @@ async def test_first_layer_performance_by_intent():
 
     session_id = "complicated_perf_session_456"
 
-    with patch("services_version2.orchestrator.app.services.coordinator.detect_small_talk", side_effect=mock_detect_small_talk):
+    with patch("app.services.coordinator.detect_small_talk", side_effect=mock_detect_small_talk):
         for tc in test_cases:
             first_layer_service.reset_request_unified_result()
 
@@ -260,7 +260,7 @@ async def test_concurrent_requests_no_cross_session_bleed():
         return None
 
     # Run concurrent requests
-    with patch("services_version2.orchestrator.app.services.coordinator.detect_small_talk", side_effect=mock_detect_small_talk):
+    with patch("app.services.coordinator.detect_small_talk", side_effect=mock_detect_small_talk):
         async def run_session_A():
             session_A = first_layer_service.session_manager.get_or_create_session("session_A")
             # Clear previous turns if any

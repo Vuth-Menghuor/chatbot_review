@@ -8,7 +8,7 @@ import json
 import logging
 import uuid
 import time
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from fastapi.responses import StreamingResponse
@@ -17,6 +17,20 @@ from ..schemas.schemas import (
     QueryResponse,
     Citation,
 )
+from app.infrastructure import (
+    get_db,
+    get_db_context,
+    session_id_var,
+    message_id_var,
+    ChatSession,
+    ChatMessage,
+    ChatFeedback,
+    ChatAttachment,
+)
+from app.services.db_service import ChatbotDBService
+from ..core.logging import get_request_id
+
+
 from ..infrastructure.metrics import record_query
 from ..infrastructure.cache_service import get_cache_service
 
@@ -93,16 +107,41 @@ async def process_query(
     Returns:
         Query response with answer, citations, and metadata
     """
-    request_id = str(uuid.uuid4())
+    request_id = get_request_id() or str(uuid.uuid4())
     start_time = time.time()
     
     # Auto-generate a session_id if the client did not supply one.
     # This ensures multi-turn context (ask-back → clarification) works reliably.
     effective_session_id = req.session_id or str(uuid.uuid4())
     
+    # Initialize session_id_var context variable
+    session_id_var.set(effective_session_id)
+    
     try:
         question = req.question.strip()
-        logger.info(f"[{request_id}] 🔵 Processing query: {question[:80]}...")
+        logger.info(f"[{request_id}] [QUERY] Processing query: {question[:80]}...")
+        
+        # Record user message in DB
+        user_msg_id = None
+        try:
+            with get_db_context() as db:
+                ChatbotDBService.sync_get_or_create_session(
+                    db=db,
+                    session_id=effective_session_id,
+                    user_id=req.user_id,
+                    project_id=req.project_id
+                )
+                user_msg = ChatbotDBService.sync_save_chat_message(
+                    db=db,
+                    session_id=effective_session_id,
+                    role="user",
+                    content=question
+                )
+                user_msg_id = user_msg.id
+                message_id_var.set(user_msg_id)
+        except Exception as db_err:
+            logger.error(f"[{request_id}] Failed to record user message: {db_err}")
+
         
         # Pre-warm unified cache to reduce LLM calls to exactly 1
         session_context = None
@@ -121,7 +160,7 @@ async def process_query(
             # Check for injection/safety
             is_safe, reason = await input_validator.validate_input_async(question, session_context)
             if not is_safe and reason != "out_of_scope":
-                logger.warning(f"[{request_id}] ⚠️ Security check failed: {reason}")
+                logger.warning(f"[{request_id}] [WARN] Security check failed: {reason}")
                 latency = (time.time() - start_time) * 1000
                 return QueryResponse(
                     request_id=request_id,
@@ -143,7 +182,7 @@ async def process_query(
         cached_result = cache_service.get_cached_response(question)
         if cached_result is not None and cached_result.get("intent") in _CACHEABLE_INTENTS:
             logger.info(
-                f"[{request_id}] ⚡ Cache HIT for intent '{cached_result.get('intent')}' "
+                f"[{request_id}] [CACHE_HIT] Cache HIT for intent '{cached_result.get('intent')}' "
                 f"— skipping downstream services"
             )
             
@@ -183,7 +222,7 @@ async def process_query(
             return response
         else:
             logger.info(
-                f"[{request_id}] ❌ Cache MISS for query: '{question}' "
+                f"[{request_id}] [CACHE_MISS] Cache MISS for query: '{question}' "
                 f"— initiating full orchestrator query processing workflow..."
             )
         
@@ -199,7 +238,7 @@ async def process_query(
             output_validator = app_request.app.state.output_validator
             is_safe, reason = output_validator.validate_response(result.get('answer', ''))
             if not is_safe:
-                logger.warning(f"[{request_id}] ⚠️ Output validation failed: {reason}")
+                logger.warning(f"[{request_id}] [WARN] Output validation failed: {reason}")
                 result['answer'] = "I found a result but it may contain unsafe content. Please rephrase your question."
         
 
@@ -265,29 +304,51 @@ async def process_query(
                 source=result_intent,
             )
             logger.info(
-                f"[{request_id}] 💾 Successfully stored query results in cache for intent '{result_intent}' "
+                f"[{request_id}] [CACHE_STORED] Successfully stored query results in cache for intent '{result_intent}' "
                 f"(TTL: {ttl}s, key: hash(question))"
             )
         
         logger.info(
-            f"[{response.request_id}] ✅ Query processed in {response.latency_ms:.1f}ms | "
+            f"[{response.request_id}] [SUCCESS] Query processed in {response.latency_ms:.1f}ms | "
             f"Intent: {response.intent} | Status: {response.status} | "
             f"Citations: {len(response.citations)}"
         )
         
-        # Record metrics
-        record_query(response.intent, response.status, latency_ms / 1000.0)
-        
+        # Record assistant response
+        try:
+            with get_db_context() as db:
+                assistant_content = response.answer or "I was unable to generate a response for your query."
+                ChatbotDBService.sync_save_chat_message(
+                    db=db,
+                    session_id=effective_session_id,
+                    role="assistant",
+                    content=assistant_content
+                )
+        except Exception as db_err:
+            logger.error(f"[{request_id}] Failed to record assistant response: {db_err}")
+
         return response
 
         
     except Exception as e:
-        logger.error(f"[{request_id}] ❌ Error processing query: {e}", exc_info=True)
+        logger.error(f"[{request_id}] [ERROR] Error processing query: {e}", exc_info=True)
         latency_ms = (time.time() - start_time) * 1000
         
         # Record error metrics
         record_query("error", "failed", latency_ms / 1000.0)
         
+        # Record assistant error response to DB
+        try:
+            with get_db_context() as db:
+                ChatbotDBService.sync_save_chat_message(
+                    db=db,
+                    session_id=effective_session_id,
+                    role="assistant",
+                    content=f"I encountered an error while processing your request: {str(e)}"
+                )
+        except Exception as db_err:
+            logger.error(f"[{request_id}] Failed to record assistant error: {db_err}")
+
         return QueryResponse(
             request_id=request_id,
             question=req.question,
@@ -319,13 +380,38 @@ async def stream_query(
     Session persistence (Redis/Postgres) is written after the ``done`` event.
     Partial responses from disconnected sessions are never persisted.
     """
-    request_id = str(uuid.uuid4())
+    request_id = get_request_id() or str(uuid.uuid4())
     effective_session_id = req.session_id or str(uuid.uuid4())
+    
+    # Initialize session_id_var context variable
+    session_id_var.set(effective_session_id)
 
     async def event_generator():
         # ── 1. Capture ContextVar cache so it survives await boundaries ──────
         from ..ai.analyzer import unified_result_var
         question = req.question.strip()
+
+        # Record user message in DB
+        user_msg_id = None
+        try:
+            with get_db_context() as db:
+                ChatbotDBService.sync_get_or_create_session(
+                    db=db,
+                    session_id=effective_session_id,
+                    user_id=req.user_id,
+                    project_id=req.project_id
+                )
+                user_msg = ChatbotDBService.sync_save_chat_message(
+                    db=db,
+                    session_id=effective_session_id,
+                    role="user",
+                    content=question
+                )
+                user_msg_id = user_msg.id
+                message_id_var.set(user_msg_id)
+        except Exception as db_err:
+            logger.error(f"[{request_id}] Failed to record user stream message: {db_err}")
+
 
         # Pre-warm unified NLU cache (same as /query endpoint)
         cached_nlu = None
@@ -478,12 +564,26 @@ async def stream_query(
                 except Exception as e:
                     logger.warning(f"[{request_id}] Failed to persist session turn: {e}")
 
+            # Record assistant stream response to DB
+            if full_response:
+                try:
+                    with get_db_context() as db:
+                        ChatbotDBService.sync_save_chat_message(
+                            db=db,
+                            session_id=effective_session_id,
+                            role="assistant",
+                            content=full_response
+                        )
+                except Exception as db_err:
+                    logger.error(f"[{request_id}] Failed to log assistant stream response: {db_err}")
+
             # ── 8. Done event ─────────────────────────────────────────────────
             done_payload = {
                 "status": "completed",
                 "session_id": effective_session_id,
                 "intent": intent,
                 "sources": sources,
+                "suggestions": context_result.get("suggestions", []),
             }
             yield f"event: done\ndata: {json.dumps(done_payload)}\n\n"
 
@@ -675,3 +775,123 @@ async def root():
         "docs": "/docs",
         "health": "/health"
     }
+
+
+# SESSIONS, FEEDBACK, & ATTACHMENTS CRUD ENDPOINTS
+
+from pydantic import BaseModel, Field
+
+
+class FeedbackRequest(BaseModel):
+    rating: int = Field(..., ge=1, le=5, description="Feedback rating from 1 to 5")
+    comment: Optional[str] = Field(None, description="Optional text feedback comment")
+    message_id: Optional[int] = Field(None, description="Optional reference to a specific message ID")
+
+
+class AttachmentRequest(BaseModel):
+    file_id: str = Field(..., description="Uploaded file ID from API Layer")
+    file_name: Optional[str] = Field(None, description="Original filename")
+    file_url: Optional[str] = Field(None, description="File URL path")
+    message_id: Optional[int] = Field(None, description="Optional message association")
+
+
+@router.get("/sessions", response_model=List[Dict[str, Any]])
+def list_sessions(
+    user_id: Optional[str] = Query(None, description="Filter by user ID"),
+    project_id: Optional[str] = Query(None, description="Filter by project ID"),
+    db=Depends(get_db)
+):
+    """List chat sessions with optional filtering for user_id and project_id."""
+    query = db.query(ChatSession)
+    if user_id:
+        query = query.filter_by(user_id=user_id)
+    if project_id:
+        query = query.filter_by(project_id=project_id)
+    sessions = query.order_by(ChatSession.created_at.desc()).all()
+    return [
+        {
+            "session_id": s.session_id,
+            "user_id": s.user_id,
+            "project_id": s.project_id,
+            "created_at": s.created_at,
+            "updated_at": s.updated_at
+        }
+        for s in sessions
+    ]
+
+
+@router.get("/sessions/{session_id}", response_model=Dict[str, Any])
+def get_session_details(session_id: str, db=Depends(get_db)):
+    """Retrieve detailed session history, context and chat messages."""
+    session = db.query(ChatSession).filter_by(session_id=session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    messages = db.query(ChatMessage).filter_by(session_id=session_id).order_by(ChatMessage.created_at.asc()).all()
+    context = session.context
+    
+    return {
+        "session_id": session.session_id,
+        "user_id": session.user_id,
+        "project_id": session.project_id,
+        "created_at": session.created_at,
+        "updated_at": session.updated_at,
+        "context": context.context_data if context else {},
+        "messages": [
+            {
+                "id": m.id,
+                "role": m.role,
+                "content": m.content,
+                "created_at": m.created_at
+            }
+            for m in messages
+        ]
+    }
+
+
+@router.post("/sessions/{session_id}/feedback", response_model=Dict[str, Any])
+def submit_feedback(session_id: str, req: FeedbackRequest, db=Depends(get_db)):
+    """Submit user feedback rating and optional text comments for a session/message."""
+    session = db.query(ChatSession).filter_by(session_id=session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    feedback = ChatbotDBService.sync_save_chat_feedback(
+        db=db,
+        session_id=session_id,
+        rating=req.rating,
+        comment=req.comment,
+        message_id=req.message_id
+    )
+    return {"status": "success", "feedback_id": feedback.id}
+
+
+@router.post("/sessions/{session_id}/attachments", response_model=Dict[str, Any])
+def link_attachment(session_id: str, req: AttachmentRequest, db=Depends(get_db)):
+    """Link uploaded files from the API Layer to a session or message via chat_attachments."""
+    session = db.query(ChatSession).filter_by(session_id=session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    attachment = ChatbotDBService.sync_save_chat_attachment(
+        db=db,
+        session_id=session_id,
+        file_id=req.file_id,
+        file_name=req.file_name,
+        file_url=req.file_url,
+        message_id=req.message_id
+    )
+    return {"status": "success", "attachment_id": attachment.id}
+
+
+@router.delete("/sessions/{session_id}", response_model=Dict[str, Any])
+def delete_session(session_id: str, db=Depends(get_db)):
+    """Delete a session. Automatically cascade deletes messages, context, feedback, attachments, etc."""
+    session = db.query(ChatSession).filter_by(session_id=session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    db.delete(session)
+    db.commit()
+    return {"status": "success", "message": f"Session {session_id} and all related logs deleted successfully via cascade"}
+

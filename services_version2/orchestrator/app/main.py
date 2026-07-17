@@ -18,7 +18,6 @@ from .services import ServiceCoordinator, get_policy_engine
 from .ai.summarizer import get_formatter_service
 from .ai import get_llm_first_layer_service
 from .api import router as api_router
-from .services.session_flusher import init_archive_table, periodic_transcript_flush
 from .ai.shims.validator_service import get_input_validator, get_output_validator
 from .infrastructure import (
     ServiceClientFactory,
@@ -66,8 +65,8 @@ def create_app() -> FastAPI:
     # Configure CORS
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=config.allowed_origins,
-        allow_credentials=True,
+        allow_origins=["*"],
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -79,6 +78,23 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def startup_event():
         """Initialize services on startup."""
+        import sys
+        # Force standard logging to propagate to stdout
+        root_logger = logging.getLogger()
+        for h in list(root_logger.handlers):
+            if isinstance(h, logging.StreamHandler):
+                root_logger.removeHandler(h)
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        root_logger.addHandler(handler)
+        root_logger.setLevel(logging.INFO)
+
+        # Re-enable standard loggers disabled by uvicorn's logging setup
+        for name, logger_obj in logging.root.manager.loggerDict.items():
+            if isinstance(logger_obj, logging.Logger):
+                logger_obj.disabled = False
+                logger_obj.propagate = True
+
         logger.info("Starting orchestrator service v2...")
         logger.info("=" * 60)
         
@@ -243,15 +259,23 @@ def create_app() -> FastAPI:
             
             logger.info("[OK] Background health check task started")
 
-            # Initialize Postgres transcript archive table
+            # Initialize PostgreSQL chatbot database and apply migrations
             try:
-                init_archive_table(config)
+                from .infrastructure import check_and_create_db
+                check_and_create_db()
+                
+                from alembic.config import Config
+                from alembic import command
+                from pathlib import Path
+                ini_path = Path(__file__).resolve().parent.parent / "alembic.ini"
+                alembic_cfg = Config(str(ini_path))
+                alembic_cfg.set_main_option("programmatic", "true")
+                await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
+                logger.info("[OK] Main Chatbot DB checked, created, and migrated successfully.")
             except Exception as e:
-                logger.warning(f"Failed to initialize archive table: {e}")
+                logger.warning(f"Failed to initialize and migrate chatbot database: {e}")
 
-            # Start background periodic flusher task
-            asyncio.create_task(periodic_transcript_flush(app))
-            logger.info("[OK] Background transcript flusher task started")
+
             
             logger.info("=" * 60)
             logger.info(f"[READY] Orchestrator v2.0 Ready")

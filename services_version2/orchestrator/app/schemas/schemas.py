@@ -59,6 +59,14 @@ class QueryRequest(BaseModel):
         None,
         description="Optional session identifier"
     )
+    user_id: Optional[str] = Field(
+        None,
+        description="Optional user identifier from API Layer"
+    )
+    project_id: Optional[str] = Field(
+        None,
+        description="Optional project identifier from API Layer"
+    )
     
     @validator('question')
     def validate_question(cls, v):
@@ -75,9 +83,12 @@ class QueryRequest(BaseModel):
         json_schema_extra = {
             "example": {
                 "question": "What is the HS code for chicken meat?",
-                "session_id": "session_123"
+                "session_id": "session_123",
+                "user_id": "user_abc",
+                "project_id": "project_xyz"
             }
         }
+
 
 
 class QueryResponse(BaseModel):

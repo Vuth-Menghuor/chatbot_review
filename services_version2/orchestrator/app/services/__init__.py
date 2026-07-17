@@ -26,6 +26,7 @@ from .session_context import SessionContext, SessionManager
 from .session_flusher import init_archive_table, periodic_transcript_flush
 from .input_rewriter import InputRewriter
 from .translator import QueryTranslator
+from .suggestion_service import SuggestionService
 
 __all__ = [
     # Workflow
@@ -54,4 +55,5 @@ __all__ = [
     # Rewriter & Classifier & Translator
     "InputRewriter",
     "QueryTranslator",
+    "SuggestionService",
 ]

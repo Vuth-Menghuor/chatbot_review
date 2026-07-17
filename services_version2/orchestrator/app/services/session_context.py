@@ -53,19 +53,29 @@ class SessionContext:
     # --- Unresolved fragment buffer ---
     pending_fragments: List[str] = field(default_factory=list)
 
-    # Clarification/ask-back session state
+    # Clarification/ask-back session state (intent ambiguity)
     pending_clarification: bool = False
     clarification_intents: List[str] = field(default_factory=list)
     pending_rewritten_query: Optional[str] = None
     ask_back_count: int = 0
 
-    # ------------------------------------------------------------------ #
-    # Turn-to-turn state (required for two-turn rewriting / ask-back)     #
-    # ------------------------------------------------------------------ #
+    # Product-spec clarification state machine                            
+    # Tracks mid-conversation spec follow-up (e.g. "BMW m8" → "sports")  
+    # Mutually exclusive with pending_clarification (intent ask-back)     
+    product_clarification_needed: bool = False
+    clarification_entity: Optional[str] = None        # Saved product entity from turn 1
+    clarification_last_query: Optional[str] = None    # Original turn-1 raw input
+    product_ask_back_count: int = 0                   # Number of spec follow-ups so far
+    clarification_expected_terms: List[str] = field(default_factory=list)  # Dynamic vocab from retrieval questions
+
+    # Turn-to-turn state (required for two-turn rewriting / ask-back)     
     last_intent: Optional[str] = None
     last_entity: Optional[str] = None
     last_raw_query: Optional[str] = None
     last_normalized_query: Optional[str] = None
+
+    # Track total turns count for exact database summary index referencing
+    total_turns_count: int = 0
 
     # Private callbacks (not serialized)
     _on_change: Optional[Callable[[], None]] = field(default=None, repr=False, compare=False)
@@ -81,6 +91,7 @@ class SessionContext:
         user_val = user or user_input
         bot_val = bot or bot_response
         self.turns.append({"user": user_val, "bot": bot_val, "ts": datetime.utcnow()})
+        self.total_turns_count += 1
 
         if len(self.turns) > self.max_turns:
             overflow_count = len(self.turns) - self.max_turns
@@ -153,10 +164,17 @@ class SessionContext:
             "clarification_intents": self.clarification_intents,
             "pending_rewritten_query": self.pending_rewritten_query,
             "ask_back_count": self.ask_back_count,
+            # Product-spec clarification state
+            "product_clarification_needed": self.product_clarification_needed,
+            "clarification_entity": self.clarification_entity,
+            "clarification_last_query": self.clarification_last_query,
+            "product_ask_back_count": self.product_ask_back_count,
+            "clarification_expected_terms": self.clarification_expected_terms,
             "last_intent": self.last_intent,
             "last_entity": self.last_entity,
             "last_raw_query": self.last_raw_query,
             "last_normalized_query": self.last_normalized_query,
+            "total_turns_count": self.total_turns_count,
         }
 
     @classmethod
@@ -208,10 +226,17 @@ class SessionContext:
             clarification_intents=data.get("clarification_intents", []),
             pending_rewritten_query=data.get("pending_rewritten_query"),
             ask_back_count=data.get("ask_back_count", 0),
+            # Product-spec clarification state
+            product_clarification_needed=data.get("product_clarification_needed", False),
+            clarification_entity=data.get("clarification_entity"),
+            clarification_last_query=data.get("clarification_last_query"),
+            product_ask_back_count=data.get("product_ask_back_count", 0),
+            clarification_expected_terms=data.get("clarification_expected_terms", []),
             last_intent=data.get("last_intent"),
             last_entity=data.get("last_entity"),
             last_raw_query=data.get("last_raw_query"),
             last_normalized_query=data.get("last_normalized_query"),
+            total_turns_count=data.get("total_turns_count", 0),
         )
 
 
@@ -460,7 +485,7 @@ async def async_summarize_evicted_turns(session: SessionContext, evicted_turns: 
     """
     Constructs prompting context containing current summary and newly evicted turns,
     invokes the Gemini provider to generate a cohesive updated summary,
-    updates session.rolling_summary, and triggers session._trigger_change().
+    updates session.rolling_summary, triggers session._trigger_change(), and saves to DB.
     """
     try:
         from ..ai import get_llm_first_layer_service
@@ -497,15 +522,75 @@ async def async_summarize_evicted_turns(session: SessionContext, evicted_turns: 
             session.rolling_summary = new_summary
             logger.info(f"Successfully generated rolling summary for session {session.session_id}")
             session._trigger_change()
+
+            # Save updated rolling summary to DB using context session
+            try:
+                from app.infrastructure.database import get_db_context
+                from app.services.db_service import ChatbotDBService
+                last_msg_idx = getattr(session, "total_turns_count", 0)
+                with get_db_context() as db:
+                    await ChatbotDBService.save_conversation_summary(
+                        db=db,
+                        session_id=session.session_id,
+                        summary=session.rolling_summary,
+                        last_message_index=last_msg_idx
+                    )
+            except Exception as db_err:
+                logger.error(f"Failed to save rolling summary to database: {db_err}")
+
     except Exception as e:
         logger.error(f"Error in async_summarize_evicted_turns: {e}", exc_info=True)
+        # Log failed summarization request to DB
+        try:
+            from app.infrastructure.database import get_db_context
+            from app.services.db_service import sync_save_failed_request
+            with get_db_context() as db:
+                sync_save_failed_request(
+                    db=db,
+                    session_id=session.session_id,
+                    service_name="rolling_summarizer",
+                    error_message=str(e),
+                    error_type=type(e).__name__
+                )
+        except Exception as db_err:
+            logger.error(f"Failed to log rolling_summarizer error to DB: {db_err}")
+
         # Fallback to local deterministic formatting
         fallback_summary(session, evicted_turns)
 
 
 def fallback_summary(session: SessionContext, evicted_turns: List[Dict[str, Any]]):
+    """Fallback rolling summarizer that slices cleanly on turn boundaries and saves to DB."""
     fallback_text = " | ".join(
         f"U:{t.get('user', '')} B:{t.get('bot', '')}" for t in evicted_turns
     )
-    session.rolling_summary = (session.rolling_summary + " " + fallback_text).strip()[-1600:]
+    combined = (session.rolling_summary + " | " + fallback_text).strip(" | ")
+    
+    # Slicing cleanly on turn boundary if length exceeds 1600 chars
+    if len(combined) > 1600:
+        truncated = combined[-1600:]
+        sep_index = truncated.find(" | ")
+        if sep_index != -1:
+            session.rolling_summary = truncated[sep_index + 3:].strip()
+        else:
+            session.rolling_summary = truncated.strip()
+    else:
+        session.rolling_summary = combined
+
     session._trigger_change()
+
+    # Save fallback summary to DB using context session
+    try:
+        from app.infrastructure.database import get_db_context
+        from app.services.db_service import sync_save_conversation_summary
+        last_msg_idx = getattr(session, "total_turns_count", 0)
+        with get_db_context() as db:
+            sync_save_conversation_summary(
+                db=db,
+                session_id=session.session_id,
+                summary=session.rolling_summary,
+                last_message_index=last_msg_idx
+            )
+    except Exception as db_err:
+        logger.error(f"Failed to save fallback rolling summary to database: {db_err}")
+

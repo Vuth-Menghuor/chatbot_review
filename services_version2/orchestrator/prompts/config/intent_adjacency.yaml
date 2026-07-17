@@ -1,0 +1,47 @@
+# Suggestion map for hydrating entity-specific questions.
+# {entity} placeholders will be hydrated with the extracted/last discussed product entity.
+#
+# Coverage: only intents where a product entity is reliably present should appear
+# as keys here. Low-confidence / catch-all intents (e.g. "general") are NOT included —
+# those route directly to generic_fallbacks in suggestion_service.py, since a stale
+# or missing {entity} on an ambiguous turn would produce a broken/misleading suggestion.
+intent_adjacency:
+  hs_code_lookup:
+    - text: "What is the import procedure for {entity}?"
+      intent: import_procedure
+    - text: "How is import tax calculated for {entity}?"
+      intent: calculation
+    - text: "Show me trade data statistics for {entity}."
+      intent: trade_query
+
+  calculation:
+    - text: "What is the HS code for {entity}?"
+      intent: hs_code_lookup
+    - text: "What is the import procedure for {entity}?"
+      intent: import_procedure
+    - text: "Show me trade data statistics for {entity}."
+      intent: trade_query
+
+  trade_query:
+    - text: "What is the HS code for {entity}?"
+      intent: hs_code_lookup
+    - text: "How is import tax calculated for {entity}?"
+      intent: calculation
+    - text: "What is the import procedure for {entity}?"
+      intent: import_procedure
+
+  import_procedure:
+    - text: "What is the HS code for {entity}?"
+      intent: hs_code_lookup
+    - text: "How is import tax calculated for {entity}?"
+      intent: calculation
+    - text: "Show me trade data statistics for {entity}."
+      intent: trade_query
+
+# Fallback generic questions when no entity is resolvable, OR when the current
+# turn's intent is not one of the keys above (e.g. "general", low-confidence turns).
+# NOTE: These must NOT contain {entity} placeholders as they are static topic-level queries.
+generic_fallbacks:
+  - "How do I classify import goods?"
+  - "How is customs import duty calculated?"
+  - "What are the general import procedures?"

@@ -6,6 +6,8 @@ import uuid
 
 URL = "http://127.0.0.1:8001/chat"
 
+
+
 def send_chat_query(question: str, session_id: str):
     payload = {
         "question": question,
@@ -58,8 +60,10 @@ def main():
                 print(f"[System] Session reset. New Session ID: {session_id}")
                 continue
 
+            question = user_input
+
             print("Sending request...")
-            response, error = send_chat_query(user_input, session_id)
+            response, error = send_chat_query(question, session_id)
 
             if error:
                 print(f"\n[ERROR] {error}")
@@ -77,12 +81,19 @@ def main():
             meta = response.get("metadata", {})
             service_query = meta.get("service_query")
             query_strategy = meta.get("query_strategy")
-            latency = meta.get("latency_ms", 0.0)
-            
-            print(f"[Metadata] Intent: {intent.upper()} | Status: {status.upper()} | Latency: {latency:.1f}ms")
+            # latency_ms is a top-level field on the response, not inside metadata
+            latency_s = response.get("latency_ms", meta.get("latency_ms", 0.0)) / 1000.0
+
+            print(f"[Metadata] Intent: {intent.upper()} | Status: {status.upper()} | Latency: {latency_s:.3f}s")
             if service_query and service_query != user_input:
                 print(f"[Rewrite]  Routed Query: \"{service_query}\"")
                 print(f"[Rewrite]  Strategy:     {query_strategy}")
+
+            # Print per-service response times (how long each downstream service took)
+            service_latencies = meta.get("service_latencies_s", {})
+            if service_latencies:
+                parts = "  |  ".join(f"{svc}: {t:.3f}s" for svc, t in service_latencies.items())
+                print(f"[Services] {parts}")
             
             # Print documents/sources if available
             sources = response.get("sources", [])
@@ -93,6 +104,13 @@ def main():
                     score = src.get("score")
                     score_str = f" (Score: {score:.2f})" if score is not None else ""
                     print(f"  - {src_id}{score_str}")
+
+            # Print suggestions if available
+            suggestions = response.get("suggestions", [])
+            if suggestions:
+                print(f"\n[Suggestions]")
+                for s in suggestions:
+                    print(f"  💡 {s}")
             print("-" * 80)
 
         except KeyboardInterrupt:

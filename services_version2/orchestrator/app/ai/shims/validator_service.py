@@ -616,7 +616,9 @@ class RuleBasedValidatorProvider:
             r"\bgood\s+morning\b",
             r"\bgood\s+afternoon\b",
             r"\bgood\s+evening\b",
-            r"\bhowdy\b"
+            r"\bhowdy\b",
+            r"\bbello+\b",
+            r"\bhelo+\b"
         ]
         if any(re.search(pat, t_lower) for pat in greetings_patterns):
             return ValidationResult.in_scope("Small talk query whitelisted")
@@ -970,6 +972,12 @@ class ValidatorService:
             return ValidationResult.injection("Potential prompt injection detected (act as)")
         if "`" in t or "$(" in t:
             return ValidationResult.injection("Suspicious command characters detected")
+
+        # Fast rule-based whitelist check (greetings, capabilities, whitelisted intents)
+        # to avoid slow LLM calls for small talk and common phrases.
+        local_check = self._provider.validate(text)
+        if local_check.is_valid and local_check.decision == ValidationDecision.IN_SCOPE:
+            return local_check
 
         # 1. First Layer: Unified LLM Validation
         from unittest.mock import Mock, AsyncMock, MagicMock

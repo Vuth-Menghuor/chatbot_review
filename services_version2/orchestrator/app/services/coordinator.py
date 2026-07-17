@@ -30,6 +30,7 @@ from .workflow import (
     WorkflowIntent,
     WorkflowStatus,
 )
+from .suggestion_service import SuggestionService
 from ..core.config import (
     TimeoutConfig,
     get_timeout_config,
@@ -39,9 +40,91 @@ from ..ai.shims.validator_service import (
     extract_certificate_type,
     get_validator,
     ValidationResult,
+    ValidationDecision,
 )
 
+from .hs_classifier import detect_simple_product_category
+
 logger = logging.getLogger(__name__)
+
+# Shared lists of countries and prefix families to filter out non-product descriptions
+_TRADE_COUNTRIES = frozenset([
+    "cambodia", "vietnam", "thailand", "china", "laos", "myanmar", "malaysia", "singapore", 
+    "indonesia", "philippines", "brunei", "japan", "korea", "usa", "america", "europe", 
+    "india", "germany", "france", "uk", "united kingdom", "australia", "canada"
+])
+
+_NON_PRODUCT_PREFIXES = (
+    "regulat",   # regulate, regulation, regulatory, regulator
+    "procedur",  # procedure, procedures, procedural
+    "document",  # document, documents, documentation, documented
+    "certif",    # certificate, certification, certified
+    "declar",    # declare, declaration, declarant
+    "clearanc",  # clearance, clearances
+)
+
+# Product-spec clarification state machine constants
+# Maximum number of spec follow-up merges before we give up and route
+# the next user input as a fresh query.
+MAX_PRODUCT_ASK_BACK_RETRIES = 2
+
+# Stop words stripped when extracting expected terms from clarifying questions.
+_CLARIFY_STOP_WORDS = frozenset([
+    "is", "the", "a", "an", "or", "as", "and", "of", "for", "are", "does",
+    "do", "was", "with", "its", "this", "that", "your", "it", "in", "to",
+    "has", "have", "can", "will", "be", "if", "not", "from", "you", "how",
+])
+
+# Generic nouns that survive stop-word stripping but are too broad to be
+# useful as merge-eligibility signals — e.g. "vehicle" in
+# "Is the vehicle imported as CBU?" must not match a topic-switch like
+# "looking for a vehicle export permit".
+_CLARIFY_GENERIC_NOUNS = frozenset([
+    "vehicle", "product", "item", "type", "unit", "specify", "details",
+    "model", "specific", "question", "questions", "classification",
+    "code", "codes", "tariff", "tariffs", "goods", "import", "export",
+    "imported", "exported", "use", "used",
+    # Generic parts and helper tokens from verbose questions (excluding body types like car/sedan)
+    "wheel", "wheels", "drive", "built", "kits", "kit", "four", "two", "three", "one", "first", "second", "third",
+    "number", "numbers", "option", "options", "select", "choice", "choices", "equipped",
+    "completely", "knocked", "down", "fully",
+])
+
+# Category-specific technical discriminators: words that genuinely answer
+# a spec question and cannot be mistaken for a new product name.
+_SPEC_DISCRIMINATORS: Dict[str, frozenset] = {
+    "vehicle": frozenset([
+        "petrol", "diesel", "electric", "hybrid", "ev", "battery",
+        "engine", "cc", "kw", "hp", "4wd", "cbu", "ckd",
+    ]),
+    "food": frozenset([
+        "fresh", "frozen", "airtight", "salted", "dried", "smoked",
+        "prepared", "preserved",
+    ]),
+    "textile": frozenset([
+        "knitted", "woven", "crocheted", "wool", "synthetic",
+        "cotton", "artificial",
+    ]),
+}
+
+# Words that indicate the user already wrote a full question/statement,
+# OR is making small talk — neither should be rewritten as an HS query.
+_QUESTION_SIGNALS = frozenset([
+    # Question words
+    "what", "which", "where", "when", "who", "how", "why",
+    "is", "are", "can", "does", "do", "tell", "find",
+    # Domain keywords (already a trade/customs query)
+    "hs", "code", "tariff", "import", "export", "classify",
+    "calculate", "duty", "rate", "definition",
+    # Greetings & farewells
+    "hello", "hi", "hey", "hiya", "howdy",
+    "bye", "goodbye", "farewell", "ciao",
+    "good", "morning", "afternoon", "evening", "night",
+    # Politeness / small-talk
+    "thanks", "thank", "please", "sorry", "excuse",
+    "yes", "no", "ok", "okay", "sure", "nope", "yep",
+    "great", "awesome", "nice", "cool", "wow",
+])
 
 
 async def detect_small_talk(query: str, llm_service=None, force_llm_fallback: bool = False) -> Optional[str]:
@@ -161,12 +244,14 @@ class ServiceCoordinator:
         formatter_service: Optional[OrchestratorFormatterService] = None,
         rewriter_service: Optional[RewriterService] = None,
         first_layer_service: Optional[Any] = None,
+        suggestion_service: Optional[SuggestionService] = None,
     ):
         self.retrieval_client = retrieval_client
         self.general_client = general_client or retrieval_client
         self.calculator_client = calculator_client
         self.trade_data_client = trade_data_client
         self.first_layer_service = first_layer_service  
+        self.suggestion_service = suggestion_service or SuggestionService()
         
         self.llm_service = llm_service or get_llm_service(
             LLMServiceConfig(
@@ -310,15 +395,57 @@ class ServiceCoordinator:
                 except Exception as e:
                     logger.warning(f"[{request_id}] Session context unavailable: {e}")
 
+            # Step 2b: Bare product description rewrite (e.g. "laptop" -> "what is hs code of laptop")
+            # Only apply this if there is no previous chat knowledge or rolling summary knowledge
+            has_history = False
+            if context.session_context:
+                if context.session_context.turns or (context.session_context.rolling_summary and context.session_context.rolling_summary.strip()):
+                    has_history = True
+
+            # Step 2c: Product-spec clarification merge.
+            # When retrieval previously flagged a response as is_generic=True and stored
+            # product_clarification_needed=True on the session, the next user message is
+            # (likely) a spec answer to that clarification question.  We try to merge it
+            # with the saved entity before any other processing so the rest of the pipeline
+            # sees the full, self-contained query (e.g. "bmw m8 competition sports car").
+            # Mutual-exclusion: skip if the session is already in intent ask-back mode.
+            if (
+                context.session_context
+                and getattr(context.session_context, "product_clarification_needed", False)
+                and not context.session_context.is_awaiting_clarification()
+            ):
+                question, normalized_question = await self._try_merge_product_spec(
+                    context=context,
+                    request_id=request_id,
+                    question=question,
+                    normalized_question=normalized_question,
+                    session_id=session_id,
+                )
+
+            if not has_history or context.metadata.get("_spec_merge_done"):
+                stripped = question.strip()
+                if self._looks_like_short_product_lookup(stripped):
+                    rewritten_question = f"what is hs code of {stripped}"
+                    logger.info(
+                        f"[{request_id}] [REWRITE] Bare product description detected. "
+                        f"Rewriting '{question}' to '{rewritten_question}'"
+                    )
+                    question = rewritten_question
+                    normalized_question = self._light_normalize_query(question)
+                    context.question = question
+                    context.original_input = question
+
             # Step 3: Fast-path check for predefined/casual small talk (greetings, gratitude, etc.)
+            # Step 2c may have already called detect_small_talk and cached the result to avoid a
+            # duplicate LLM call; reuse that if present.
             # If it is turn 2 or more, we skip LLM small talk check (by passing llm_service=None)
             # so follow-up fragments can go through rewrite/ask-back logic.
             is_turn_2_or_more = False
             if context.session_context and len(getattr(context.session_context, 'turns', [])) > 0:
                 is_turn_2_or_more = True
 
-            small_talk_response = await detect_small_talk(
-                normalized_question, 
+            small_talk_response = context.metadata.get("small_talk_response") or await detect_small_talk(
+                normalized_question,
                 llm_service=None if is_turn_2_or_more else self.llm_service
             )
             if small_talk_response:
@@ -462,8 +589,8 @@ class ServiceCoordinator:
             validator = get_validator()
             validation_result = await validator.validate_input_full_async(normalized_question, context.session_context)
             
-            # If the query fails basic validation rules (e.g. policy checks), fail early
-            if not validation_result.is_valid:
+            # If the query fails basic validation rules (safety, injection, format), fail early
+            if not validation_result.is_valid and validation_result.decision not in (ValidationDecision.OUT_OF_SCOPE, ValidationDecision.AMBIGUOUS):
                 context.add_error(validation_result.reason)
                 context.status = WorkflowStatus.FAILED
                 context.finalize()
@@ -693,7 +820,7 @@ class ServiceCoordinator:
                     rewrite_skip_reason = None
                     
                     logger.info(
-                        f"[{request_id}] 🔵 Input Rewriter: original='{original_query}' "
+                        f"[{request_id}] [REWRITE] Input Rewriter: original='{original_query}' "
                         f"-> rewritten='{rewritten_question}' | metadata={rewrite_metadata}"
                     )
 
@@ -711,7 +838,7 @@ class ServiceCoordinator:
                         context.rewrite_metadata = {**(rewrite_metadata or {}), "rewrite_reason": "validation_rejected", "validation_status": "rejected"}
                         rewrite_status = "skipped"
                         rewrite_skip_reason = "rewrite_validation_failed"
-                        logger.info(f"[{request_id}] ⚠️ Input Rewriter validation rejected. Reverting to original query.")
+                        logger.info(f"[{request_id}] [WARN] Input Rewriter validation rejected. Reverting to original query.")
                     else:
                         context.rewrite_metadata = {**rewrite_metadata, "validation_status": "accepted"}
                 except Exception as e:
@@ -795,6 +922,30 @@ class ServiceCoordinator:
 
             # Finalize context and build orchestrator response package
             context.finalize()
+
+            # Log intent routing and context data to DB in a context-isolated way
+            try:
+                from app.infrastructure import get_db_context, message_id_var
+                from app.services.db_service import ChatbotDBService
+                
+                msg_id = message_id_var.get()
+                with get_db_context() as db:
+                    await ChatbotDBService.save_intent_route(
+                        db=db,
+                        session_id=session_id,
+                        message_id=msg_id,
+                        intent=context.intent.value if context.intent else "unclassified",
+                        service=self._resolve_target_service(context.intent),
+                        confidence=_intent_confidence
+                    )
+                    if context.session_context:
+                        await ChatbotDBService.save_session_context(
+                            db=db,
+                            session_id=session_id,
+                            context_data=context.session_context.to_dict()
+                        )
+            except Exception as db_err:
+                logger.error(f"[{request_id}] Failed to log intent route / session context to DB: {db_err}")
 
             if stream:
                 # Return raw context so the streaming endpoint can drive generation.
@@ -970,7 +1121,7 @@ class ServiceCoordinator:
                         for turn in reversed(session_context.turns):
                             texts_to_scan.append(turn.get("user") or turn.get("user_input", ""))
 
-                COUNTRIES = ["cambodia", "vietnam", "thailand", "china", "laos", "myanmar", "malaysia", "singapore", "indonesia", "philippines", "brunei", "japan", "korea", "usa", "america", "india", "germany", "france", "uk", "united kingdom", "australia", "canada"]
+                COUNTRIES = list(_TRADE_COUNTRIES)
                 MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december", "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
 
                 for t in texts_to_scan:
@@ -1098,9 +1249,14 @@ class ServiceCoordinator:
         )
         
         # Pattern 2: Match model codes and product identifiers
-        # Looks for patterns like: "ABC123", "MODEL99XY", "(2023)", etc.
-        model_code_pattern = re.compile(
-            r"\b[A-Z0-9]{2,}[0-9][A-Z0-9]*\b|\b[A-Z][A-Z0-9]{3,}\b|\(\d+\)"
+        # - Case-sensitive: Pure alphabetical codes (must be uppercase) or parenthesized numbers
+        # - Case-insensitive: Alphanumeric codes containing at least one digit (e.g., "m8", "abc123", "12v")
+        model_code_pattern_case_sensitive = re.compile(
+            r"\b[A-Z]{4,}\b|\(\d+\)"
+        )
+        model_code_pattern_case_insensitive = re.compile(
+            r"\b[a-z0-9]{2,}[0-9][a-z0-9]*\b|\b[a-z][0-9]\b|\b[0-9][a-z]\b",
+            re.IGNORECASE
         )
         
         # Pattern 3: Dictionary of commercial/product-related keywords
@@ -1110,21 +1266,28 @@ class ServiceCoordinator:
             "hev", "bev", "phev", "ckd", "ikd", "cbp",  
             "sedan", "suv", "van", "truck", "bus", "wheel", "seat", "door", "battery",  
             "tea", "bag", "bags", "powder", "powdered", "whole", "rice", "food", "pack", "packs", "box",  
-            "frozen", "fresh", "organic", "grade"  
+            "frozen", "fresh", "organic", "grade",
+            # Additional vehicle/product category terms
+            "car", "sports", "competition", "salmon", "fillet", "fish", "meat", "seafood",
+            "textile", "garment", "apparel", "clothing", "cotton", "wool", "polyester",
+            "laptop", "phone", "tablet", "computer", "electronics"
         }
         
         # Check if the text contains specification patterns (e.g., "500cc", "2024")
         has_spec = bool(spec_unit_pattern.search(low))
         
         # Check if the text contains model codes or product identifiers
-        has_model = bool(model_code_pattern.search(text))
+        has_model = bool(
+            model_code_pattern_case_sensitive.search(text)
+            or model_code_pattern_case_insensitive.search(text)
+        )
         
         # Extract all words from text and check how many match commercial keywords
         words_set = set(re.findall(r"[a-z]+", low))  # Extract all alphabetic words
         descriptor_hits = len(words_set & commercial_words)  # Count matches
         
-        # Return True if at least 2 out of 3 indicators are present
-        return sum([has_spec, has_model, descriptor_hits >= 1]) >= 2
+        # Return True if at least 2 out of 3 indicators are present, OR if there are multiple commercial descriptor hits
+        return sum([has_spec, has_model, descriptor_hits >= 1]) >= 2 or descriptor_hits >= 2
 
     def update_session_for_query(
         self,
@@ -1215,8 +1378,9 @@ class ServiceCoordinator:
         normalized = (query or "").strip().lower()
         if not normalized: 
             return False
-        disqualifiers = ["hs", "code", "classify", "classification", "calculate", "duty", "tax", "import", "export", "trade", "regulation", "policy", "procedure", "what is", "define", "explain", "how much", "between", "from", "to"]
-        if any(token in normalized for token in disqualifiers): 
+        # Word-boundary check for disqualifiers to avoid substring false positives (e.g. Codeine / code)
+        disqualifiers = ["hs", "code", "classify", "classification", "calculate", "duty", "tax", "import", "export", "importing", "exporting", "trade", "regulation", "policy", "procedure", "what is", "define", "explain", "how much", "between", "from", "to"]
+        if any(re.search(rf"\b{re.escape(tok)}\b", normalized) for tok in disqualifiers):
             return False
         if re.match(r"^(what|how|which|where|when|why|can|could|is|are|do|does)\b", normalized): 
             return False
@@ -1228,7 +1392,162 @@ class ServiceCoordinator:
         blocked_tokens = {"hello", "hi", "hey", "thanks", "please", "weather", "time", "date", "football", "soccer", "movie", "music", "recipe", "cook", "joke", "politics", "war", "crime", "hack", "hacking", "investment", "stock"}
         if any(token in blocked_tokens for token in tokens): 
             return False
+        # Filter countries
+        if any(token in _TRADE_COUNTRIES for token in tokens):
+            return False
+        # Filter non-product prefix families
+        if any(token.startswith(_NON_PRODUCT_PREFIXES) for token in tokens):
+            return False
+        # Filter purely numeric queries (e.g. year filters like "2025")
+        if all(token.isdigit() for token in tokens):
+            return False
         return True
+
+    # ------------------------------------------------------------------ #
+    # Product-spec clarification state machine – helpers                  #
+    # ------------------------------------------------------------------ #
+
+    async def _try_merge_product_spec(
+        self,
+        context,
+        request_id: str,
+        question: str,
+        normalized_question: str,
+        session_id: Optional[str],
+    ):
+        """
+        Step 2c: Attempt to merge an incoming user message with a saved product
+        entity when the session is awaiting a spec clarification answer.
+
+        Returns (question, normalized_question) — either the merged form or the
+        original form (if any guard prevented merging), with all session state
+        already updated.
+
+        Guards applied in order:
+          1. Small-talk / exit check — caches result so Step 3 doesn't re-call.
+          2. Retry cap (MAX_PRODUCT_ASK_BACK_RETRIES).
+          3. Dynamic relevance guard — input must overlap with expected_terms;
+             falls back to _looks_like_short_product_lookup for "other" category.
+          4. Merged-query validation via _validate_merged_query.
+        """
+        session = context.session_context
+        stripped = question.strip()
+        normalized = self._light_normalize_query(stripped)
+        input_tokens = set(re.findall(r"[a-z0-9]+", normalized))
+
+        # ---- Guard 1: Small talk / explicit exit ---------------------------------
+        small_talk_resp = await detect_small_talk(normalized_question, llm_service=None)
+        if small_talk_resp:
+            logger.info(
+                f"[{request_id}] [SPEC-MERGE] Small talk detected ('{stripped[:40]}') — "
+                "resetting product clarification state."
+            )
+            # Cache so Step 3 skips its own detect_small_talk call.
+            context.metadata["small_talk_response"] = small_talk_resp
+            self._clear_product_clarification(session)
+            return question, normalized_question
+
+        # ---- Guard 2: Retry cap --------------------------------------------------
+        if session.product_ask_back_count >= MAX_PRODUCT_ASK_BACK_RETRIES:
+            logger.info(
+                f"[{request_id}] [SPEC-MERGE] Retry cap reached "
+                f"({session.product_ask_back_count}/{MAX_PRODUCT_ASK_BACK_RETRIES}) — "
+                "treating as fresh query."
+            )
+            self._clear_product_clarification(session)
+            return question, normalized_question
+
+        # ---- Guard 3: Dynamic relevance check -----------------------------------
+        expected_terms = set(session.clarification_expected_terms or [])
+        overlap = input_tokens & expected_terms
+        if not overlap:
+            # Fallback: for "other" category with no derived expected terms,
+            # accept the input if it looks like a short product description.
+            if not expected_terms and self._looks_like_short_product_lookup(stripped):
+                logger.info(
+                    f"[{request_id}] [SPEC-MERGE] No expected terms ('other' category) — "
+                    "falling back to _looks_like_short_product_lookup: PASS."
+                )
+            else:
+                logger.info(
+                    f"[{request_id}] [SPEC-MERGE] Input '{stripped[:40]}' has no overlap "
+                    f"with expected terms {list(expected_terms)[:6]} — resetting, treating as fresh query."
+                )
+                self._clear_product_clarification(session)
+                return question, normalized_question
+        else:
+            logger.info(
+                f"[{request_id}] [SPEC-MERGE] Matched expected terms: {list(overlap)}"
+            )
+
+        # ---- Guard 4: Validate merged query -------------------------------------
+        entity = session.clarification_entity or ""
+        merged = f"{entity} {stripped}".strip()
+        if not self._validate_merged_query(merged, "hs_code_lookup"):
+            logger.info(
+                f"[{request_id}] [SPEC-MERGE] Merged query '{merged[:60]}' failed "
+                "validation — treating as fresh query."
+            )
+            self._clear_product_clarification(session)
+            return question, normalized_question
+
+        # ---- All guards passed — inject merged query ----------------------------
+        logger.info(
+            f"[{request_id}] [SPEC-MERGE] Merging '{entity}' + '{stripped}' "
+            f"-> '{merged}' (round {session.product_ask_back_count + 1})"
+        )
+        session.product_ask_back_count += 1
+        # Temporarily clear the flag; _handle_hs_code_lookup will re-set it if
+        # the merged result is still generic.
+        session.product_clarification_needed = False
+        context.question = merged
+        context.original_input = merged
+        context.metadata["_spec_merge_done"] = True
+        context.metadata["spec_merge_entity"] = entity
+        context.metadata["spec_merge_answer"] = stripped
+        session._trigger_change()
+
+        normalized_merged = self._light_normalize_query(merged)
+        return merged, normalized_merged
+
+    def _clear_product_clarification(self, session) -> None:
+        """Reset all product-spec clarification state on the session."""
+        session.product_clarification_needed = False
+        session.clarification_entity = None
+        session.clarification_last_query = None
+        session.product_ask_back_count = 0
+        session.clarification_expected_terms = []
+        session._trigger_change()
+
+    @staticmethod
+    def _build_spec_expected_terms(
+        clarifying_questions: Optional[list],
+        category: str,
+    ) -> list:
+        """
+        Build the list of allowed response tokens that Step 2c will accept on the
+        next user turn as a legitimate spec answer.
+
+        Combines:
+          - Category base discriminators from _SPEC_DISCRIMINATORS.
+          - Question-derived tokens (from the actual clarifying questions),
+            minus stop words and generic nouns.
+        """
+        base = set(_SPEC_DISCRIMINATORS.get(category, frozenset()))
+        if not clarifying_questions:
+            return sorted(base)
+
+        question_tokens: set = set()
+        for q in clarifying_questions:
+            for tok in re.findall(r"[a-z0-9]+", (q or "").lower()):
+                if (
+                    len(tok) > 2
+                    and tok not in _CLARIFY_STOP_WORDS
+                    and tok not in _CLARIFY_GENERIC_NOUNS
+                ):
+                    question_tokens.add(tok)
+
+        return sorted(base | question_tokens)
 
     def _query_has_explicit_intent(self, query: str) -> bool:
         """
@@ -1367,47 +1686,97 @@ class ServiceCoordinator:
         elif intent == WorkflowIntent.GENERAL: await self._handle_default(context)
         else: await self._handle_default(context)
     
+    async def _execute_service_call(self, context: WorkflowContext, service_name: str, client_call_fn, request_payload: Dict[str, Any]):
+        import time
+        from app.infrastructure import get_db_context
+        from app.services.db_service import ChatbotDBService, sync_save_service_call, sync_save_failed_request
+        
+        start_time = time.time()
+        try:
+            result = await client_call_fn()
+            latency_ms = (time.time() - start_time) * 1000.0
+            latency_s = latency_ms / 1000.0
+
+            # Track per-service response time in seconds on the context for API response surfacing
+            context.metadata.setdefault("service_latencies_s", {})[service_name] = round(latency_s, 3)
+
+            # Log successful service call
+            try:
+                with get_db_context() as db:
+                    sync_save_service_call(
+                        db=db,
+                        session_id=context.session_id,
+                        service_name=service_name,
+                        request_payload=request_payload,
+                        response_payload=result,
+                        latency_ms=latency_ms,
+                        status="success"
+                    )
+            except Exception as db_err:
+                logger.error(f"Failed to log service_call '{service_name}' to DB: {db_err}")
+
+            return result
+        except Exception as e:
+            latency = (time.time() - start_time) * 1000.0
+            
+            # Log failed service call & failed request
+            try:
+                with get_db_context() as db:
+                    sync_save_service_call(
+                        db=db,
+                        session_id=context.session_id,
+                        service_name=service_name,
+                        request_payload=request_payload,
+                        response_payload={"error": str(e)},
+                        latency_ms=latency,
+                        status="failed"
+                    )
+                    sync_save_failed_request(
+                        db=db,
+                        session_id=context.session_id,
+                        service_name=service_name,
+                        error_message=str(e),
+                        error_type=type(e).__name__,
+                        request_payload=request_payload
+                    )
+            except Exception as db_err:
+                logger.error(f"Failed to log failed_request '{service_name}' to DB: {db_err}")
+            raise
+
     async def _handle_calculation(self, context: WorkflowContext):
-        # Log the routing decision for debugging/tracing
         logger.info(f"[{context.request_id}] Routing to calculator service")
         try:
-            # Guard: calculator service must be initialized
-            # If not, fail fast with a clear error
             if not self.calculator_client:
                 context.add_error("Calculator service not configured")
                 context.status = WorkflowStatus.FAILED
                 return
                 
             cache = get_cache_service()
-            # Determine which query string to use (priority: metadata override > cleaned > original)
             service_query = self._get_service_query(context)
-            # Cache key includes intent type to avoid collision with other intents
             cached_result = cache.get_cached_response(service_query, intent="calculation")
             if cached_result:
                 context.set_result("calculation", cached_result)
                 context.status = WorkflowStatus.COMPLETED
                 return
-            """
-            Miss: compute timeout as the minimum of:
-            - Intent-specific timeout (calculation queries might be slower than others)
-            - Service-specific timeout (calculator service has its own SLA - Service Level Agreement)
-            Take the stricter (smaller) timeout to prevent hanging
-            """
+
             timeout_sec = min(self.timeout_config.get_intent_timeout(context.intent), self.timeout_config.get_service_timeout("calculator"))
             
-            try:
-                # Direct query to the calculator service, forwarding the query text
-                result = await asyncio.wait_for(
+            async def run_call():
+                return await asyncio.wait_for(
                     self.calculator_client.query(question=service_query), timeout=timeout_sec
                 )
                 
-                cache.cache_response(question=service_query, response=result, intent="calculation", ttl_seconds=2 * 3600, source="calculator")
-                context.set_result("calculation", result)
-                context.status = WorkflowStatus.COMPLETED
+            result = await self._execute_service_call(
+                context=context,
+                service_name="calculator",
+                client_call_fn=run_call,
+                request_payload={"question": service_query}
+            )
+            
+            cache.cache_response(question=service_query, response=result, intent="calculation", ttl_seconds=2 * 3600, source="calculator")
+            context.set_result("calculation", result)
+            context.status = WorkflowStatus.COMPLETED
 
-            except asyncio.TimeoutError:
-                context.add_error(f"Calculator service timed out after {timeout_sec}s")
-                context.status = WorkflowStatus.FAILED
         except Exception as e:
             logger.error(f"[{context.request_id}] Calculation failed: {e}")
             context.add_error(f"Calculator service error: {str(e)}")
@@ -1422,25 +1791,24 @@ class ServiceCoordinator:
             
             timeout_sec = min(self.timeout_config.get_intent_timeout(context.intent), self.timeout_config.get_service_timeout("trade_data"))
             
-            try:
-                result = await asyncio.wait_for(
+            async def run_call():
+                return await asyncio.wait_for(
                     self.trade_data_client.query(context.question), timeout=timeout_sec
                 )
-                context.set_result("trade_query", result)
-                context.status = WorkflowStatus.COMPLETED
-            except asyncio.TimeoutError:
-                context.add_error(f"Trade data service timed out after {timeout_sec}s")
-                context.status = WorkflowStatus.FAILED
+                
+            result = await self._execute_service_call(
+                context=context,
+                service_name="trade_data",
+                client_call_fn=run_call,
+                request_payload={"question": context.question}
+            )
+            context.set_result("trade_query", result)
+            context.status = WorkflowStatus.COMPLETED
         except Exception as e:
             context.add_error(f"Trade data service error: {str(e)}")
             context.status = WorkflowStatus.FAILED
 
     async def _handle_hs_code_lookup(self, context: WorkflowContext):
-        """
-        Routes directly to the retrieval service for HS code lookup.
-        The retrieval service handles candidate ranking and generates a final_answer.
-        The orchestrator simply passes that final_answer through to the response.
-        """
         logger.info(f"[{context.request_id}] Routing to retrieval service for HS Lookup")
         try:
             if not self.retrieval_client:
@@ -1465,8 +1833,8 @@ class ServiceCoordinator:
                 context.status = WorkflowStatus.COMPLETED
                 return
 
-            try:
-                result = await asyncio.wait_for(
+            async def run_call():
+                return await asyncio.wait_for(
                     self.retrieval_client.hs_code_lookup(
                         query=clean_query,
                         top_k=5,
@@ -1477,19 +1845,72 @@ class ServiceCoordinator:
                     timeout=timeout_sec
                 )
 
-                cache.cache_response(
-                    question=clean_query,
-                    response=result,
-                    intent="hs_code_lookup",
-                    ttl_seconds=24 * 3600,
-                    source="retrieval"
-                )
-                context.set_result("retrieval", result)
-                context.status = WorkflowStatus.COMPLETED
+            result = await self._execute_service_call(
+                context=context,
+                service_name="retrieval",
+                client_call_fn=run_call,
+                request_payload={
+                    "query": clean_query,
+                    "top_k": 5,
+                    "generate_answer": True,
+                    "hs_mode": "best",
+                    "session_id": context.session_id
+                }
+            )
 
-            except asyncio.TimeoutError:
-                context.add_error(f"HS code lookup service timed out after {timeout_sec}s")
-                context.status = WorkflowStatus.FAILED
+            cache.cache_response(
+                question=clean_query,
+                response=result,
+                intent="hs_code_lookup",
+                ttl_seconds=24 * 3600,
+                source="retrieval"
+            )
+            context.set_result("retrieval", result)
+            context.status = WorkflowStatus.COMPLETED
+
+            # ---- Product-spec clarification post-processing ----------------------
+            # If retrieval flagged the result as generic (is_generic=True), save the
+            # product entity and expected response vocabulary onto the session so the
+            # next user turn can be merged automatically (Step 2c).
+            # Only proceed if we have an active session to write to.
+            if context.session_context:
+                session = context.session_context
+                is_generic = bool(result.get("is_generic"))
+                current_round = getattr(session, "product_ask_back_count", 0)
+
+                if is_generic and current_round < MAX_PRODUCT_ASK_BACK_RETRIES:
+                    # Entity: use original_input (pre-rewrite) on first round;
+                    # use accumulated merged query on subsequent rounds.
+                    if current_round == 0:
+                        entity = extract_entity(context.original_input) or context.original_input
+                    else:
+                        entity = context.original_input
+
+                    # Build expected-term vocabulary from actual clarifying questions.
+                    clarifying_questions = result.get("clarifying_questions") or []
+                    category = detect_simple_product_category(entity or "")
+                    expected_terms = self._build_spec_expected_terms(clarifying_questions, category)
+
+                    session.product_clarification_needed = True
+                    session.clarification_entity = entity
+                    session.clarification_last_query = context.original_input
+                    session.clarification_expected_terms = expected_terms
+                    session._trigger_change()
+                    logger.info(
+                        f"[{context.request_id}] [SPEC-MERGE] Result is generic — "
+                        f"saved entity='{entity}', category='{category}', "
+                        f"expected_terms={expected_terms[:8]}"
+                    )
+                else:
+                    # Successful specific classification, cap reached, or not generic:
+                    # clear any pending clarification state so the next turn starts fresh.
+                    if getattr(session, "product_clarification_needed", False) or current_round > 0:
+                        self._clear_product_clarification(session)
+                        logger.info(
+                            f"[{context.request_id}] [SPEC-MERGE] Specific result or cap reached "
+                            "— cleared product clarification state."
+                        )
+
         except Exception as e:
             context.add_error(f"HS code lookup service error: {str(e)}")
             context.status = WorkflowStatus.FAILED
@@ -1511,16 +1932,20 @@ class ServiceCoordinator:
                 context.status = WorkflowStatus.COMPLETED
                 return
             
-            try:
-                result = await asyncio.wait_for(
+            async def run_call():
+                return await asyncio.wait_for(
                     self.general_client.definition(query=service_query, top_k=5, generate_answer=True, session_id=context.session_id), timeout=timeout_sec
                 )
-                cache.cache_response(question=service_query, response=result, intent=intent_key, ttl_seconds=48*3600, source="general")
-                context.set_result("retrieval", result)
-                context.status = WorkflowStatus.COMPLETED
-            except asyncio.TimeoutError:
-                context.add_error(f"General service timed out after {timeout_sec}s")
-                context.status = WorkflowStatus.FAILED
+
+            result = await self._execute_service_call(
+                context=context,
+                service_name="general_definition",
+                client_call_fn=run_call,
+                request_payload={"query": service_query, "top_k": 5, "generate_answer": True, "session_id": context.session_id}
+            )
+            cache.cache_response(question=service_query, response=result, intent=intent_key, ttl_seconds=48*3600, source="general")
+            context.set_result("retrieval", result)
+            context.status = WorkflowStatus.COMPLETED
         except Exception as e:
             context.add_error(f"General service error: {str(e)}")
             context.status = WorkflowStatus.FAILED
@@ -1539,16 +1964,21 @@ class ServiceCoordinator:
                 context.set_result("retrieval", cached_result)
                 context.status = WorkflowStatus.COMPLETED
                 return
-            try:
-                result = await asyncio.wait_for(
-                    self.general_client.general(query=service_query, top_k=5, generate_answer=True, session_id=context.session_id), timeout=timeout_sec
+                
+            async def run_call():
+                return await asyncio.wait_for(
+                    self.general_client.ask(query=service_query, top_k=5, generate_answer=True, session_id=context.session_id), timeout=timeout_sec
                 )
-                cache.cache_response(question=service_query, response=result, intent="general", ttl_seconds=48*3600, source="general")
-                context.set_result("retrieval", result)
-                context.status = WorkflowStatus.COMPLETED
-            except asyncio.TimeoutError:
-                context.add_error(f"General service timed out after {timeout_sec}s")
-                context.status = WorkflowStatus.FAILED
+
+            result = await self._execute_service_call(
+                context=context,
+                service_name="general",
+                client_call_fn=run_call,
+                request_payload={"query": service_query, "top_k": 5, "generate_answer": True, "session_id": context.session_id}
+            )
+            cache.cache_response(question=service_query, response=result, intent="general", ttl_seconds=24*3600, source="general")
+            context.set_result("retrieval", result)
+            context.status = WorkflowStatus.COMPLETED
         except Exception as e:
             context.add_error(f"General service error: {str(e)}")
             context.status = WorkflowStatus.FAILED
@@ -1641,6 +2071,35 @@ class ServiceCoordinator:
         
         if context.clarifications: response["clarifications"] = context.clarifications
         if context.errors: response["errors"] = context.errors
+
+        # Generate suggestions dynamically if not already populated (e.g. by trade service)
+        if not response.get("suggestions"):
+            response["suggestions"] = []
+            core_intents = {"hs_code_lookup", "calculation", "trade_query", "general"}
+            current_intent_val = context.intent.value if context.intent else None
+            
+            should_generate = (
+                current_intent_val in core_intents
+                and context.status == WorkflowStatus.COMPLETED
+            )
+            
+            if should_generate and response.get("answer"):
+                try:
+                    service_query = self._get_service_query(context)
+                    suggestions = self.suggestion_service.get_suggestions(
+                        current_intent=current_intent_val,
+                        rewritten_query=service_query,
+                        session_context=context.session_context
+                    )
+                    response["suggestions"] = suggestions
+                except Exception as e:
+                    logger.error(f"[{context.request_id}] Failed to generate suggestions: {e}", exc_info=True)
+
+        # Always merge context-level metadata so service_latencies_s (and other
+        # pipeline metadata) is available for every intent type, not just retrieval.
+        if context.metadata:
+            response["metadata"].update(context.metadata)
+
         return response
 
     @staticmethod

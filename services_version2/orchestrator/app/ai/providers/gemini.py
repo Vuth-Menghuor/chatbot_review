@@ -15,6 +15,37 @@ from ...core.config import FormatterServiceConfig
 logger = logging.getLogger(__name__)
 
 
+def _log_gemini_usage(model_name: str, response: Any):
+    """Helper function to log Gemini token usage dynamically via ContextVars."""
+    try:
+        if response and hasattr(response, 'usage_metadata') and response.usage_metadata:
+            meta = response.usage_metadata
+            prompt_tokens = meta.prompt_token_count
+            completion_tokens = meta.candidates_token_count
+            total_tokens = meta.total_token_count
+
+            from app.infrastructure import session_id_var, message_id_var, get_db_context
+            from app.services.db_service import sync_save_model_usage
+            
+            session_id = session_id_var.get()
+            message_id = message_id_var.get()
+            
+            if session_id:
+                with get_db_context() as db:
+                    sync_save_model_usage(
+                        db=db,
+                        session_id=session_id,
+                        model_name=model_name,
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        total_tokens=total_tokens,
+                        message_id=message_id
+                    )
+    except Exception as e:
+        logger.error(f"Error logging Gemini token usage to DB: {e}")
+
+
+
 class GeminiProvider(BaseLLMProvider):
     name = "gemini"
 
@@ -61,6 +92,7 @@ class GeminiProvider(BaseLLMProvider):
                 model=self.model_name,
                 contents=prompt,
             ) #send request to Gemini
+            _log_gemini_usage(self.model_name, response)
             content = (response.text or "").strip() #extract text
             
             # Better JSON extraction: find the first JSON object boundaries
@@ -163,6 +195,7 @@ class GeminiProvider(BaseLLMProvider):
                 model=self.model_name,
                 contents=prompt,
             )
+            _log_gemini_usage(self.model_name, response)
             rewritten = (response.text or "").strip() or user_input
             was_rewritten = rewritten != user_input
             return rewritten, {
@@ -186,6 +219,7 @@ class GeminiProvider(BaseLLMProvider):
                 model=self.model_name,
                 contents=prompt,
             )
+            _log_gemini_usage(self.model_name, response)
             return (response.text or "").strip() or text
         except Exception as e:
             logger.warning(f"Gemini summarization failed: {e}")
@@ -203,6 +237,7 @@ class GeminiProvider(BaseLLMProvider):
                 model=self.model_name,
                 contents=prompt,
             )
+            _log_gemini_usage(self.model_name, response)
             return (response.text or "").strip()
         except Exception as e:
             logger.warning(f"Gemini translation to English failed: {e}")
@@ -219,6 +254,7 @@ class GeminiProvider(BaseLLMProvider):
                 model=self.model_name,
                 contents=prompt,
             )
+            _log_gemini_usage(self.model_name, response)
             return (response.text or "").strip()
         except Exception as e:
             logger.warning(f"Gemini translation to Khmer failed: {e}")
@@ -255,6 +291,7 @@ class GeminiProvider(BaseLLMProvider):
                 contents=prompt,
                 config=config
             )
+            _log_gemini_usage(self.model_name, response)
             content = (response.text or "").strip()
             
             # Find the JSON block
@@ -358,6 +395,7 @@ class GeminiFormatterProvider(BaseFormatterProvider):
                 model=self.model_name,
                 contents=prompt,
             )
+            _log_gemini_usage(self.model_name, response)
             formatted = (response.text or "").strip()
 
             if not formatted:
@@ -405,9 +443,39 @@ class GeminiFormatterProvider(BaseFormatterProvider):
                 model=self.model_name,
                 contents=prompt,
             )
+            prompt_tokens = None
+            completion_tokens = None
+            total_tokens = None
+
             async for chunk in response_stream:
                 if chunk.text:
                     yield chunk.text
+                if hasattr(chunk, 'usage_metadata') and chunk.usage_metadata:
+                    meta = chunk.usage_metadata
+                    prompt_tokens = meta.prompt_token_count
+                    completion_tokens = meta.candidates_token_count
+                    total_tokens = meta.total_token_count
+
+            # Log after stream completes
+            if prompt_tokens is not None:
+                try:
+                    from app.infrastructure import session_id_var, message_id_var, get_db_context
+                    from app.services.db_service import sync_save_model_usage
+                    session_id = session_id_var.get()
+                    message_id = message_id_var.get()
+                    if session_id:
+                        with get_db_context() as db:
+                            sync_save_model_usage(
+                                db=db,
+                                session_id=session_id,
+                                model_name=self.model_name,
+                                prompt_tokens=prompt_tokens,
+                                completion_tokens=completion_tokens,
+                                total_tokens=total_tokens,
+                                message_id=message_id
+                            )
+                except Exception as db_err:
+                    logger.error(f"Error logging streaming token usage: {db_err}")
         except Exception as e:
             logger.error(f"Gemini streaming formatting failed: {e}")
             raise

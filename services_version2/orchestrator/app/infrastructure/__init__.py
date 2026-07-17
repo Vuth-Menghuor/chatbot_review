@@ -25,6 +25,29 @@ from .health_checks import (
     initialize_health_check_service,
 )
 
+from .database import (
+    Base,
+    engine,
+    SessionLocal,
+    get_db,
+    get_db_context,
+    check_and_create_db,
+    session_id_var,
+    message_id_var,
+)
+from .models import (
+    ChatSession,
+    ChatMessage,
+    SessionContextModel,
+    IntentRoute,
+    ServiceCall,
+    ConversationSummary,
+    ChatFeedback,
+    ChatAttachment,
+    FailedRequest,
+    ModelUsageLog,
+)
+
 __all__ = [
     "BaseServiceClient",
     "HttpxServiceClient",
@@ -42,4 +65,26 @@ __all__ = [
     "HealthCheckService",
     "get_health_check_service",
     "initialize_health_check_service",
+    # Database exports
+    "Base",
+    "engine",
+    "SessionLocal",
+    "get_db",
+    "get_db_context",
+    "check_and_create_db",
+    "session_id_var",
+    "message_id_var",
+
+    # Model exports
+    "ChatSession",
+    "ChatMessage",
+    "SessionContextModel",
+    "IntentRoute",
+    "ServiceCall",
+    "ConversationSummary",
+    "ChatFeedback",
+    "ChatAttachment",
+    "FailedRequest",
+    "ModelUsageLog",
 ]
+

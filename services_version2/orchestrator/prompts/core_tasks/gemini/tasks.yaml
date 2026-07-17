@@ -101,7 +101,7 @@ prompts:
       </examples>
 
       Latest User Query: {user_input}
-
+      
     output_schema:
       type: object
       properties:
@@ -114,22 +114,14 @@ prompts:
           type: boolean
         intent:
           type: string
-          enum:
-            [
-              "hs_code_lookup",
-              "calculation",
-              "trade_query",
-              "general",
-              "out_of_scope",
-            ]
+          enum: ["hs_code_lookup", "calculation", "trade_query", "general", "out_of_scope"]
         rewritten_query:
           type: string
           description: "The cleaned, self-sufficient search query."
         confidence:
           type: number
-      required:
-        [reason, is_safe, is_on_topic, intent, rewritten_query, confidence]
-
+      required: [reason, is_safe, is_on_topic, intent, rewritten_query, confidence]
+      
   - name: summarize_evicted_turns
     version: "1.1"
     description: "Gemini-specific prompt to summarize evicted turns into an updated rolling summary."

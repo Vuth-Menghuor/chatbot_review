@@ -1,4 +1,4 @@
-version: "3.8"
+version: '3.8'
 
 services:
   gdce-postgres-orches:
@@ -6,7 +6,7 @@ services:
     container_name: gdce-postgres-orches
     restart: unless-stopped
     ports:
-      - "5438:5432"
+      - "5433:5432"
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
@@ -26,7 +26,7 @@ services:
     container_name: gdce-redis-orches
     restart: unless-stopped
     ports:
-      - "6371:6379"
+      - "6379:6379"
     command: redis-server --requirepass redis_orchestrator
     volumes:
       - gdce_redis_data:/data
