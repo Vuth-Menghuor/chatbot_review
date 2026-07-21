@@ -54,16 +54,24 @@ function isLimitationParagraph(tokens: Token[], idx: number) {
   if (!inline || inline.type !== 'inline') return false;
   const text = inline.content.toLowerCase();
   const hasLimitationSignal =
+    text.includes('provided context') ||
+    text.includes('available context') ||
+    text.includes('provided documentation') ||
+    text.includes('available documentation') ||
     text.includes('provided documents') ||
     text.includes('available documents') ||
     text.includes('available sources') ||
     text.includes('provided sources');
   const hasIncompleteSignal =
+    text.includes('do not include') ||
+    text.includes('does not include') ||
     text.includes('do not contain') ||
     text.includes('does not contain') ||
     text.includes('do not provide') ||
     text.includes('does not provide') ||
+    text.includes('not include') ||
     text.includes('not exhaustive') ||
+    text.includes('comprehensive checklist') ||
     text.includes('complete checklist');
   return hasLimitationSignal && hasIncompleteSignal;
 }
