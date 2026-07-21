@@ -30,6 +30,4 @@ logs/
 
 # Docker volumes
 *_data/
-!local_data/
-!local_data/dal_metadata.backup
-!local_data/dal_operational.backup
+local_data/
