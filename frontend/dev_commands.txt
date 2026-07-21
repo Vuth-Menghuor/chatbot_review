@@ -1,0 +1,11 @@
+-- frontend
+pnpm build 
+pnpm dev
+
+-- api layer
+docker compose build
+docker compose up -d 
+
+-- orchestrator, calculator, general, retrieval, trade, dal
+docker compose build
+docker compose up -d 

@@ -10,6 +10,7 @@ export const CANONICAL_BLOCK_TYPES = [
   'prediction',
   'report',
   'suggestions',
+  'coverage',
   'interaction',
   'tool_output',
   'error',
@@ -44,6 +45,9 @@ const BLOCK_TYPE_ALIASES: Record<string, CanonicalBlockType> = {
   suggestion: 'suggestions',
   followups: 'suggestions',
   follow_ups: 'suggestions',
+  partial_answer: 'coverage',
+  limitations: 'coverage',
+  not_found: 'coverage',
 
   tool: 'tool_output',
   toolresult: 'tool_output',

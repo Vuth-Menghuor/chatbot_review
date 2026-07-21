@@ -1,4 +1,11 @@
-import type { MessageBlock, MessageSource, MessageStatus, UiBlockInjectionOptions } from '~/types/message';
+import type {
+  AnswerConfidence,
+  AnswerCoverage,
+  MessageBlock,
+  MessageSource,
+  MessageStatus,
+  UiBlockInjectionOptions,
+} from '~/types/message';
 import { normalizeAssistantContentForUi } from '~/utils/chat';
 import { blocksToMarkerText, parseAiResponse } from '~/utils/message';
 
@@ -20,6 +27,8 @@ export function useUiBlockInjection({ messages }: UiBlockInjectionOptions) {
       status?: MessageStatus;
       blocks?: MessageBlock[];
       sources?: MessageSource[];
+      coverage?: AnswerCoverage;
+      confidence?: AnswerConfidence;
     },
   ) {
     const messages = getMessages();
@@ -50,6 +59,8 @@ export function useUiBlockInjection({ messages }: UiBlockInjectionOptions) {
       blocks: nextBlocks,
       sources: meta?.sources ?? existingMessage.sources,
       generationDurationMs: meta?.generationDurationMs ?? existingMessage.generationDurationMs,
+      coverage: meta?.coverage ?? existingMessage.coverage,
+      confidence: meta?.confidence ?? existingMessage.confidence,
     };
   }
 

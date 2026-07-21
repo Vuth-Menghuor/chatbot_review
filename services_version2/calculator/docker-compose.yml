@@ -13,29 +13,6 @@
 # ================================================================
 
 services:
-  calculator-postgres:
-    build:
-      context: ../../gdce_postgre_db
-      dockerfile: Dockerfile.restore
-    container_name: calculator-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: postgres
-      CALCULATOR_DB_PASSWORD: "16112005"
-    ports:
-      - "5435:5432"
-    volumes:
-      - calculator_postgres_data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d gdce_calculator"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-    networks:
-      - gdce-network
-
   redis:
     image: redis:7-alpine
     container_name: gdce-redis
@@ -58,24 +35,35 @@ services:
       CALCULATOR_PORT: 8002
       PYTHONPATH: /app
       # Calculator PostgreSQL restored from gdce_postgre_db dump.
-      CALCULATOR_DB_HOST: calculator-postgres
+      # CALCULATOR_DB_HOST: calculator-postgres
+      # CALCULATOR_DB_PORT: 5432
+      # CALCULATOR_DB_NAME: gdce_calculator
+      # CALCULATOR_DB_USER: calc_app
+      # CALCULATOR_DB_PASSWORD: "16112005"
+
+      CALCULATOR_DB_HOST: host.docker.internal
       CALCULATOR_DB_PORT: 5432
-      CALCULATOR_DB_NAME: gdce_calculator
-      CALCULATOR_DB_USER: calc_app
-      CALCULATOR_DB_PASSWORD: "16112005"
+      CALCULATOR_DB_NAME: gdce_calculator_local
+
       # Legacy aliases
-      POSTGRES_HOST: calculator-postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: gdce_calculator
-      POSTGRES_USER: calc_app
-      POSTGRES_PASSWORD: "16112005"
-      PG_HOST: calculator-postgres
-      PG_PORT: 5432
-      PG_DATABASE: gdce_calculator
-      PG_USER: calc_app
-      PG_PASSWORD: "16112005"
-      CALCULATOR_LLM_ENABLED: "false"
-      CALCULATOR_INTENT_LLM_ENABLED: "false"
+      # POSTGRES_HOST: calculator-postgres
+      # POSTGRES_PORT: 5432
+      # POSTGRES_DB: gdce_calculator
+      # POSTGRES_USER: calc_app
+      # POSTGRES_PASSWORD: "16112005"
+      # PG_HOST: calculator-postgres
+      # PG_PORT: 5432
+      # PG_DATABASE: gdce_calculator
+      # PG_USER: calc_app
+      # PG_PASSWORD: "16112005"
+      # CALCULATOR_LLM_ENABLED: "false"
+      # CALCULATOR_INTENT_LLM_ENABLED: "false"
+
+      POSTGRES_HOST: host.docker.internal
+      POSTGRES_DB: gdce_calculator_local
+      PG_HOST: host.docker.internal
+      PG_DATABASE: gdce_calculator_local
+
       # Redis (now inside Docker network)
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -91,15 +79,39 @@ services:
       - ./configs:/app/calculator/configs:ro
       - ./tests:/app/calculator/tests:ro
     depends_on:
-      calculator-postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
+      # calculator-postgres:
+      #   condition: service_healthy
+      # redis:
+      #   condition: service_started
+      - redis
     networks:
       - gdce-network
     # If host.docker.internal doesn't work on your Windows setup,
     # uncomment the next line and comment out the networks block above:
     # network_mode: host
+
+  # calculator-postgres:
+  #   build:
+  #     context: ../../gdce_postgre_db
+  #     dockerfile: Dockerfile.restore
+  #   container_name: calculator-postgres
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: postgres
+  #     POSTGRES_DB: postgres
+  #     CALCULATOR_DB_PASSWORD: "16112005"
+  #   ports:
+  #     - "5435:5432"
+  #   volumes:
+  #     - calculator_postgres_data:/var/lib/postgresql
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U postgres -d gdce_calculator"]
+  #     interval: 5s
+  #     timeout: 5s
+  #     retries: 20
+  #   networks:
+  #     - gdce-network
 
   # ── Exchange Rate Scheduler (daemon) ───────────────────────────
   # Runs continuously. Fetches rates every FETCH_INTERVAL_HOURS.

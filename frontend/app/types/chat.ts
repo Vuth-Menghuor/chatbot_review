@@ -29,6 +29,7 @@ export type CanonicalMessageBlockType =
   | 'prediction'
   | 'report'
   | 'suggestions'
+  | 'coverage'
   | 'interaction'
   | 'tool_output'
   | 'error'
@@ -61,7 +62,16 @@ export interface MessageSource {
   snippet?: string;
   domain?: string;
   favicon?: string;
+  id?: string;
+  citationId?: string;
+  documentId?: string;
+  filename?: string;
+  chunkIndex?: number;
+  retrievalMethod?: string;
 }
+
+export type AnswerCoverage = 'complete' | 'partial' | 'unknown';
+export type AnswerConfidence = 'high' | 'medium' | 'low';
 
 export type ChatActionType = 'copy' | 'like' | 'dislike' | 'regenerate' | 'edit' | 'sources';
 export type FeedbackType = 'like' | 'dislike';
@@ -131,7 +141,14 @@ export interface StreamingDeps {
   upsertAssistantMessage: (
     messageId: string,
     content: string,
-    meta?: { generationDurationMs?: number; status?: MessageStatus; blocks?: MessageBlock[] },
+    meta?: {
+      generationDurationMs?: number;
+      status?: MessageStatus;
+      blocks?: MessageBlock[];
+      sources?: MessageSource[];
+      coverage?: AnswerCoverage;
+      confidence?: AnswerConfidence;
+    },
   ) => void;
   getAssistantMessage: (messageId: string) => Message | null;
   getUiBlockDelay: (type: string) => number;
@@ -217,4 +234,6 @@ export interface Message {
   sources?: MessageSource[];
   /** Wall-clock time spent generating this assistant reply (set when the stream/request completes). */
   generationDurationMs?: number;
+  coverage?: AnswerCoverage;
+  confidence?: AnswerConfidence;
 }

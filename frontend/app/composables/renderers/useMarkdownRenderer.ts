@@ -49,6 +49,25 @@ const md = new MarkdownIt({
   typographer: true,
 }).enable(['table', 'strikethrough', 'code', 'fence']);
 
+function isLimitationParagraph(tokens: Token[], idx: number) {
+  const inline = tokens[idx + 1];
+  if (!inline || inline.type !== 'inline') return false;
+  const text = inline.content.toLowerCase();
+  const hasLimitationSignal =
+    text.includes('provided documents') ||
+    text.includes('available documents') ||
+    text.includes('available sources') ||
+    text.includes('provided sources');
+  const hasIncompleteSignal =
+    text.includes('do not contain') ||
+    text.includes('does not contain') ||
+    text.includes('do not provide') ||
+    text.includes('does not provide') ||
+    text.includes('not exhaustive') ||
+    text.includes('complete checklist');
+  return hasLimitationSignal && hasIncompleteSignal;
+}
+
 // Custom rules configuration (defined once)
 const tableOpenRule: RenderRule = (tokens, idx, options, env, self) => {
   let nextIdx = idx + 1;
@@ -158,8 +177,10 @@ md.renderer.rules.fence = (tokens: Token[], idx: number) => {
   </div>`;
 };
 
-md.renderer.rules.paragraph_open = () =>
-  '<p class="md-paragraph">';
+md.renderer.rules.paragraph_open = (tokens: Token[], idx: number) =>
+  isLimitationParagraph(tokens, idx)
+    ? '<p class="md-paragraph md-limitation-note">'
+    : '<p class="md-paragraph">';
 md.renderer.rules.heading_open = (tokens: Token[], idx: number) => {
   const level = tokens[idx]!.tag;
   const sizes: Record<string, string> = {

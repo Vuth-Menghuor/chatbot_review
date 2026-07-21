@@ -26,14 +26,23 @@ async def owned_chat(db: AsyncSession, chat_id: UUID, user_id: UUID) -> ChatThre
 
 
 async def create_or_get_chat(db: AsyncSession, user_id: UUID, chat_id: UUID | None, project_id: UUID | None, message: str) -> ChatThread:
+    title = message.strip().replace("\n", " ")[:40] or "New Chat"
     if chat_id:
-        chat = await owned_chat(db, chat_id, user_id)
-        if project_id is not None and chat.project_id != project_id:
-            raise HTTPException(status_code=400, detail="project_id does not match the chat's project")
+        chat = await db.get(ChatThread, chat_id)
+        if chat:
+            if chat.user_id != user_id or chat.status == "deleted":
+                raise HTTPException(status_code=404, detail="Chat not found")
+            if project_id is not None and chat.project_id != project_id:
+                raise HTTPException(status_code=400, detail="project_id does not match the chat's project")
+            return chat
+        if project_id:
+            await owned_project(db, project_id, user_id)
+        chat = ChatThread(id=chat_id, user_id=user_id, project_id=project_id, title=title)
+        db.add(chat)
+        await db.flush()
         return chat
     if project_id:
         await owned_project(db, project_id, user_id)
-    title = message.strip().replace("\n", " ")[:40] or "New Chat"
     chat = ChatThread(user_id=user_id, project_id=project_id, title=title)
     db.add(chat)
     await db.flush()

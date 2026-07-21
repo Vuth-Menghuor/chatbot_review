@@ -103,21 +103,15 @@ export function useChatStreaming(deps: StreamingDeps) {
     let currentContent = '';
     let normalizedDone: Record<string, unknown> | null = null;
     let firstToken = true;
-    const storageKey = `gdce:upstream-chat:${deps.chatId || 'default'}`;
-    const upstreamChatId = localStorage.getItem(storageKey) || undefined;
     const attachments = await prepareAttachments(files);
 
     await streamGdceChat({
       baseUrl: deps.chatApi.baseUrl,
       apiToken: deps.chatApi.apiToken,
       message: text,
-      chatId: upstreamChatId,
+      chatId: deps.chatId,
       attachments,
       signal: controller.signal,
-      onStart: (data) => {
-        const backendChatId = String(data.chat_id ?? '');
-        if (backendChatId) localStorage.setItem(storageKey, backendChatId);
-      },
       onToken: (content) => {
         if (deps.stopStreaming.value) return;
         if (firstToken) {
@@ -138,8 +132,10 @@ export function useChatStreaming(deps: StreamingDeps) {
       deps.upsertAssistantMessage(assistantMsgId, parts.content, {
         blocks: parts.blocks,
         sources: parts.sources,
-        generationDurationMs: Date.now() - startedAt,
+        generationDurationMs: parts.latencyMs ?? Date.now() - startedAt,
         status: parts.status,
+        coverage: parts.coverage,
+        confidence: parts.confidence,
       });
       return;
     }
@@ -150,6 +146,8 @@ export function useChatStreaming(deps: StreamingDeps) {
         sources: legacyParts.sources,
         generationDurationMs: Date.now() - startedAt,
         status: legacyParts.status,
+        coverage: legacyParts.coverage,
+        confidence: legacyParts.confidence,
       });
       return;
     }

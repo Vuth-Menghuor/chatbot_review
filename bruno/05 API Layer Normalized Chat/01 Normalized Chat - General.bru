@@ -12,7 +12,7 @@ post {
 
 headers {
   Content-Type: application/json
-  Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIzMGIyZTI3ZC1hZTg5LTQ4NDQtYjU4Mi04YTllNzQ0MzI1ODUiLCJ0eXBlIjoiYWNjZXNzIiwicm9sZSI6InVzZXIiLCJqdGkiOiI1MGNmMDZjMy0xNmJiLTQ4MjctOTM3My1iNjBmOTEyMmQ2YzYiLCJpYXQiOjE3ODQwODM5NzAsImV4cCI6MTc4NDA4NTc3MH0.NQeas-vB0-UWyf69jswQWKs4KOttb-U5GEJ7gVVE8d0
+  Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIzMGIyZTI3ZC1hZTg5LTQ4NDQtYjU4Mi04YTllNzQ0MzI1ODUiLCJ0eXBlIjoiYWNjZXNzIiwicm9sZSI6InVzZXIiLCJqdGkiOiIyNWNmYjJkZi03NGZmLTRkYTEtOTBiYy00ZDlmNzEzMDNiYmQiLCJpYXQiOjE3ODQ2MDA2OTQsImV4cCI6MTc4NDYwMjQ5NH0.fjCj65NPtZsDDa90dRqZbuu3Q-7mJOODnkxvWLlX2vk
 }
 
 body:json {
@@ -27,11 +27,18 @@ tests {
     const body = res.getBody();
     expect(body).to.have.property("request_id");
     expect(body).to.have.property("session_id");
+    expect(body).to.have.property("chat_id");
+    expect(body.chat_id).to.equal(body.session_id);
     expect(body).to.have.property("status");
     expect(body).to.have.property("intent");
+    expect(body).to.have.property("response");
+    expect(body.response).to.have.property("content");
     expect(body).to.have.property("message");
     expect(body.message).to.have.property("role", "assistant");
     expect(body.message.content).to.be.an("array");
+    expect(body.message.content[0]).to.have.property("type", "markdown");
+    expect(body.message.content[0].text).to.equal(body.response.content);
+    expect(body).to.not.have.property("answer");
     expect(body.citations).to.be.an("array");
   });
 }

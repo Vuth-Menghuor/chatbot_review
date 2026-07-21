@@ -137,7 +137,7 @@
             <p
               class="text-[10px] font-semibold text-neutral-400 dark:text-zinc-500 uppercase tracking-wide mb-0.5"
             >
-              {{ source.domain || getDomain(source.url) || $t('chat.filesPanel.sourceLabel') }}
+              {{ sourceSubtitle(source) }}
             </p>
             <!-- Title -->
             <p
@@ -149,8 +149,9 @@
             <p
               v-if="source.snippet"
               class="mt-1 text-xs text-neutral-500 dark:text-zinc-400 line-clamp-2 leading-relaxed"
+              :title="source.snippet"
             >
-              {{ source.snippet }}
+              {{ sourcePreviewSnippet(source.snippet) }}
             </p>
           </div>
 
@@ -236,6 +237,52 @@ const filePanelTabs = computed(() => [
     value: 'sources',
   },
 ]);
+
+function sourceSubtitle(source: MessageSource) {
+  const parts = [
+    source.documentId,
+    source.chunkIndex !== undefined ? `Chunk ${source.chunkIndex}` : undefined,
+  ].filter(Boolean);
+  if (parts.length) return parts.join(' · ');
+  return source.domain || getDomain(source.url) || t('chat.filesPanel.sourceLabel');
+}
+
+function sourcePreviewSnippet(snippet: string) {
+  const tablePreview = tableSnippetPreview(snippet);
+  if (tablePreview) return tablePreview;
+
+  return snippet
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/\*\*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 180);
+}
+
+function tableSnippetPreview(snippet: string) {
+  const lines = snippet
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.includes('|') && !/^[:\-\s|]+$/.test(line));
+
+  const rows = lines
+    .map((line) =>
+      line
+        .split('|')
+        .map((cell) => cell.trim())
+        .filter(Boolean),
+    )
+    .filter((cells) => cells.length);
+
+  const dataRow = rows.find((cells) => cells.some((cell) => !/^field\s+no$/i.test(cell) && !/^field\s+label$/i.test(cell)));
+  if (!dataRow) return '';
+
+  const meaningfulCells = dataRow.filter((cell) => !/^(field no|field label|action|description and \/ or usage)$/i.test(cell));
+  if (!meaningfulCells.length) return 'Declaration field requirements and usage notes.';
+
+  const [label, action, description] = meaningfulCells;
+  return [label, action, description].filter(Boolean).join(' — ').replace(/\s+/g, ' ').slice(0, 180);
+}
 
 function downloadChatPanelFile(file: ChatPanelFile) {
   downloadChatFileRaw(file.raw, file.name);

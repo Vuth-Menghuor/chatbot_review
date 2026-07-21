@@ -1,4 +1,5 @@
 import json
+import logging
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
@@ -19,6 +20,7 @@ from app.services.ownership import create_or_get_chat, owned_chat, touch_chat
 from app.services.rate_limit_service import enforce_rate_limit
 
 router = APIRouter(prefix="/chat", tags=["chat proxy"])
+logger = logging.getLogger(__name__)
 
 
 def upstream_payload(payload: ChatRequest, chat, user: User, request_id: str) -> dict:
@@ -44,7 +46,26 @@ def sse_event(event: str, data: dict) -> bytes:
 
 
 def should_include_debug(user: User) -> bool:
-    return settings.environment.lower() in {"development", "local", "dev"} or user.role == "admin"
+    return settings.environment.lower() in {"development", "local", "dev"}
+
+
+def log_normalization_trace(orchestrator_response: dict, normalized_response: dict) -> None:
+    if settings.environment.lower() not in {"development", "local", "dev"}:
+        return
+    orchestrator_answer = orchestrator_response.get("answer")
+    backend_response_content = (normalized_response.get("response") or {}).get("content")
+    trace = {
+        "orchestrator_request_id": orchestrator_response.get("request_id"),
+        "orchestrator_session_id": orchestrator_response.get("session_id"),
+        "orchestrator_answer": orchestrator_answer,
+        "backend_response_content": backend_response_content,
+    }
+    logger.info("normalization_trace %s", json.dumps(trace, ensure_ascii=False))
+    if isinstance(orchestrator_answer, str) and backend_response_content != orchestrator_answer:
+        logger.error(
+            "normalization_changed_orchestrator_answer %s",
+            json.dumps(trace, ensure_ascii=False),
+        )
 
 
 def adapt_orchestrator_sse_block(block: str, chat, user: User | None = None) -> bytes:
@@ -106,7 +127,10 @@ async def send_chat(payload: ChatRequest, request: Request, user: User = Depends
     await db.commit()
     result = await main_chatbot_client.request("POST", "/query", json=orchestrator_query_payload(payload, chat))
     include_debug = should_include_debug(user)
-    return normalize_chat_response(result, chat=chat, include_debug=include_debug).model_dump(mode="json", exclude_none=True)
+    normalized = normalize_chat_response(result, chat=chat, include_debug=include_debug).model_dump(mode="json", exclude_none=True)
+    if isinstance(result, dict):
+        log_normalization_trace(result, normalized)
+    return normalized
 
 
 @router.post("/stream")
@@ -132,6 +156,8 @@ async def stream_chat(payload: ChatRequest, request: Request, user: User = Depen
                 chat=chat,
                 include_debug=should_include_debug(user),
             ).model_dump(mode="json", exclude_none=True)
+            if isinstance(result, dict):
+                log_normalization_trace(result, normalized)
             yield sse_event("done", normalized)
         except httpx.HTTPStatusError as exc:
             detail = "Main Chatbot Service is temporarily unavailable"

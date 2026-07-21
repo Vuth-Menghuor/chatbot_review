@@ -35,7 +35,11 @@ services:
     volumes:
       - metadata_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${METADATA_DB_USER} -d ${METADATA_DB_NAME}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${METADATA_DB_USER} -d ${METADATA_DB_NAME}",
+        ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -53,7 +57,11 @@ services:
     volumes:
       - operational_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${OPERATIONAL_DB_USER} -d ${OPERATIONAL_DB_NAME}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${OPERATIONAL_DB_USER} -d ${OPERATIONAL_DB_NAME}",
+        ]
       interval: 5s
       timeout: 5s
       retries: 5

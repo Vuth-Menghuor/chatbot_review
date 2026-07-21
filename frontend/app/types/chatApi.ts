@@ -1,4 +1,4 @@
-import type { MessageSource, MessageStatus } from './chat';
+import type { AnswerConfidence, AnswerCoverage, MessageSource, MessageStatus } from './chat';
 
 export interface ChatApiIntegrationEphemeralMcp {
   type: 'ephemeral_mcp';
@@ -199,12 +199,42 @@ export interface NormalizedChartBlock {
   data: Record<string, unknown>;
 }
 
+export interface NormalizedSuggestionsBlock {
+  type: 'suggestions';
+  title?: string;
+  items: string[];
+}
+
+export interface NormalizedCoverageBlock {
+  type: 'coverage';
+  title: string;
+  tone?: 'info' | 'warning';
+  items: string[];
+  note?: string;
+}
+
+export interface NormalizedResponseLimitation {
+  code?: string;
+  message: string;
+}
+
+export interface NormalizedResponseBody {
+  type: 'markdown' | 'table' | 'chart';
+  coverage: AnswerCoverage;
+  confidence?: AnswerConfidence;
+  summary?: string;
+  content: string;
+  limitations: NormalizedResponseLimitation[];
+}
+
 export type NormalizedChatContentBlock =
   | NormalizedMarkdownBlock
   | NormalizedTableBlock
   | NormalizedClarificationBlock
   | NormalizedErrorBlock
-  | NormalizedChartBlock;
+  | NormalizedChartBlock
+  | NormalizedSuggestionsBlock
+  | NormalizedCoverageBlock;
 
 export interface NormalizedChatMessage {
   role: 'assistant';
@@ -215,6 +245,10 @@ export interface NormalizedChatDebug {
   latency_ms?: number;
   confidence?: 'high' | 'medium' | 'low';
   answer_source?: string;
+  semantic_count?: number;
+  structured_count?: number;
+  total_count?: number;
+  query_strategy?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -222,6 +256,12 @@ export interface NormalizedCitation extends MessageSource {
   id: string;
   label?: string;
   score?: number;
+  citation_id?: string;
+  document_id?: string;
+  filename?: string;
+  chunk_index?: number;
+  retrieval_method?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface NormalizedChatResponse {
@@ -231,9 +271,15 @@ export interface NormalizedChatResponse {
   project_id?: string | null;
   status: Extract<MessageStatus, 'completed' | 'processing' | 'failed'>;
   intent: string;
+  query?: string;
+  language?: string;
+  coverage?: AnswerCoverage;
+  confidence?: AnswerConfidence;
+  response?: NormalizedResponseBody;
   message: NormalizedChatMessage;
   citations: NormalizedCitation[];
   suggestions?: string[];
+  metrics?: Record<string, string | number | boolean | null>;
   debug?: NormalizedChatDebug;
 }
 

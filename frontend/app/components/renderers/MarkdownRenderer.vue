@@ -229,4 +229,34 @@ useMarkdownFenceHighlighter(containerRef, mermaidIsDark, sanitizedHtml);
 .markdown-body :deep(.shiki-markdown-wrap .shiki) {
   background-color: transparent !important;
 }
+
+.markdown-body :deep(.md-limitation-note) {
+  margin-top: 1rem;
+  margin-bottom: 0.75rem;
+  border: 1px solid rgb(251 191 36 / 0.45);
+  border-radius: 0.625rem;
+  background: rgb(255 251 235 / 0.9);
+  padding: 0.875rem 1rem;
+  color: rgb(120 53 15);
+  font-style: normal;
+}
+
+.markdown-body :deep(.md-limitation-note::before) {
+  display: block;
+  margin-bottom: 0.375rem;
+  color: rgb(146 64 14);
+  content: 'Information limitation';
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+:global(.dark) .markdown-body :deep(.md-limitation-note) {
+  border-color: rgb(146 64 14 / 0.6);
+  background: rgb(69 26 3 / 0.35);
+  color: rgb(253 230 138);
+}
+
+:global(.dark) .markdown-body :deep(.md-limitation-note::before) {
+  color: rgb(252 211 77);
+}
 </style>
