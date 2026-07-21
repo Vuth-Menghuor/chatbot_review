@@ -31,3 +31,6 @@ logs/
 # Docker volumes
 *_data/
 local_data/
+
+# Local API client collections
+bruno/
