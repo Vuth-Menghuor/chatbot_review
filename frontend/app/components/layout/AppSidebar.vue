@@ -11,18 +11,20 @@
     <div class="flex h-full flex-col bg-white text-base font-sans dark:bg-zinc-950">
       <!-- Logo & Toggle -->
       <div
-        class="sticky top-0 z-10 flex h-14 items-center justify-between bg-white px-3 dark:bg-zinc-950"
+        class="sticky top-0 z-10 flex h-14 items-center justify-between bg-white px-2.5 dark:bg-zinc-950"
       >
         <NuxtLink
           v-if="uiStore.showSidebarBrand(props.mode)"
           to="/"
-          class="flex items-center gap-2 overflow-hidden transition-all px-1 no-underline"
+          class="flex min-w-0 items-center gap-2 overflow-hidden transition-all px-1 no-underline"
         >
           <img src="/logo/gdce-new-seal.png" alt="GDCE Logo" class="w-10 h-10 object-contain" />
-          <span
-            class="ml-2 whitespace-nowrap text-xl font-bold leading-none tracking-tight text-gray-900 dark:text-zinc-100"
-          >
-            {{ $t('sidebar.brand') }}
+          <span class="ml-2 flex min-w-0 flex-col">
+            <span
+              class="truncate text-xl font-bold leading-none tracking-tight text-gray-900 dark:text-zinc-100"
+            >
+              {{ $t('sidebar.brand') }}
+            </span>
           </span>
         </NuxtLink>
 
@@ -49,7 +51,13 @@
       </div>
 
       <!-- Search + New Chat -->
-      <div class="mt-2 space-y-2 px-4">
+      <div
+        :class="
+          uiStore.isSidebarRail(props.mode)
+            ? 'mt-1 flex flex-col items-center'
+            : 'mt-1 mb-0.5 px-2.5'
+        "
+      >
         <BaseActionRow
           :rail="uiStore.isSidebarRail(props.mode)"
           :icon="SquarePenIcon"
@@ -61,13 +69,12 @@
           :icon="SearchIcon"
           :label="$t('sidebar.searchPlaceholder')"
           :tooltip="$t('sidebar.search')"
-          shortcut="⌘K"
           @click="uiStore.openSearchDialog()"
         />
       </div>
 
       <!-- Main Navigation -->
-      <div class="flex-1 space-y-4 overflow-y-auto px-2 mt-4 custom-scrollbar">
+      <div class="flex-1 overflow-y-auto px-0.5 custom-scrollbar">
         <SidebarProjects :rail="uiStore.isSidebarRail(props.mode)" @create="createProjectOpen = true" />
         <SidebarRecents :rail="uiStore.isSidebarRail(props.mode)" />
       </div>

@@ -77,28 +77,29 @@
   },
   "chat": {
     "newChat": "ការជជែកថ្មី",
-    "welcomeTitle": "តើ Customs AI អាចជួយអ្នកអ្វីបានខ្លះ?",
+    "welcomeTitle": "តើ Customs AI អាចជួយអ្វីបានថ្ងៃនេះ?",
+    "welcomeSubtitle": "សួរអំពីនីតិវិធីគយ ទិន្នន័យពាណិជ្ជកម្ម កូដ HS ពន្ធនាំចូល និងឯកសារ GDCE។",
     "welcomeSuggestions": {
-      "heading": "សាកសួរដូចខាងក្រោម",
+      "heading": "សាកសួរអំពី",
       "hsCode": {
-        "label": "កូដ HS",
-        "description": "រកកូដ HS ត្រឹមត្រូវសម្រាប់ទំនិញរបស់អ្នក",
-        "prompt": "ជួយខ្ញុំស្វែងរកកូដ HS សម្រាប់ផលិតផលរបស់ខ្ញុំ"
+        "label": "Find HS code candidates for cotton fabric",
+        "description": "រកបេក្ខភាពកូដ HS តាមការពិពណ៌នាទំនិញ",
+        "prompt": "Find HS code candidates for cotton fabric"
       },
       "showDataAsChat": {
-        "label": "បង្ហាញទិន្នន័យជាជជែក",
-        "description": "បម្លែងតារាង ឬរបាយការណ៍ទៅជាសង្ខេបការជជែក",
-        "prompt": "បង្ហាញទិន្នន័យគយនេះជាទម្រង់ការជជែកដែលងាយយល់"
+        "label": "Show top 10 Cambodia export partner countries by value for 2024",
+        "description": "សួរសំណួរអំពីទិន្នន័យ និងការវិភាគពាណិជ្ជកម្ម",
+        "prompt": "Show top 10 Cambodia export partner countries by value for 2024"
       },
       "askQuestion": {
-        "label": "សួរសំណួរ",
-        "description": "ទទួលជំនួយអំពីបទបញ្ញត្តិ និងដំណើរការគយ",
-        "prompt": "ខ្ញុំមានសំណួរទាក់ទងនឹងគយ"
+        "label": "Calculate tax for HS 0102.29.11 CIF $800 from Thailand",
+        "description": "គណនាពន្ធគយ អាករ និងថ្លៃដើមនាំចូល",
+        "prompt": "Calculate tax for HS 0102.29.11 CIF $800 from Thailand"
       },
       "customsGuide": {
-        "label": "មគ្គុះណែនាំប្រកាសគយ",
-        "description": "ជំនួយជំហានម្តងមួយៗសម្រាប់ឯកសារនាំចូល/នាំចេញ",
-        "prompt": "ណែនាំខ្ញុំអំពីដំណើរការប្រកាសគយ"
+        "label": "What documents do I need to import goods into Cambodia?",
+        "description": "សួរអំពីគោលនយោបាយ នីតិវិធី និងឯកសារ GDCE",
+        "prompt": "What documents do I need to import goods into Cambodia?"
       }
     },
     "disclaimer": "ChatGDCE ឆ្លើយបានលឿន ប៉ុន្តែសូមផ្ទៀងផ្ទាត់ព័ត៌មានសំខាន់។",
@@ -240,6 +241,8 @@
       "sankey": "ដ្យាក្រាម Sankey",
       "graph": "ក្រាហ្វបណ្តាញ",
       "sunburst": "គំនូសតាង Sunburst",
+      "kpi": "KPI",
+      "empty": "គំនូសតាង",
       "chart": "គំនូសតាង",
       "fallback": "គំនូសតាង {type}"
     }

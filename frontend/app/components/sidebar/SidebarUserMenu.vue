@@ -103,9 +103,7 @@ const isMobileMode = computed(() => props.mode === 'mobile');
 const showProfileText = computed(() => uiStore.showSidebarExpandedActions(props.mode));
 const isRailMode = computed(() => !isMobileMode.value && !showProfileText.value);
 
-const menuLocation = computed<TooltipLocation>(() =>
-  isRailMode.value ? 'end' : 'top start',
-);
+const menuLocation = computed<TooltipLocation>(() => (isRailMode.value ? 'end' : 'top start'));
 
 const menuFullWidth = computed(() => isMobileMode.value || showProfileText.value);
 const menuWidth = computed(() => (isMobileMode.value ? '100%' : 225));
@@ -114,14 +112,14 @@ const footerPaddingClass = computed(() => {
   if (isMobileMode.value) {
     return 'px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))]';
   }
-  return showProfileText.value ? 'px-4 py-3' : 'px-2 py-3';
+  return showProfileText.value ? 'px-3.5 py-2.5' : 'px-2 py-2.5';
 });
 
 const activatorItemClass = computed(() =>
   [
     '!mx-0 w-full transition-colors',
     showProfileText.value
-      ? 'min-h-[52px] rounded-xl border border-gray-200 bg-white px-2 py-2 hover:!bg-gray-100 dark:border-zinc-700 dark:bg-zinc-950 dark:hover:!bg-zinc-900'
+      ? 'min-h-[52px] rounded-xl border border-gray-200 bg-white !px-2 py-2 hover:!bg-gray-100 dark:border-zinc-700 dark:bg-zinc-950 dark:hover:!bg-zinc-900'
       : 'justify-center px-0 hover:!bg-gray-100 dark:hover:!bg-zinc-900',
   ].join(' '),
 );

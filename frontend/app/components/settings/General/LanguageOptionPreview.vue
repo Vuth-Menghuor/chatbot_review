@@ -36,7 +36,7 @@
             KM
           </span>
         </div>
-        <div class="flex flex-1 flex-col justify-center gap-1 px-2 py-1.5 font-[Siemreap,'Noto_Sans_Khmer',sans-serif]">
+        <div class="flex flex-1 flex-col justify-center gap-1 px-2 py-1.5">
           <p class="truncate text-[0.625rem] font-semibold leading-tight text-gray-900 sm:text-xs dark:text-zinc-100">
             សួស្តី
           </p>

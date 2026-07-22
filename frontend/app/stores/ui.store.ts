@@ -8,12 +8,17 @@ import { DEFAULT_APP_THEME, isAppThemeName, type AppThemeName } from '~/utils/th
 
 export type SidebarMode = 'desktop' | 'mobile';
 
+const DEFAULT_SIDEBAR_WIDTH = 250;
+const LEGACY_DEFAULT_SIDEBAR_WIDTHS = new Set([270, 300]);
+const MOBILE_SIDEBAR_WIDTH = 270;
+const RAIL_SIDEBAR_WIDTH = 72;
+
 export const useUiStore = defineStore('ui', {
   state: () => ({
     // Sidebar logic
     sidebarOpened: true,
     railMode: false,
-    sidebarWidth: 300,
+    sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
     isDragging: false,
 
     // App state
@@ -43,9 +48,9 @@ export const useUiStore = defineStore('ui', {
 
     // Sidebar responsive width
     computedSidebarWidth: (state) => {
-      if (state.windowWidth < 768) return state.sidebarOpened ? 280 : 0;
+      if (state.windowWidth < 768) return state.sidebarOpened ? MOBILE_SIDEBAR_WIDTH : 0;
       if (!state.sidebarOpened) return 0;
-      return state.railMode ? 72 : state.sidebarWidth;
+      return state.railMode ? RAIL_SIDEBAR_WIDTH : state.sidebarWidth;
     },
 
     isSidebarMobile: () => (mode: SidebarMode) => mode === 'mobile',
@@ -67,7 +72,7 @@ export const useUiStore = defineStore('ui', {
       (state) =>
       (mode: SidebarMode): string[] => [
         mode === 'mobile'
-          ? 'flex w-[280px]'
+          ? 'flex w-[270px]'
           : 'hidden md:flex relative shrink-0 border-r border-gray-200/50 dark:border-zinc-800',
         mode === 'desktop' && state.sidebarOpened ? 'translate-x-0' : '',
         mode === 'desktop' && !state.sidebarOpened
@@ -80,14 +85,14 @@ export const useUiStore = defineStore('ui', {
       (mode: SidebarMode): Record<string, string> => {
         if (mode !== 'desktop') return {};
 
-        const width = !state.sidebarOpened ? 0 : state.railMode ? 72 : state.sidebarWidth;
+        const width = !state.sidebarOpened ? 0 : state.railMode ? RAIL_SIDEBAR_WIDTH : state.sidebarWidth;
         return { width: `${width}px` };
       },
 
     sidebarRailToggleWrapperClass:
       (state) =>
       (mode: SidebarMode): string =>
-        mode === 'desktop' && state.railMode ? 'w-full flex justify-start ml-1' : '',
+        mode === 'desktop' && state.railMode ? 'flex w-full justify-center' : '',
 
     /** Collapsed sidebar icon buttons (projects, recents, etc.) — no box border */
     sidebarRailButtonClass: () =>
@@ -108,7 +113,9 @@ export const useUiStore = defineStore('ui', {
       const savedWidth = readString(storageKeys.sidebarWidth);
       if (savedWidth) {
         const w = parseInt(savedWidth, 10);
-        if (!Number.isNaN(w)) this.sidebarWidth = w;
+        if (!Number.isNaN(w)) {
+          this.sidebarWidth = LEGACY_DEFAULT_SIDEBAR_WIDTHS.has(w) ? DEFAULT_SIDEBAR_WIDTH : w;
+        }
       }
 
       const savedRail = readString(storageKeys.railMode);

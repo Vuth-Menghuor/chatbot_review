@@ -237,11 +237,14 @@ function onMenuSelect(item: MenuItem | SubmenuItem) {
         </div>
 
         <div v-if="!$slots.default" class="flex min-w-0 flex-1 flex-col">
-          <span :class="titleClass">
+          <span :class="['menu-list-item-title', titleClass]">
             <template v-if="labelKey">{{ $t(labelKey) }}</template>
             <template v-else>{{ displayLabel }}</template>
           </span>
-          <span v-if="secondaryText" class="truncate text-[0.6875rem] leading-4 text-medium-emphasis dark:text-zinc-400">
+          <span
+            v-if="secondaryText"
+            class="menu-list-item-subtitle truncate text-[0.6875rem] leading-4 text-medium-emphasis dark:text-zinc-400"
+          >
             {{ secondaryText }}
           </span>
         </div>
@@ -262,7 +265,12 @@ function onMenuSelect(item: MenuItem | SubmenuItem) {
               />
             </slot>
             <slot name="append">
-              <span v-if="meta" class="shrink-0 whitespace-nowrap pl-1 text-xs leading-tight text-medium-emphasis">{{ meta }}</span>
+          <span
+            v-if="meta"
+            class="menu-list-item-meta shrink-0 whitespace-nowrap pl-1 text-xs leading-tight text-medium-emphasis"
+          >
+            {{ meta }}
+          </span>
               <component :is="suffix" v-else-if="suffix" class="lucide h-4 w-4 shrink-0 text-medium-emphasis" />
               <kbd
                 v-else-if="shortcut"
@@ -290,7 +298,12 @@ function onMenuSelect(item: MenuItem | SubmenuItem) {
           >
             {{ meta }}
           </span>
-          <span v-else-if="meta" class="shrink-0 whitespace-nowrap pl-1 text-xs leading-tight text-medium-emphasis">{{ meta }}</span>
+          <span
+            v-else-if="meta"
+            class="menu-list-item-meta shrink-0 whitespace-nowrap pl-1 text-xs leading-tight text-medium-emphasis"
+          >
+            {{ meta }}
+          </span>
           <component :is="suffix" v-else-if="suffix" class="lucide h-4 w-4 shrink-0 text-medium-emphasis" />
           <kbd
             v-else-if="shortcut"

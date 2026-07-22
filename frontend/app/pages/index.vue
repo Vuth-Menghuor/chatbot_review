@@ -42,10 +42,12 @@ const handleSuggestion = (text: string) => {
     class="flex flex-col h-full overflow-hidden bg-white w-full dark:bg-zinc-950 custom-scrollbar"
   >
     <!-- Welcome / empty state fills the available space -->
-    <div class="flex-1 overflow-hidden flex flex-col min-h-0 items-center justify-center">
-      <ChatWelcomeState @select-suggestion="handleSuggestion" />
+    <div class="flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden">
+      <ChatWelcomeState @select-suggestion="handleSuggestion">
+        <template #composer>
+          <ChatInput :loading="false" :docked="false" @send="handleSend" />
+        </template>
+      </ChatWelcomeState>
     </div>
-
-    <ChatInput :loading="false" @send="handleSend" />
   </div>
 </template>

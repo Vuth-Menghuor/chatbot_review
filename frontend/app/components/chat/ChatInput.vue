@@ -8,72 +8,57 @@
   >
     <div :class="docked ? 'mx-auto w-full max-w-3xl' : ''">
       <div
-        class="rounded-4xl border border-gray-300 bg-white p-2 shadow-sm transition-all duration-300 focus-within:shadow-md dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-none dark:focus-within:shadow-[0_0_0_1px_rgba(255,255,255,0.08)]"
-      >    <!-- File Preview -->
-    <CommonFilePreview :files="attachedFiles" @remove="removeFile" />
+        class="rounded-[24px] border border-gray-300 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-[#181818]"
+      >
+        <!-- File Preview -->
+        <CommonFilePreview :files="attachedFiles" @remove="removeFile" />
 
-    <!-- Hidden File Input (Using Vuetify v-file-input) -->
-    <v-file-input
-      ref="fileInputRef"
-      multiple
-      class="hidden"
-      :accept="imageAccept"
-      @update:model-value="onFileChange"
-    />
-
-    <!-- Main Container -->
-    <div class="flex flex-col">
-      <!-- Row 1: Plus (Inline) + Textarea + Send (Inline) -->
-      <div class="flex items-center">
-        <BaseIconButton
-          v-if="!isMultiLine"
-          :icon="PlusIcon"
-          size="large"
-          width="44"
-          height="44"
-          :custom-class="plusButtonClass"
-          @click="fileInputRef?.click()"
+        <!-- Hidden File Input (Using Vuetify v-file-input) -->
+        <v-file-input
+          ref="fileInputRef"
+          multiple
+          class="hidden"
+          :accept="imageAccept"
+          @update:model-value="onFileChange"
         />
 
-        <BaseChatTextarea
-          id="chat-input-textarea"
-          ref="textareaRef"
-          v-model="model"
-          :placeholder="$t('chat.placeholder')"
-          aria-label="chat-input-textarea"
-          custom-class="chat-input-textarea flex-1 pt-2 px-2 ml-1"
-          @keydown="onKeydown"
-        />
+        <!-- Main Container -->
+        <div class="flex min-h-[60px] flex-col justify-between gap-2">
+          <!-- Row 1: Textarea -->
+          <div class="flex items-start">
+            <BaseChatTextarea
+              id="chat-input-textarea"
+              ref="textareaRef"
+              v-model="model"
+              :placeholder="$t('chat.placeholder')"
+              aria-label="chat-input-textarea"
+              custom-class="chat-input-textarea flex-1 px-0 pt-0"
+              @keydown="onKeydown"
+            />
+          </div>
 
-        <CommonSendButton
-          v-if="!isMultiLine"
-          :disabled="!canSend"
-          :loading="loading"
-          @click="submit"
-          @stop="$emit('stop')"
-        />
+          <!-- Row 2: Bottom Toolbar -->
+          <div class="flex items-center justify-between">
+            <BaseIconButton
+              :icon="PlusIcon"
+              size="large"
+              width="32"
+              height="32"
+              :custom-class="plusButtonClass"
+              @click="fileInputRef?.click()"
+            />
+
+            <div class="flex items-center gap-2">
+              <CommonSendButton
+                :disabled="!canSend"
+                :loading="loading"
+                @click="submit"
+                @stop="$emit('stop')"
+              />
+            </div>
+          </div>
+        </div>
       </div>
-
-      <!-- Row 2: Bottom Toolbar (MultiLine only) -->
-      <div v-if="isMultiLine" class="flex items-center justify-between p-1">
-        <BaseIconButton
-          :icon="PlusIcon"
-          size="large"
-          width="44"
-          height="44"
-          :custom-class="plusButtonClass"
-          @click="fileInputRef?.click()"
-        />
-
-        <CommonSendButton
-          :disabled="!canSend"
-          :loading="loading"
-          @click="submit"
-          @stop="$emit('stop')"
-        />
-      </div>
-    </div>
-    </div>
 
       <p
         v-if="docked"
@@ -90,10 +75,13 @@ import { PlusIcon } from 'lucide-vue-next';
 import BaseIconButton from '~/components/base/BaseIconButton.vue';
 import { usePreferencesStore } from '~/stores/preferences.store';
 import { useNotificationStore } from '~/stores/notification.store';
-import { getImageUploadLimits, imageAcceptAttribute, validateImageFile } from '~/utils/file/imageUpload';
+import {
+  getImageUploadLimits,
+  imageAcceptAttribute,
+  validateImageFile,
+} from '~/utils/file/imageUpload';
 
-const plusButtonClass =
-  'text-gray-600 bg-gray-100 hover:!bg-gray-200 !rounded-full dark:bg-zinc-800 dark:text-zinc-300 dark:hover:!bg-zinc-700';
+const plusButtonClass = 'chat-plus-button text-gray-500 !rounded-full dark:text-zinc-300';
 
 const preferencesStore = usePreferencesStore();
 const notificationStore = useNotificationStore();
@@ -107,13 +95,6 @@ const imageLimits = computed(() =>
 const imageAccept = computed(() => imageAcceptAttribute(imageLimits.value));
 const model = ref('');
 const attachedFiles = ref<File[]>([]);
-
-// Detect if there are multiple lines (ChatGPT style: moves buttons to bottom row)
-const isMultiLine = computed(() => {
-  // We consider it multiline if there's a newline character or if text is very long
-  // Also if there are any attached files, we use the expanded toolbar layout
-  return model.value.includes('\n') || model.value.length > 60 || attachedFiles.value.length > 0;
-});
 
 const canSend = computed(() => model.value.trim().length > 0 || attachedFiles.value.length > 0);
 
@@ -206,6 +187,45 @@ defineExpose({ setDraft });
 </script>
 
 <style scoped>
+:deep(.chat-input-textarea .v-field__input:not(.v-textarea__sizer)) {
+  min-height: 32px !important;
+  padding: 4px 0 0 !important;
+}
+
+:deep(.chat-input-textarea .v-textarea__sizer) {
+  min-height: 0 !important;
+  padding: 4px 0 0 !important;
+}
+
+:deep(.chat-input-textarea textarea) {
+  line-height: 1.45 !important;
+}
+
+:deep(.chat-input-textarea textarea::placeholder) {
+  color: #9ca3af !important;
+}
+
+html.dark :deep(.chat-input-textarea textarea::placeholder) {
+  color: #8a8a8a !important;
+}
+
+:deep(.chat-plus-button),
+:deep(.chat-plus-button:hover) {
+  background: transparent !important;
+  color: #6b7280 !important;
+}
+
+html.dark :deep(.chat-plus-button),
+html.dark :deep(.chat-plus-button:hover) {
+  background: transparent !important;
+  color: #d4d4d8 !important;
+}
+
+:deep(.chat-plus-button .v-btn__overlay),
+:deep(.chat-plus-button .v-btn__underlay) {
+  opacity: 0 !important;
+}
+
 :deep(.chat-send-button--ready),
 :deep(.chat-send-button--loading) {
   background: #111827 !important;
@@ -218,7 +238,9 @@ defineExpose({ setDraft });
 }
 
 :deep(.chat-send-button--disabled),
-:deep(.chat-send-button--disabled:hover) {
+:deep(.chat-send-button--disabled:hover),
+:deep(.chat-send-button.v-btn--disabled.chat-send-button--disabled),
+:deep(.chat-send-button.v-btn--disabled.chat-send-button--disabled:hover) {
   background: #e5e7eb !important;
   color: #9ca3af !important;
 }
@@ -227,13 +249,15 @@ html.dark :deep(.chat-send-button--ready),
 html.dark :deep(.chat-send-button--loading),
 html.dark :deep(.chat-send-button--ready:hover),
 html.dark :deep(.chat-send-button--loading:hover) {
-  background: #f4f4f5 !important;
+  background: #ffffff !important;
   color: #18181b !important;
 }
 
 html.dark :deep(.chat-send-button--disabled),
-html.dark :deep(.chat-send-button--disabled:hover) {
-  background: #3f3f46 !important;
-  color: #71717a !important;
+html.dark :deep(.chat-send-button--disabled:hover),
+html.dark :deep(.chat-send-button.v-btn--disabled.chat-send-button--disabled),
+html.dark :deep(.chat-send-button.v-btn--disabled.chat-send-button--disabled:hover) {
+  background: #ffffff !important;
+  color: #18181b !important;
 }
 </style>

@@ -77,28 +77,29 @@
   },
   "chat": {
     "newChat": "New Chat",
-    "welcomeTitle": "What can Customs AI help you with?",
+    "welcomeTitle": "How can Customs AI help today?",
+    "welcomeSubtitle": "Ask about customs procedures, trade data, HS codes, import taxes, and GDCE documentation.",
     "welcomeSuggestions": {
-      "heading": "Try asking",
+      "heading": "Try asking about",
       "hsCode": {
-        "label": "HS code",
-        "description": "Find the correct HS code for your goods",
-        "prompt": "Help me find the HS code for my product"
+        "label": "Find HS code candidates for cotton fabric",
+        "description": "Find HS code candidates by product description",
+        "prompt": "Find HS code candidates for cotton fabric"
       },
       "showDataAsChat": {
-        "label": "Show data as chat",
-        "description": "Turn tables or reports into a chat summary",
-        "prompt": "Show this customs data in a clear chat-friendly format"
+        "label": "Show top 10 Cambodia export partner countries by value for 2024",
+        "description": "Ask trade data and analysis questions",
+        "prompt": "Show top 10 Cambodia export partner countries by value for 2024"
       },
       "askQuestion": {
-        "label": "Ask question",
-        "description": "Get help with customs rules and procedures",
-        "prompt": "I have a customs-related question"
+        "label": "Calculate tax for HS 0102.29.11 CIF $800 from Thailand",
+        "description": "Calculate customs duties, taxes, and import costs",
+        "prompt": "Calculate tax for HS 0102.29.11 CIF $800 from Thailand"
       },
       "customsGuide": {
-        "label": "Declaration guide",
-        "description": "Step-by-step help for import/export paperwork",
-        "prompt": "Walk me through the customs declaration process"
+        "label": "What documents do I need to import goods into Cambodia?",
+        "description": "Ask GDCE policy, procedure, and documentation questions",
+        "prompt": "What documents do I need to import goods into Cambodia?"
       }
     },
     "disclaimer": "ChatGDCE gives answers fast, but verify important info.",
@@ -240,6 +241,8 @@
       "sankey": "Sankey diagram",
       "graph": "Network graph",
       "sunburst": "Sunburst chart",
+      "kpi": "KPI",
+      "empty": "Chart",
       "chart": "Chart",
       "fallback": "{type} chart"
     }
@@ -268,7 +271,7 @@
     "less": "Less",
     "more": "More",
     "search": "Search",
-    "searchPlaceholder": "Search...",
+    "searchPlaceholder": "Search",
     "newChat": "New Chat",
     "userMenu": {
       "open": "Open user menu",

@@ -68,13 +68,15 @@ defineEmits<{
   color: #ffffff !important;
 }
 
-.chat-send-button--disabled {
+.chat-send-button--disabled,
+.chat-send-button.v-btn--disabled.chat-send-button--disabled {
   cursor: not-allowed;
   background: #e5e7eb !important;
   color: #9ca3af !important;
 }
 
-.chat-send-button--disabled:hover {
+.chat-send-button--disabled:hover,
+.chat-send-button.v-btn--disabled.chat-send-button--disabled:hover {
   background: #e5e7eb !important;
   color: #9ca3af !important;
 }

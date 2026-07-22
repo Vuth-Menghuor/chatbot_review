@@ -1,7 +1,7 @@
 <template>
   <div>
     <div v-if="!rail">
-      <div class="mb-2 flex items-center justify-between rounded px-3 py-1">
+      <div class="flex items-center justify-between rounded px-3.5 py-1">
         <span class="text-sm font-bold uppercase tracking-normal font-sans text-medium-emphasis dark:text-zinc-400">
           {{ $t('sidebar.projects') }}
         </span>
@@ -15,7 +15,7 @@
       </div>
 
       <v-expand-transition>
-        <BaseMenuList v-if="isOpen" tone="nav" bg-color="transparent" list-class="pa-0">
+        <BaseMenuList v-if="isOpen" tone="nav" bg-color="transparent" list-class="pa-0 px-2.5">
           <BaseMenuListItem
             tone="nav"
             :icon="FolderPlusIcon"

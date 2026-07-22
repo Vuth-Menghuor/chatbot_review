@@ -89,7 +89,7 @@ const sidebarClass =
   'h-10 outline-none transition-[background-color,border-color,color] text-gray-500 dark:text-zinc-400 hover:!bg-gray-100 hover:!text-gray-700 dark:hover:!bg-zinc-800 dark:hover:!text-zinc-300 [&_.v-btn__overlay]:!opacity-0 [&_.v-btn__underlay]:!opacity-0 [&_.lucide]:text-high-emphasis hover:[&_.lucide]:text-gray-700 dark:hover:[&_.lucide]:text-zinc-300';
 
 const sidebarBorderedClass =
-  'rounded-lg border border-gray-200 dark:border-zinc-700 hover:border-gray-200 dark:hover:border-zinc-700';
+  'rounded-lg border-0';
 
 export type BaseActionRowAppearance = 'sidebar' | 'card';
 
@@ -121,9 +121,9 @@ const tooltipText = computed(() => props.tooltip ?? props.label ?? '');
 
 const buttonClass = computed(() => {
   if (props.rail) {
-    return `${sidebarClass} ml-1 w-10 min-w-0 border-0 px-0 shadow-none`;
+    return `${sidebarClass} w-10 min-w-0 border-0 px-0 shadow-none`;
   }
-  return `${sidebarClass} ${sidebarBorderedClass} w-full min-w-0 px-3`;
+  return `${sidebarClass} ${sidebarBorderedClass} w-full min-w-0 !px-2`;
 });
 
 function onClick(event: MouseEvent | KeyboardEvent) {

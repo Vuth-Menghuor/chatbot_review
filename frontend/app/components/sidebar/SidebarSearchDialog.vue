@@ -31,8 +31,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
-import { SearchIcon, MessageSquareIcon, FolderIcon } from 'lucide-vue-next';
+import { ref, computed, watch, type Component } from 'vue';
+import { SearchIcon, HistoryIcon, FolderIcon } from 'lucide-vue-next';
 import type { MenuEntry, MenuItem } from '~/types/ui-menu';
 import { useChatStore } from '~/stores/chat.store';
 import { useProjectStore } from '~/stores/project.store';
@@ -44,7 +44,7 @@ interface SearchResultItem {
   id: string;
   title: string;
   typeLabel: string;
-  icon: typeof MessageSquareIcon;
+  icon: Component;
   date?: string;
   route: string;
 }
@@ -56,6 +56,9 @@ const { t } = useI18n();
 
 const model = defineModel<boolean>({ required: true });
 const query = ref('');
+
+const searchResultClass =
+  'font-sans [&_.lucide]:!text-zinc-400 dark:[&_.lucide]:!text-zinc-500 [&_.menu-list-item-title]:!text-[0.9375rem] [&_.menu-list-item-title]:!font-medium [&_.menu-list-item-title]:!text-zinc-700 dark:[&_.menu-list-item-title]:!text-zinc-200 [&_.menu-list-item-subtitle]:!text-xs [&_.menu-list-item-subtitle]:!font-normal [&_.menu-list-item-subtitle]:!text-zinc-400 dark:[&_.menu-list-item-subtitle]:!text-zinc-500 [&_.menu-list-item-meta]:!font-normal [&_.menu-list-item-meta]:!text-zinc-400 dark:[&_.menu-list-item-meta]:!text-zinc-500';
 
 watch(model, (open) => {
   if (open) {
@@ -79,7 +82,7 @@ const chatResults = computed<SearchResultItem[]>(() =>
     id: c.id,
     title: c.title,
     typeLabel: t('search.typeChat'),
-    icon: MessageSquareIcon,
+    icon: HistoryIcon,
     date: c.createdAt,
     route: `/chat/${c.id}`,
   })),
@@ -104,6 +107,7 @@ function toMenuItem(result: SearchResultItem): MenuItem {
     description: result.typeLabel,
     icon: result.icon,
     meta: result.date ? formatDate(result.date) : undefined,
+    class: searchResultClass,
     onClick: () => onResultClick(result),
   };
 }

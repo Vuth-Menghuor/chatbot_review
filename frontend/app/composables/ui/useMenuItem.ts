@@ -10,7 +10,7 @@ const menuItemShell =
   'group mx-1 min-h-10 rounded-xl py-1.5 px-3 transition-colors cursor-pointer hover:!bg-gray-100 hover:text-gray-700 dark:hover:!bg-zinc-800 dark:hover:text-zinc-300 [&_.v-list-item__overlay]:!opacity-0';
 
 const navItemRail = `${navItemShell} mx-auto min-h-9 w-10 justify-center px-0`;
-const navItemExpanded = `${navItemShell} min-h-9 pl-3 pr-3`;
+const navItemExpanded = `${navItemShell} min-h-9 !px-2`;
 const navItemActive = '!bg-gray-200 !font-bold dark:!bg-zinc-700';
 
 const projectItem =

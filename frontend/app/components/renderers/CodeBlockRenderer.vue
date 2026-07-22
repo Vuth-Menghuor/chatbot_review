@@ -90,9 +90,7 @@ onMounted(() => {
   padding: 1.25rem;
   overflow-x: auto;
   background-color: transparent !important;
-  font-family:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
-    monospace;
+  font-family: var(--font-family-app);
   font-size: 0.875rem;
   line-height: 1.6;
 }
