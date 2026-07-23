@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-[#2c5d72] font-sans text-white selection:bg-white/20">
+  <div class="min-h-screen bg-[#17485c] font-sans text-white selection:bg-[#e76666]/30">
     <slot />
     <LayoutAppToastHost />
   </div>

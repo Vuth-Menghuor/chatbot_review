@@ -16,7 +16,7 @@
   "auth": {
     "logoAlt": "អគ្គនាយកដ្ឋានគយនិងរដ្ឋាករកម្ពុជា — ត្រាប្រារព្ធខួប ៧៥ឆ្នាំ",
     "login": {
-      "title": "ចូលទៅកាន់ប្រព័ន្ធគយ",
+      "title": "ចូលទៅកាន់ Customs AI",
       "subtitle": "សូមបញ្ចូលគណនីរបស់អ្នក ដើម្បីប្រើប្រាស់ប្រព័ន្ធជជែក AI គយ",
       "email": "អ៊ីមែល",
       "emailPlaceholder": "you{'@'}example.com",
@@ -40,7 +40,7 @@
       "registerLink": "ចុះឈ្មោះ"
     },
     "register": {
-      "title": "បង្កើតគណនី",
+      "title": "បង្កើតគណនី Customs AI",
       "subtitle": "ចុះឈ្មោះដើម្បីប្រើប្រាស់ប្រព័ន្ធជជែក AI គយ",
       "fullName": "ឈ្មោះពេញ",
       "fullNamePlaceholder": "ឈ្មោះពេញរបស់អ្នក",

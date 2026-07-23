@@ -16,7 +16,7 @@
   "auth": {
     "logoAlt": "General Department of Customs and Excise of Cambodia — 75th Anniversary seal",
     "login": {
-      "title": "Sign in to ChatGDCE",
+      "title": "Sign in to Customs AI",
       "subtitle": "Enter your account to access the customs AI chat system.",
       "email": "Email",
       "emailPlaceholder": "you{'@'}example.com",
@@ -40,7 +40,7 @@
       "registerLink": "Register"
     },
     "register": {
-      "title": "Create an account",
+      "title": "Create your Customs AI account",
       "subtitle": "Register to access the customs AI chat system.",
       "fullName": "Full name",
       "fullNamePlaceholder": "Your full name",
