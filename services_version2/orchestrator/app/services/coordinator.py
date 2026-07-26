@@ -10,6 +10,7 @@ import asyncio
 from typing import Optional, Dict, Any, List
 import uuid
 import re
+from datetime import datetime, timezone
 
 from ..utils import extract_entity
 
@@ -23,6 +24,9 @@ from ..ai.shims.rewriter_service import RewriterService, RewriterServiceConfig, 
 from ..ai.analyzer import RELATIVE_PREFIXES
 
 from prompts.dynamic_prompt_manager import DynamicPromptManager
+
+# Module-level prompt manager — loads from prompts/ directory on import
+_prompt_manager = DynamicPromptManager()
 
 from .workflow import (
     WorkflowExecutor,
@@ -127,8 +131,12 @@ _QUESTION_SIGNALS = frozenset([
 ])
 
 
-async def detect_small_talk(query: str, llm_service=None, force_llm_fallback: bool = False) -> Optional[str]:
-    """Detects if the query is small talk/casual/unrelated and provides a friendly response."""
+async def generate_small_talk_response(query: str, llm_service=None) -> str:
+    """
+    Generates a polite/friendly response for small talk, chitchat, or out-of-scope queries.
+    Utilizes static predefined responses for common greetings to bypass LLM calls,
+    and applies a strict scope guardrail prompt if an LLM call is required.
+    """
     PREDEFINED_RESPONSES = {
         "greeting": "Hello! I'm here to help you with Cambodia customs and trade questions. How can I assist you today?",
         "goodbye": "Thank you for using GDCE ChatBot. Have a wonderful day ahead, and feel free to reach out anytime you need customs assistance!",
@@ -142,66 +150,59 @@ async def detect_small_talk(query: str, llm_service=None, force_llm_fallback: bo
     }
     
     low = (query or "").strip().lower()
-    norm = re.sub(r"[^\w\s]", "", low).strip()
-    
     is_obvious_small_talk = False
     matched_category = "confirmation"
     
-    if norm in ["hi", "hello", "hey", "good morning", "good afternoon", "good evening", "howdy", "greetings", "tell me a joke"] or any(re.search(pat, norm) for pat in [r"\bhi+\b", r"\bhey+\b", r"\bhello+\b", r"\byo+\b"]):
-        is_obvious_small_talk = True
-        matched_category = "greeting"
-    elif any(re.search(rf"\b{re.escape(w)}\b", norm) for w in ["thanks", "thank you", "appreciate"]):
-        is_obvious_small_talk = True
-        matched_category = "gratitude"
-    elif any(re.search(rf"\b{re.escape(w)}\b", norm) for w in ["bye", "goodbye", "farewell", "have a good day", "have a nice day"]):
-        is_obvious_small_talk = True
-        matched_category = "goodbye"
-    elif any(re.search(rf"\b{re.escape(w)}\b", norm) for w in ["nice to meet you", "pleasure to meet you", "glad to meet you"]):
-        is_obvious_small_talk = True
-        matched_category = "social"
-    elif any(re.search(rf"\b{re.escape(w)}\b", norm) for w in ["how are you", "whats up", "how is your day", "hows your day", "hows it going", "how is it going"]):
-        is_obvious_small_talk = True
-        matched_category = "casual"
-    elif any(re.search(rf"\b{re.escape(w)}\b", norm) for w in ["tell me a joke", "tell a joke", "make me laugh", "joke"]):
-        is_obvious_small_talk = True
-        matched_category = "joke"
-    elif any(re.search(rf"\b{re.escape(w)}\b", norm) for w in ["roast me"]):
-        is_obvious_small_talk = True
-        matched_category = "roast"
-    elif any(re.search(pat, norm) for pat in [
-        r"\b(what|who)\s+are\s+you\b",
-        r"\bwhat\s+is\s+your\s+(name|purpose)\b",
-        r"\bwhat\s+(can|do)\s+you\s+do\b",
-        r"\bare\s+you\s+(a\s+)?(bot|ai|robot|chatbot|assistant)\b",
-        r"\btell\s+me\s+about\s+yourself\b",
-        r"\bcapabilities\b",
-        r"\bhow\s+can\s+you\s+help\b"
-    ]):
-        is_obvious_small_talk = True
-        matched_category = "identity"
+    # Static word-boundary matching and length limits
+    if len(low) < 15:
+        if any(re.search(rf"\b{pat}\b", low) for pat in ["hi", "hello", "hey", "yo", "greetings", "helo", "bello"]):
+            is_obvious_small_talk = True
+            matched_category = "greeting"
+        elif any(re.search(rf"\b{pat}\b", low) for pat in ["thanks", "thank", "thank you", "appreciate"]):
+            is_obvious_small_talk = True
+            matched_category = "gratitude"
+        elif any(re.search(rf"\b{pat}\b", low) for pat in ["bye", "goodbye", "farewell"]):
+            is_obvious_small_talk = True
+            matched_category = "goodbye"
+            
+    # Longer pattern checks (social, jokes, casual, capability checks)
+    if not is_obvious_small_talk:
+        if any(re.search(rf"\b{re.escape(w)}\b", low) for w in ["nice to meet you", "pleasure to meet you", "glad to meet you"]):
+            is_obvious_small_talk = True
+            matched_category = "social"
+        elif any(re.search(rf"\b{re.escape(w)}\b", low) for w in ["how are you", "whats up", "how is your day", "hows your day", "hows it going", "how is it going"]):
+            is_obvious_small_talk = True
+            matched_category = "casual"
+        elif any(re.search(rf"\b{re.escape(w)}\b", low) for w in ["tell me a joke", "tell a joke", "make me laugh", "joke"]):
+            is_obvious_small_talk = True
+            matched_category = "joke"
+        elif any(re.search(rf"\b{re.escape(w)}\b", low) for w in ["roast me"]):
+            is_obvious_small_talk = True
+            matched_category = "roast"
+        elif any(re.search(pat, low) for pat in [
+            r"\b(what|who)\s+are\s+you\b",
+            r"\bwhat\s+is\s+your\s+(name|purpose)\b",
+            r"\bwhat\s+(can|do)\s+you\s+do\b",
+            r"\bare\s+you\s+(a\s+)?(bot|ai|robot|chatbot|assistant)\b",
+            r"\btell\s+me\s+about\s+yourself\b",
+            r"\bcapabilities\b",
+            r"\bhow\s+can\s+you\s+help\b"
+        ]):
+            is_obvious_small_talk = True
+            matched_category = "identity"
 
     if is_obvious_small_talk:
         return PREDEFINED_RESPONSES[matched_category]
 
-    stripped_alpha = re.sub(r"[^a-z]", "", low)
-    if stripped_alpha and len(stripped_alpha) <= 5 and not force_llm_fallback:
-        return None
-
+    # Call LLM as a general-purpose conversational assistant.
+    # Inject the current server datetime so date/time questions are answered correctly.
     if llm_service and llm_service.is_available():
-        if force_llm_fallback:
-            prompt = (
-                "You are GDCE ChatBot, a specialized assistant for Cambodia customs regulations, duty calculations, HS code lookups, and trade queries. "
-                "Acknowledge the user's message with a short, friendly, and engaging response (1-2 sentences). "
-                "If the message is completely unrelated to customs or trade, politely guide them back to trade/customs topics.\n\n"
-                f"User message: {query}\n\nResponse:"
-            )
-        else:
-            prompt = (
-                "Determine if the following user query is small talk, casual conversation, a joke/roast request, or a social remark.\n"
-                "If it is, generate a friendly, brief, and engaging response (1-2 sentences) acknowledging it in the context of a Cambodia Customs and Trade assistant.\n"
-                "If the query is NOT small talk, return ONLY the exact word 'FALSE'.\n\n"
-                f"Query: {query}"
-            )
+        current_datetime = datetime.now(timezone.utc).strftime("%A, %B %d, %Y at %H:%M UTC")
+        prompt = _prompt_manager.render(
+            "generate_small_talk_response",
+            query=query,
+            current_datetime=current_datetime,
+        )
         try:
             provider = llm_service.router.providers.get("gemini")
             if provider and provider.is_available():
@@ -212,15 +213,45 @@ async def detect_small_talk(query: str, llm_service=None, force_llm_fallback: bo
                 )
                 content = (response.text or "").strip()
                 if content:
-                    if not force_llm_fallback and (content.upper() == "FALSE" or "FALSE" in content.upper()[:10]):
+                    return content
+        except Exception as e:
+            logger.warning(f"LLM small talk generation failed: {e}")
+
+    return PREDEFINED_RESPONSES["greeting"]
+
+
+async def detect_small_talk(query: str, llm_service=None, force_llm_fallback: bool = False) -> Optional[str]:
+    """Detects if the query is small talk/casual/unrelated and provides a friendly response."""
+    # To avoid classification logic duplication, if force_llm_fallback=True (meaning we know it's small talk),
+    # we directly call the generation helper.
+    if force_llm_fallback:
+        return await generate_small_talk_response(query, llm_service)
+        
+    # Otherwise, perform keyword/regex check
+    res = await generate_small_talk_response(query, llm_service=None)
+    # If it was an obvious static category response, return it
+    if res and not res.startswith("Hello! I'm here to help"):
+        return res
+        
+    # If llm_service is provided and not force_llm_fallback, check if it is small talk
+    if llm_service and llm_service.is_available():
+        prompt = _prompt_manager.render("detect_small_talk", query=query)
+        try:
+            provider = llm_service.router.providers.get("gemini")
+            if provider and provider.is_available():
+                response = await asyncio.to_thread(
+                    provider.client.models.generate_content,
+                    model=provider.model_name,
+                    contents=prompt,
+                )
+                content = (response.text or "").strip()
+                if content:
+                    if content.upper() == "FALSE" or "FALSE" in content.upper()[:10]:
                         return None
                     return content
         except Exception as e:
-            logger.warning(f"LLM small talk response failed: {e}")
-
-    if force_llm_fallback:
-        return PREDEFINED_RESPONSES["greeting"]
-        
+            logger.warning(f"LLM small talk classification check failed: {e}")
+            
     return None
 
 
@@ -395,13 +426,6 @@ class ServiceCoordinator:
                 except Exception as e:
                     logger.warning(f"[{request_id}] Session context unavailable: {e}")
 
-            # Step 2b: Bare product description rewrite (e.g. "laptop" -> "what is hs code of laptop")
-            # Only apply this if there is no previous chat knowledge or rolling summary knowledge
-            has_history = False
-            if context.session_context:
-                if context.session_context.turns or (context.session_context.rolling_summary and context.session_context.rolling_summary.strip()):
-                    has_history = True
-
             # Step 2c: Product-spec clarification merge.
             # When retrieval previously flagged a response as is_generic=True and stored
             # product_clarification_needed=True on the session, the next user message is
@@ -422,57 +446,11 @@ class ServiceCoordinator:
                     session_id=session_id,
                 )
 
-            if not has_history or context.metadata.get("_spec_merge_done"):
-                stripped = question.strip()
-                if self._looks_like_short_product_lookup(stripped):
-                    rewritten_question = f"what is hs code of {stripped}"
-                    logger.info(
-                        f"[{request_id}] [REWRITE] Bare product description detected. "
-                        f"Rewriting '{question}' to '{rewritten_question}'"
-                    )
-                    question = rewritten_question
-                    normalized_question = self._light_normalize_query(question)
-                    context.question = question
-                    context.original_input = question
-
+            # Ghost Step 2b for spec check: if not has_history or context.metadata.get("_spec_merge_done")
             # Step 3: Fast-path check for predefined/casual small talk (greetings, gratitude, etc.)
-            # Step 2c may have already called detect_small_talk and cached the result to avoid a
-            # duplicate LLM call; reuse that if present.
-            # If it is turn 2 or more, we skip LLM small talk check (by passing llm_service=None)
-            # so follow-up fragments can go through rewrite/ask-back logic.
-            is_turn_2_or_more = False
-            if context.session_context and len(getattr(context.session_context, 'turns', [])) > 0:
-                is_turn_2_or_more = True
-
-            small_talk_response = context.metadata.get("small_talk_response") or await detect_small_talk(
-                normalized_question,
-                llm_service=None if is_turn_2_or_more else self.llm_service
-            )
-            if small_talk_response:
+            if context.metadata.get("small_talk_response"):
                 context.intent = WorkflowIntent.SMALL_TALK
-                context.status = WorkflowStatus.COMPLETED
-                context.metadata["small_talk"] = True
-                context.finalize()
-                
-                # Update session history with the small talk exchange if session context is active
-                if self.use_input_rewriter and session_id and context.session_context:
-                    try:
-                        self.rewriter_service.update_session_context(session_id, last_intent="small_talk")
-                        context.session_context.add_turn(user_input=question, bot_response=small_talk_response)
-                    except Exception as e:
-                        logger.warning(f"[{request_id}] Failed to update session for small talk: {e}")
-                
-                return {
-                    "intent": "small_talk",
-                    "status": "completed",
-                    "answer": small_talk_response,
-                    "sources": [],
-                    "metadata": {
-                        "latency_ms": context.latency_ms,
-                        "session_id": session_id,
-                        "request_id": request_id
-                    }
-                }
+                context.skip_intent_detection = True
 
             # Step 4: Clean up query (stripping excessive punctuation/whitespaces) for internal processing
             cleaned_question = self.workflow_executor.cleanup_query(question)
@@ -484,104 +462,191 @@ class ServiceCoordinator:
                 try:
                     from ..ai import get_llm_first_layer_service as get_ask_back_service
                     ask_back_svc = get_ask_back_service()
-                    # Resolve which of the candidate intents the user meant based on their response
-                    resolved_intent = ask_back_svc.resolve_from_user_response(
-                        user_text=question,
-                        candidate_intents=context.session_context.clarification_intents,
-                    )
-                    if resolved_intent:
-                        try: locked_intent = WorkflowIntent(resolved_intent)
-                        except ValueError: locked_intent = None
-                        
-                        # Retrieve the original pending query and merge it with the new clarification details.
-                        # Pass session_last_entity so _merge_pending_with_clarification can fall back
-                        # to the turn-1 entity if the turn-2 fragment carried no entity of its own.
-                        session_last_entity = getattr(context.session_context, 'last_entity', None)
-                        pending_query = context.session_context.resolve_clarification(resolved_intent)
-                        
-                        # If the pending query is missing (e.g. session was created fresh without a prior
-                        # ask-back turn), fall back to the last normalized query from the session.
-                        # This lets the merge reconstruct context (CIF, origin, entity) from Turn 1.
-                        if not pending_query and getattr(context.session_context, 'last_normalized_query', None):
-                            pending_query = context.session_context.last_normalized_query
-                            logger.info(
-                                f"[{request_id}] [MERGE] pending_rewritten_query was None; "
-                                f"falling back to last_normalized_query: '{pending_query}'"
-                            )
-                        
-                        merged_query = self._merge_pending_with_clarification(
-                            pending_query=pending_query,
-                            clarification_response=question,
-                            resolved_intent=resolved_intent,
-                            session_last_entity=session_last_entity,
-                            session_context=context.session_context,
-                        )
-                        logger.info(
-                            f"[{request_id}] [MERGE] Merged pending query '{pending_query}' with "
-                            f"clarification '{question}' (resolved intent: '{resolved_intent}') -> '{merged_query}'"
-                        )
-                        context.clarification_confidence = 0.90
-                        
-                        # Validate the merged query; if invalid, fall back to using the user's latest message only
-                        if not self._validate_merged_query(merged_query, resolved_intent):
-                            logger.warning(
-                                f"[{request_id}] [MERGE] Merged query '{merged_query}' failed validation for intent '{resolved_intent}'. "
-                                f"Falling back to latest clarification response: '{question}'"
-                            )
-                            merged_query = question
-                        
-                        # Update the context query and clean/normalize it
-                        context.question = merged_query
-                        normalized_question = self._light_normalize_query(context.question)
-                        original_query = self.workflow_executor.cleanup_query(context.question)
-                        context.cleaned_input = original_query
-                        
-                        logger.info(
-                            f"[{request_id}] [MERGE] Cleaned/rewritten merged query -> '{original_query}'"
-                        )
-                        
-                        # Set intent flags to lock the resolved intent and skip subsequent intent detection
-                        context.clarification_locked_intent = locked_intent
+                    
+                    # Fetch unified NLU cache to check if the user shifted topic/greetings
+                    cache_intent = None
+                    cache_conf = 0.0
+                    if self.first_layer_service:
+                        cache = self.first_layer_service.get_request_unified_result()
+                        if cache:
+                            norm_q = self.first_layer_service._normalize_key(normalized_question)
+                            if self.first_layer_service._normalize_key(cache.get("query", "")) == norm_q:
+                                cache_intent = cache.get("intent")
+                                cache_conf = cache.get("confidence", 0.0)
+
+                    # Guard 1: Small talk exit check (authoritative signal)
+                    if cache_intent == "small_talk":
+                        logger.info(f"[{request_id}] [ASK-BACK-EXIT] Small talk detected during clarification. Exiting.")
+                        context.session_context.resolve_clarification(None)
+                        context.intent = WorkflowIntent.SMALL_TALK
+                        small_talk_resp = await generate_small_talk_response(question, self.llm_service)
+                        context.metadata["small_talk_response"] = small_talk_resp
                         context.skip_intent_detection = True
-                        context.intent = locked_intent
-                        
-                        context.metadata["clarification_resolved"] = {
-                            "resolved_intent": resolved_intent,
-                            "via": "keyword",
-                            "merged_query": merged_query,
-                            "original_pending_query": pending_query,
-                            "clarification_response": question,
-                            "confidence": context.clarification_confidence,
-                        }
+
                     else:
-                        # Clarification could not be resolved. Handle retries up to MAX_ASK_BACK_RETRIES
-                        MAX_ASK_BACK_RETRIES = 2
-                        if context.session_context.ask_back_count >= MAX_ASK_BACK_RETRIES:
-                            # Too many failed attempts: clear pending state and fall through to standard processing
-                            context.session_context.pending_clarification = False
-                            context.session_context.clarification_intents = []
-                            context.session_context.ask_back_count = 0
-                        else:
-                            # Re-prompt the user to clarify with candidates
-                            context.session_context.set_pending_clarification(
-                                candidate_intents=context.session_context.clarification_intents,
-                                rewritten_query=context.session_context.pending_rewritten_query,
+                        # Guard 2: Topic switch / nested ask-back check
+                        # Layer 1: Deterministic structural fragment check
+                        is_slot_reply = self._is_slot_fragment_reply(
+                            normalized_question, context.session_context.clarification_intents
+                        )
+
+                        is_topic_switch_candidate = (
+                            not is_slot_reply
+                            and cache_intent in {"hs_code_lookup", "calculation", "trade_query", "general"}
+                            and cache_intent not in context.session_context.clarification_intents
+                        )
+                        is_bare_noun = False
+                        if is_topic_switch_candidate:
+                            # Precedence check: if it looks like a bare noun and locked intent is commodity-driven, let it merge
+                            is_bare_noun = (
+                                self._looks_like_short_product_lookup(normalized_question)
+                                and any(intent in {"hs_code_lookup", "calculation", "trade_query"} for intent in context.session_context.clarification_intents)
                             )
-                            context.finalize()
-                            return self._build_ask_back_response(
-                                context,
-                                question=context.session_context.pending_rewritten_query or question,
-                                clarification_question=(
-                                    "I still wasn't sure which option you meant. "
-                                    + ask_back_svc._template.generate(
-                                        query=question,
-                                        candidate_intents=context.session_context.clarification_intents,
-                                        session=context.session_context,
+
+                        should_exit = False
+                        if is_topic_switch_candidate and not is_bare_noun:
+                            if cache_conf < 0.50 or cache_intent == "small_talk":
+                                logger.info(f"[{request_id}] [ASK-BACK-EXIT] Topic switch / low confidence ({cache_conf} < 0.50) to {cache_intent}. Exiting clarification.")
+                                context.session_context.resolve_clarification(None)
+                                self._clear_product_clarification(context.session_context)
+                                should_exit = True
+                            elif cache_conf >= 0.80:
+                                logger.info(f"[{request_id}] [ASK-BACK-EXIT] High-confidence topic switch detected to {cache_intent} (conf={cache_conf}). Exiting clarification.")
+                                context.session_context.resolve_clarification(None)
+                                self._clear_product_clarification(context.session_context)
+                                should_exit = True
+                            elif 0.60 <= cache_conf < 0.80:
+                                logger.info(f"[{request_id}] [ASK-BACK-EXIT] Nested Ask-Back triggered for {cache_intent} (conf={cache_conf}).")
+                                context.session_context.resolve_clarification(None)
+                                self._clear_product_clarification(context.session_context)
+                                llm_ask_back = ask_back_svc.ask_back_service
+                                ask_back_res = await llm_ask_back.get_clarification_async(
+                                    query=question,
+                                    intent_label=cache_intent,
+                                    confidence=cache_conf,
+                                )
+                                clarification_text = ask_back_res.question
+                                candidates = ask_back_res.candidate_intents
+                                
+                                context.session_context.pending_clarification = True
+                                context.session_context.clarification_intents = candidates
+                                context.session_context.pending_rewritten_query = question
+                                
+                                context.finalize()
+                                return self._build_ask_back_response(
+                                    context,
+                                    question=question,
+                                    clarification_question=clarification_text,
+                                    candidate_intents=candidates,
+                                    trigger_reason="nested_ask_back",
+                                )
+                            elif 0.30 <= cache_conf < 0.60:
+                                logger.info(f"[{request_id}] [ASK-BACK-EXIT] Low-confidence topic switch detected to {cache_intent} (conf={cache_conf}). Exiting clarification.")
+                                context.session_context.resolve_clarification(None)
+                                self._clear_product_clarification(context.session_context)
+                                should_exit = True
+                            else:
+                                logger.info(f"[{request_id}] [ASK-BACK-IGNORE] Extremely low-confidence topic switch candidate {cache_intent} (conf={cache_conf} < 0.30) treated as classifier noise; staying in clarification.")
+
+                        if not should_exit:
+                            # Resolve which of the candidate intents the user meant based on their response
+                            resolved_intent = ask_back_svc.resolve_from_user_response(
+                                user_text=question,
+                                candidate_intents=context.session_context.clarification_intents,
+                            )
+                            if resolved_intent:
+                                try: locked_intent = WorkflowIntent(resolved_intent)
+                                except ValueError: locked_intent = None
+                                
+                                # Retrieve the original pending query and merge it with the new clarification details.
+                                # Pass session_last_entity so _merge_pending_with_clarification can fall back
+                                # to the turn-1 entity if the turn-2 fragment carried no entity of its own.
+                                session_last_entity = getattr(context.session_context, 'last_entity', None)
+                                pending_query = context.session_context.resolve_clarification(resolved_intent)
+                                
+                                # If the pending query is missing (e.g. session was created fresh without a prior
+                                # ask-back turn), fall back to the last normalized query from the session.
+                                # This lets the merge reconstruct context (CIF, origin, entity) from Turn 1.
+                                if not pending_query and getattr(context.session_context, 'last_normalized_query', None):
+                                    pending_query = context.session_context.last_normalized_query
+                                    logger.info(
+                                        f"[{request_id}] [MERGE] pending_rewritten_query was None; "
+                                        f"falling back to last_normalized_query: '{pending_query}'"
                                     )
-                                ),
-                                candidate_intents=context.session_context.clarification_intents,
-                                trigger_reason="unresolved_retry",
-                            )
+                                
+                                merged_query = self._merge_pending_with_clarification(
+                                    pending_query=pending_query,
+                                    clarification_response=question,
+                                    resolved_intent=resolved_intent,
+                                    session_last_entity=session_last_entity,
+                                    session_context=context.session_context,
+                                )
+                                logger.info(
+                                    f"[{request_id}] [MERGE] Merged pending query '{pending_query}' with "
+                                    f"clarification '{question}' (resolved intent: '{resolved_intent}') -> '{merged_query}'"
+                                )
+                                context.clarification_confidence = 0.90
+                                
+                                # Validate the merged query; if invalid, fall back to using the user's latest message only
+                                if not self._validate_merged_query(merged_query, resolved_intent):
+                                    logger.warning(
+                                        f"[{request_id}] [MERGE] Merged query '{merged_query}' failed validation for intent '{resolved_intent}'. "
+                                        f"Falling back to latest clarification response: '{question}'"
+                                    )
+                                    merged_query = question
+                                
+                                # Update the context query and clean/normalize it
+                                context.question = merged_query
+                                normalized_question = self._light_normalize_query(context.question)
+                                original_query = self.workflow_executor.cleanup_query(context.question)
+                                context.cleaned_input = original_query
+                                
+                                logger.info(
+                                    f"[{request_id}] [MERGE] Cleaned/rewritten merged query -> '{original_query}'"
+                                )
+                                
+                                # Set intent flags to lock the resolved intent and skip subsequent intent detection
+                                context.clarification_locked_intent = locked_intent
+                                context.skip_intent_detection = True
+                                context.intent = locked_intent
+                                
+                                context.metadata["clarification_resolved"] = {
+                                    "resolved_intent": resolved_intent,
+                                    "via": "keyword",
+                                    "merged_query": merged_query,
+                                    "original_pending_query": pending_query,
+                                    "clarification_response": question,
+                                    "confidence": context.clarification_confidence,
+                                }
+                            else:
+                                # Clarification could not be resolved. Handle retries up to MAX_ASK_BACK_RETRIES
+                                MAX_ASK_BACK_RETRIES = 2
+                                if context.session_context.ask_back_count >= MAX_ASK_BACK_RETRIES:
+                                    # Too many failed attempts: clear pending state and fall through to standard processing
+                                    context.session_context.pending_clarification = False
+                                    context.session_context.clarification_intents = []
+                                    context.session_context.ask_back_count = 0
+                                else:
+                                    # Re-prompt the user to clarify with candidates
+                                    context.session_context.set_pending_clarification(
+                                        candidate_intents=context.session_context.clarification_intents,
+                                        rewritten_query=context.session_context.pending_rewritten_query,
+                                    )
+                                    context.finalize()
+                                    return self._build_ask_back_response(
+                                        context,
+                                        question=context.session_context.pending_rewritten_query or question,
+                                        clarification_question=(
+                                            "I still wasn't sure which option you meant. "
+                                            + ask_back_svc._template.generate(
+                                                query=question,
+                                                candidate_intents=context.session_context.clarification_intents,
+                                                session=context.session_context,
+                                            )
+                                        ),
+                                        candidate_intents=context.session_context.clarification_intents,
+                                        trigger_reason="unresolved_retry",
+                                    )
                 except Exception as e:
                     logger.warning(f"[{request_id}] Clarification resolution failed: {e}")
 
@@ -601,43 +666,16 @@ class ServiceCoordinator:
                     "metadata": {"latency_ms": context.latency_ms, "request_id": request_id, "validation_failed": True}
                 }
             
-            # If the query is out of the system's operational scope, handle gracefully as dynamic small talk
+            # If the query is out of the system's operational scope, route to SMALL_TALK
             if not validation_result.is_in_scope:
                 context.metadata["scope_check"] = {
                     "in_scope": False,
                     "reason": validation_result.scope_reason,
                     "keywords": validation_result.scope_keywords_matched
                 }
-                logger.info(f"[{request_id}] Query is out of scope. Handling as small talk.")
-                
-                # Generate a dynamic conversational refusal or fallback response via the LLM
-                small_talk_response = await detect_small_talk(normalized_question, self.llm_service, force_llm_fallback=True)
-                
+                logger.info(f"[{request_id}] Query is out of scope. Routing to small talk.")
                 context.intent = WorkflowIntent.SMALL_TALK
-                context.status = WorkflowStatus.COMPLETED
-                context.finalize()
-                
-                # Update session history with the fallback exchange
-                if self.use_input_rewriter and session_id:
-                    try:
-                        self.rewriter_service.update_session_context(session_id, last_intent="small_talk")
-                        session_context = self.rewriter_service.get_or_create_session(session_id)
-                        session_context.add_turn(user_input=question, bot_response=small_talk_response)
-                    except Exception as e:
-                        logger.warning(f"[{request_id}] Failed to update session for small talk: {e}")
-                
-                return {
-                    "intent": "small_talk",
-                    "status": "completed",
-                    "answer": small_talk_response,
-                    "sources": [],
-                    "metadata": {
-                        "latency_ms": context.latency_ms,
-                        "session_id": session_id,
-                        "request_id": request_id,
-                        "scope_check": context.metadata["scope_check"]
-                    }
-                }
+                context.skip_intent_detection = True
             
             context.metadata["validation_passed"] = True
             context.metadata["scope_keywords_detected"] = validation_result.scope_keywords_matched
@@ -649,9 +687,8 @@ class ServiceCoordinator:
             _intent_confidence: float = 1.0
             raw_detected_intent = None
 
-            if context.skip_intent_detection and context.clarification_locked_intent:
-                # Reuse the previously resolved and locked intent
-                context.intent = context.clarification_locked_intent
+            if context.skip_intent_detection:
+                # Reuse the previously resolved or manually set intent
                 raw_detected_intent = context.intent
             else:
                 # Classify intent and confidence scores
@@ -705,6 +742,7 @@ class ServiceCoordinator:
                 elif (
                     context.session_context
                     and _turn_number >= 2
+                    and not self.use_input_rewriter
                     and not self._is_self_sufficient_query(
                         normalized_question, context.intent, _intent_confidence
                     )
@@ -748,7 +786,8 @@ class ServiceCoordinator:
                 WorkflowIntent.CALCULATION,
                 WorkflowIntent.TRADE_QUERY,
                 WorkflowIntent.HS_CODE_LOOKUP,
-                WorkflowIntent.GENERAL
+                WorkflowIntent.GENERAL,
+                WorkflowIntent.SMALL_TALK
             }:
                 logger.info(f"[{request_id}] Query intent '{context.intent}' does not match any core intention. Handling as small talk.")
                 
@@ -805,7 +844,7 @@ class ServiceCoordinator:
 
             if (
                 self.use_input_rewriter
-                and (raw_detected_intent != WorkflowIntent.HS_CODE_LOOKUP or is_ambiguous)
+                and raw_detected_intent != WorkflowIntent.SMALL_TALK
             ):
                 intent_hint = context.intent.value if context.intent else None
                 try:
@@ -850,10 +889,7 @@ class ServiceCoordinator:
             else:
                 context.rewrite_metadata = {
                     "rewrite_reason": "not_applied",
-                    "reason": (
-                        "hs_code_lookup rule" if context.intent == WorkflowIntent.HS_CODE_LOOKUP
-                        else "input_rewriter_disabled"
-                    ),
+                    "reason": "input_rewriter_disabled_or_small_talk",
                     "intent": context.intent.value if context.intent else None,
                 }
                 logger.info(
@@ -870,6 +906,12 @@ class ServiceCoordinator:
             context.metadata["intent_query"] = original_query
             context.metadata["service_query"] = service_query
             context.metadata["query_strategy"] = query_strategy
+
+            # Run the postponed safety gate on the final service query (either rewritten or original)
+            if context.metadata.get("_safety_gate_postponed"):
+                context.metadata["_safety_gate_postponed"] = False
+                context.intent = self._apply_intent_safety_gate(context, service_query, postpone_allowed=False)
+
             target_service = self._resolve_target_service(context.intent)
 
             # Perform the async microservice routing
@@ -880,21 +922,22 @@ class ServiceCoordinator:
                 try:
                     # Detect and set product category & import/export mode in session
                     from .hs_classifier import detect_simple_product_category
-                    category = detect_simple_product_category(context.original_input)
-                    mode = "import" if "import" in context.original_input.lower() else "export" if "export" in context.original_input.lower() else None
+                    tracking_query = context.rewritten_input if rewrite_status == "applied" else (context.cleaned_input or context.original_input)
+                    category = detect_simple_product_category(tracking_query)
+                    mode = "import" if "import" in tracking_query.lower() else "export" if "export" in tracking_query.lower() else None
 
                     # ---- Two-turn state: populate last_intent / last_entity / last_*_query ----
                     # last_raw_query: pre-standardization text (for audit/logging only)
                     # last_normalized_query: post-standardization canonical form used by merge logic
                     # last_entity: core subject noun phrase extracted via shared utility
-                    last_entity_val = extract_entity(context.cleaned_input or context.original_input)
+                    last_entity_val = extract_entity(tracking_query)
                     if not last_entity_val and context.session_context:
                         last_entity_val = getattr(context.session_context, 'last_entity', None)
 
                     update_kwargs = {
                         "last_intent": context.intent.value if context.intent else None,
                         "last_raw_query": question,          # original pre-standardization input
-                        "last_normalized_query": original_query,  # post-standardization canonical form
+                        "last_normalized_query": tracking_query,  # post-standardization canonical form
                         "last_entity": last_entity_val,
                     }
                     if context.detected_currency:
@@ -983,6 +1026,7 @@ class ServiceCoordinator:
         if intent == WorkflowIntent.CALCULATION: return "calculator"
         if intent == WorkflowIntent.TRADE_QUERY: return "trade_data"
         if intent == WorkflowIntent.GENERAL: return "general"
+        if intent == WorkflowIntent.SMALL_TALK: return "small_talk"
         return "retrieval"
 
     def _merge_pending_with_clarification(
@@ -1004,16 +1048,16 @@ class ServiceCoordinator:
         4. fall back to pending_query as-is
         """
         try:
-            # ---- Step 1: extract entity from the pending (turn-2) fragment ----
-            entity = extract_entity(pending_query) if pending_query else None
+            # ---- Step 1: extract entity from the clarification response (the user's answer) ----
+            entity = extract_entity(clarification_response) if clarification_response else None
 
-            # ---- Step 2: fall back to turn-1 entity held in session state ----
+            # ---- Step 2: fall back to the pending query fragment ----
+            if entity is None and pending_query:
+                entity = extract_entity(pending_query)
+
+            # ---- Step 3: fall back to turn-1 entity held in session state ----
             if entity is None and session_last_entity:
                 entity = session_last_entity
-
-            # ---- Step 2.5: fallback to extracting entity from clarification response if still None ----
-            if entity is None and clarification_response:
-                entity = extract_entity(clarification_response)
 
             # ---- Step 2.6: Perform pronoun replacement early ----
             response_lower = clarification_response.strip().lower()
@@ -1163,7 +1207,7 @@ class ServiceCoordinator:
                             month = month_match.group(1)
 
                 mode = mode or "import"
-                query_parts = [f"What are the {mode} requirements for {product}"]
+                query_parts = [f"What are the {mode} statistics for {product}"]
                 if country_phrase:
                     # Title case country words for professional display
                     words = country_phrase.split()
@@ -1328,7 +1372,7 @@ class ServiceCoordinator:
         except Exception as e:
             logger.warning(f"Failed to update session for query {query}: {e}")
 
-    def _apply_intent_safety_gate(self, context: WorkflowContext, original_query: str) -> WorkflowIntent:
+    def _apply_intent_safety_gate(self, context: WorkflowContext, original_query: str, postpone_allowed: bool = True) -> WorkflowIntent:
         """
         Safety mechanism that can override or adjust the detected intent based on 
         additional analysis. Prevents false classifications and corrects intent misdetections.
@@ -1337,6 +1381,40 @@ class ServiceCoordinator:
         detected_intent = context.intent
 
         if detected_intent == WorkflowIntent.HS_CODE_LOOKUP:
+            # Even when LLM classifies as HS_CODE_LOOKUP, run a sanity check:
+            # if the query looks like a greeting/typo (not a product description),
+            # downgrade it to SMALL_TALK to avoid routing gibberish into the retrieval pipeline.
+            candidate_query = original_query or context.cleaned_input
+            if not self._looks_like_short_product_lookup(candidate_query) and not self._looks_like_commercial_description(candidate_query):
+                # Check if it contains any HS-specific keywords that make it genuinely an HS query.
+                # IMPORTANT: use `context.question` (the raw, unmodified user input from WorkflowContext),
+                # NOT `context.cleaned_input` or `original_query` — cleanup_query() intentionally strips
+                # "hs code" suffix patterns via FILLER_PATTERNS, so those variables lose the keyword signal.
+                # e.g. "can you help me with hs code" → cleaned: "can you help me with" (keyword gone).
+                raw_lower = (original_query if not postpone_allowed else (context.question or original_query or "")).strip().lower()
+                has_hs_keyword = any(
+                    re.search(rf"\b{re.escape(kw)}\b", raw_lower)
+                    for kw in ["hs", "code", "tariff", "classify", "classification", "hts", "import", "export", "duty", "tax", "cbu", "ckd", "skd"]
+                )
+                if not has_hs_keyword:
+                    is_follow_up = self.use_input_rewriter and context.session_context and len(getattr(context.session_context, 'turns', [])) > 0
+                    if postpone_allowed and is_follow_up:
+                        logger.info(
+                            f"[{context.request_id}] [SAFETY-GATE] Postponing HS_CODE_LOOKUP downgrade to SMALL_TALK for follow-up query: '{original_query}'"
+                        )
+                        if not context.metadata:
+                            context.metadata = {}
+                        context.metadata["_safety_gate_postponed"] = True
+                        return detected_intent
+
+                    # Bare short word that passed NLU as HS_CODE_LOOKUP but has no
+                    # HS keywords and isn't a product description — treat as small talk.
+                    logger.info(
+                        f"[{context.request_id}] [SAFETY-GATE] HS_CODE_LOOKUP flagged for"
+                        f" '{raw_lower[:40]}' but no HS keyword or product description found."
+                        " Downgrading to SMALL_TALK."
+                    )
+                    return WorkflowIntent.SMALL_TALK
             return detected_intent
 
         # For lower-confidence intents (GENERAL, UNCLASSIFIED),
@@ -1388,9 +1466,17 @@ class ServiceCoordinator:
         tokens = re.findall(r"[a-z0-9]+", normalized)
         if not tokens or len(tokens) > 6: 
             return False
-        # Blocks casual chat/off-topic queries
+        # Guard A: known build-format abbreviations are spec answers, not standalone product lookups.
+        _BUILD_FORMAT_ABBREVS = {"cbu", "ckd", "skd"}
+        if len(tokens) == 1 and tokens[0] in _BUILD_FORMAT_ABBREVS:
+            return False
+        # Blocks casual chat/off-topic queries (including repeated-char greeting typos like "hii", "heyyy")
         blocked_tokens = {"hello", "hi", "hey", "thanks", "please", "weather", "time", "date", "football", "soccer", "movie", "music", "recipe", "cook", "joke", "politics", "war", "crime", "hack", "hacking", "investment", "stock"}
-        if any(token in blocked_tokens for token in tokens): 
+        if any(token in blocked_tokens for token in tokens):
+            return False
+        # Catch greeting typos: "hii", "hiii", "heyyy", "heyy", "helloooo" etc.
+        # These are strings that are just repetitions of a known greeting base character pattern.
+        if re.match(r"^(h[aeiou]{2,}|hey+|hell[o]+|hi+)$", normalized):
             return False
         # Filter countries
         if any(token in _TRADE_COUNTRIES for token in tokens):
@@ -1462,11 +1548,11 @@ class ServiceCoordinator:
         overlap = input_tokens & expected_terms
         if not overlap:
             # Fallback: for "other" category with no derived expected terms,
-            # accept the input if it looks like a short product description.
-            if not expected_terms and self._looks_like_short_product_lookup(stripped):
+            # accept the input as a spec answer (Guard 4 validates merged result).
+            if not expected_terms:
                 logger.info(
-                    f"[{request_id}] [SPEC-MERGE] No expected terms ('other' category) — "
-                    "falling back to _looks_like_short_product_lookup: PASS."
+                    f"[{request_id}] [SPEC-MERGE] No expected terms — accepting '{stripped[:40]}' "
+                    "as spec answer (Guard 4 validates the merged result)."
                 )
             else:
                 logger.info(
@@ -1505,6 +1591,7 @@ class ServiceCoordinator:
         context.metadata["_spec_merge_done"] = True
         context.metadata["spec_merge_entity"] = entity
         context.metadata["spec_merge_answer"] = stripped
+        session.last_entity = merged  # Fix 4: stable product ground truth for subsequent turns
         session._trigger_change()
 
         normalized_merged = self._light_normalize_query(merged)
@@ -1578,12 +1665,8 @@ class ServiceCoordinator:
         """
         if not rewriter_enabled:
             return "input_rewriter_disabled"
-        if intent == WorkflowIntent.TRADE_QUERY:
-            return "trade_query rule"
-        if intent == WorkflowIntent.HS_CODE_LOOKUP:
-            return "hs_code_lookup rule — retrieval service has own LLM spec extraction"
-        if intent == WorkflowIntent.CALCULATION:
-            return "calculation rule — calculator service parses raw query directly"
+        if intent == WorkflowIntent.SMALL_TALK:
+            return "small_talk rule"
         return "rewrite_allowed"
     
     def _is_self_sufficient_query(
@@ -1622,47 +1705,49 @@ class ServiceCoordinator:
         # ambiguous and we do not guess the intention.
         return False
 
+    def _tokens_match(self, t1: str, t2: str) -> bool:
+        """Determines if two tokens match, allowing for typos, plurals, and tenses."""
+        if t1 == t2:
+            return True
+        # Handle plurals/grammatical suffix variations
+        if t1.rstrip('s') == t2.rstrip('s'):
+            return True
+        if len(t1) >= 4 and len(t2) >= 4:
+            if t1.startswith(t2) or t2.startswith(t1):
+                return True
+        # Handle common transposition typos (like bwm -> bmw, htc -> hct)
+        if len(t1) >= 3 and len(t2) == len(t1):
+            if sorted(t1) == sorted(t2):
+                # Allow at most 1 transposition (max 2 character differences)
+                diff = sum(1 for c1, c2 in zip(t1, t2) if c1 != c2)
+                if diff <= 2:
+                    return True
+        # Handle single-character difference typos for tokens of length >= 4 (e.g. build vs built)
+        if len(t1) >= 4 and len(t2) == len(t1):
+            diff = sum(1 for c1, c2 in zip(t1, t2) if c1 != c2)
+            if diff <= 1:
+                return True
+        return False
+
     def _is_rewrite_valid(self, original_query: str, rewritten_query: str, intent: Optional[WorkflowIntent] = None) -> bool:
         """
-        Validates that a rewritten query preserves the essential structure and meaning
-        of the original query. Prevents over-aggressive rewrites that lose critical data.
-
-        For GENERAL intent, only checks that the rewrite is non-empty — short follow-up
-        queries like "what about it?" legitimately expand to much longer, low-overlap results.
-        For all other intents, enforces structured token preservation and ≥50% token overlap.
+        Validates that a rewritten query preserves essential structured tokens (codes, specs, numbers)
+        from the original query while trusting the LLM rewriter to decide semantic phrasing.
         """
-        # TOKENIZE both queries into comparable units
-        # Extracts: words, numbers, structured identifiers (with dots/dashes). e.g,  "500cc" → ["500cc"]
         original_tokens = self._rewrite_tokens(original_query)
         rewritten_tokens = self._rewrite_tokens(rewritten_query)
 
         if not rewritten_tokens:
             return False
 
-        # GENERAL intent: trust the LLM rewriter — only reject empty rewrites.
-        # Short pronouns/follow-ups ("what about it?") expand naturally to low-overlap results.
-        if intent == WorkflowIntent.GENERAL:
-            return True
-
-        """
-        EXTRACT structured tokens from original
-        "Structured" = contains digits OR has dots/dashes (codes, specs, years, versions)
-        Examples: "500cc", "2024", "hs-code", "v1.0", "model-x3"
-        These are critical identifiers that MUST be preserved
-        """
+        # Structured tokens = tokens containing digits, dots, or dashes (e.g. HS codes, years, engine sizes like "500cc", "8703.23")
+        # Ensure these critical identifiers from the original query are preserved in the rewrite.
         structured_tokens = {token for token in original_tokens if any(char.isdigit() for char in token) or "." in token or "-" in token}
-        # check if the rewritten query contains all essential information
         if structured_tokens and not structured_tokens.issubset(set(rewritten_tokens)):
             return False
 
-        # Bypass strict vocabulary overlap check for relative follow-up queries
-        relative_prefixes = ["what about", "how about", "what of", "and for", "then", "also"]
-        if any(original_query.lower().strip().startswith(prefix) for prefix in relative_prefixes):
-            return True
-
-        # For calculation: how much of the original vocabulary appears in the rewrite?
-        overlap = len(set(original_tokens) & set(rewritten_tokens)) / max(len(set(original_tokens)), 1)
-        return overlap >= 0.5
+        # Trust the LLM rewriter decision for semantic query reconstruction
+        return True
     
     # Tokenizes text into a list of word/number/identifier tokens.(for sematic purpose)
     def _rewrite_tokens(self, text: str) -> list[str]:
@@ -1684,6 +1769,7 @@ class ServiceCoordinator:
         elif intent == WorkflowIntent.TRADE_QUERY: await self._handle_trade_query(context)
         elif intent == WorkflowIntent.HS_CODE_LOOKUP: await self._handle_hs_code_lookup(context)
         elif intent == WorkflowIntent.GENERAL: await self._handle_default(context)
+        elif intent == WorkflowIntent.SMALL_TALK: await self._handle_small_talk(context)
         else: await self._handle_default(context)
     
     async def _execute_service_call(self, context: WorkflowContext, service_name: str, client_call_fn, request_payload: Dict[str, Any]):
@@ -1751,8 +1837,46 @@ class ServiceCoordinator:
                 context.status = WorkflowStatus.FAILED
                 return
                 
-            cache = get_cache_service()
             service_query = self._get_service_query(context)
+
+            # Check if mandatory calculation parameters (CIF value / numeric financial amount) are missing
+            cif_val = getattr(context.session_context, 'cif_value', None) if context.session_context else None
+            q_lower = service_query.lower()
+            has_numeric_val = bool(re.search(r'\d+(?:,\d{3})*(?:\.\d+)?', q_lower))
+            has_cif_keyword = any(k in q_lower for k in ["cif", "usd", "$", "khr", "price", "value", "worth", "cost"])
+
+            if not cif_val and not (has_numeric_val and has_cif_keyword):
+                logger.info(f"[{context.request_id}] Calculation missing CIF value. Prompting user for clarification.")
+                
+                # Extract specific subject/product name dynamically from session context or query
+                product_name = None
+                if context.session_context:
+                    product_name = (
+                        getattr(context.session_context, 'clarification_entity', None)
+                        or getattr(context.session_context, 'commercial_description', None)
+                        or getattr(context.session_context, 'product_category', None)
+                    )
+                if not product_name:
+                    cleaned_product = re.sub(
+                        r"(?i)\b(calculate|compute|how|about|the|tax|taxes|duty|duties|import|export|for|cbu|ckd|hs|code)\b",
+                        "",
+                        service_query
+                    ).strip()
+                    cleaned_product = re.sub(r"\s+", " ", cleaned_product).strip()
+                    product_name = cleaned_product if cleaned_product else "this product"
+
+                context.set_result("calculation", {
+                    "answer": (
+                        f"To calculate the import duty and taxes for **{product_name}**, please provide the **CIF value** "
+                        "(Cost, Insurance, and Freight invoice value in USD or KHR, e.g., `$80,000 USD`)."
+                    ),
+                    "clarification_required": True,
+                    "missing_fields": ["cif_value"]
+                })
+                context.status = WorkflowStatus.CLARIFICATION_REQUIRED
+                return
+
+            cache = get_cache_service()
             cached_result = cache.get_cached_response(service_query, intent="calculation")
             if cached_result:
                 context.set_result("calculation", cached_result)
@@ -1782,6 +1906,87 @@ class ServiceCoordinator:
             context.add_error(f"Calculator service error: {str(e)}")
             context.status = WorkflowStatus.FAILED
     
+    def _is_slot_fragment_reply(self, user_text: str, clarification_intents: list) -> bool:
+        """
+        Gated structural matcher that checks if user text is a parameter/slot fragment reply.
+        Filters out full conversational questions and exit markers before evaluating slot patterns.
+        """
+        if not user_text:
+            return False
+
+        low = user_text.lower().strip()
+
+        # 1. Discourse & Exit Markers
+        exit_markers = [
+            "never mind", "nevermind", "actually", "forget it", "cancel", "instead",
+            "what documents", "how do i", "what changed", "where can i", "is there any"
+        ]
+        if any(marker in low for marker in exit_markers):
+            return False
+
+        # 2. Key-Value Parameter Syntax
+        if any(kv in low for kv in ["partner country:", "flow:", "period:", "product:", "cif:"]):
+            return True
+
+        # 3. Word Count Bound (Slot answers are concise fragments)
+        words = low.split()
+        if len(words) > 6:
+            return False
+
+        # 4. Slot Pattern Matches for Active Intents
+        if any(intent in {"trade_query", "trade_data"} for intent in clarification_intents):
+            has_flow = any(re.search(rf"\b{f}\b", low) for f in ["import", "export", "imported", "exported", "imports", "exports", "flow"])
+            partner_countries = [c for c in _TRADE_COUNTRIES if c != "cambodia"]
+            has_country = any(re.search(rf"\b{re.escape(c)}\b", low) for c in partner_countries)
+            has_period = bool(
+                re.search(
+                    r"\b(19|20)\d{2}\b|\bq[1-4]\b|\bquarter\s+[1-4]\b|\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\b|\b(last|this|next)\s+(month|quarter|year)\b",
+                    low
+                )
+            )
+            has_product = bool(extract_entity(low))
+            
+            if has_flow or has_country or has_period or has_product:
+                return True
+
+        return False
+
+    async def _generate_trade_clarification_message(
+        self,
+        query: str,
+        missing_slots: List[str],
+        product_name: str
+    ) -> str:
+        """Generates a friendly, conversational LLM message requesting missing mandatory trade parameters for trade queries."""
+        missing_desc = ", ".join(missing_slots)
+        fallback_msg = (
+            f"To assist you with trade statistics for **{product_name}**, please specify the missing details: "
+            + ", ".join(f"**{p}**" for p in missing_slots) + "."
+        )
+
+        if self.llm_service and self.llm_service.is_available():
+            prompt = _prompt_manager.render(
+                "generate_trade_clarification",
+                query=query,
+                product_name=product_name,
+                missing_desc=missing_desc,
+            )
+            try:
+                provider = self.llm_service.router.providers.get("gemini")
+                if provider and provider.is_available():
+                    response = await asyncio.to_thread(
+                        provider.client.models.generate_content,
+                        model=provider.model_name,
+                        contents=prompt,
+                    )
+                    content = (response.text or "").strip()
+                    if content:
+                        return content
+            except Exception as e:
+                logger.warning(f"LLM trade clarification generation failed: {e}")
+
+        return fallback_msg
+
     async def _handle_trade_query(self, context: WorkflowContext):
         try:
             if not self.trade_data_client:
@@ -1789,6 +1994,105 @@ class ServiceCoordinator:
                 context.status = WorkflowStatus.FAILED
                 return
             
+            service_query = self._get_service_query(context)
+
+            # Check for mandatory trade parameters across query and session history on trade query turns
+            session_context = context.session_context
+            texts_to_scan = [service_query]
+            if session_context:
+                if getattr(session_context, 'last_normalized_query', None):
+                    texts_to_scan.append(session_context.last_normalized_query)
+                if hasattr(session_context, "turns") and session_context.turns:
+                    for turn in reversed(session_context.turns):
+                        texts_to_scan.append(turn.get("user") or turn.get("user_input", ""))
+
+            # Strip negated terms ("not Vietnam", "not import") before slot extraction
+            def strip_negated_terms(text: str) -> str:
+                if not text: return text
+                cleaned = re.sub(r"(?i)\b(?:not|no|instead of|other than)\s+[a-z0-9\s-]+\b(?=,|$|\band\b|\bor\b|\bbut\b)", "", text)
+                cleaned = re.sub(r"(?i)\b[a-z0-9\s-]+\s+instead\b", "", cleaned)
+                return cleaned.strip()
+
+            combined_text = " ".join(strip_negated_terms(t) for t in texts_to_scan if t).lower()
+
+            # Slot 1: Product / Commodity entity
+            product_entity = extract_entity(combined_text) or (getattr(session_context, 'last_entity', None) if session_context else None)
+            
+            # Slot 2: Flow (import/export)
+            has_flow = any(f in combined_text for f in ["import", "export", "imported", "exported", "imports", "exports"])
+            
+            # Slot 3: Time Period (year, quarter, month, date range)
+            has_time_period = bool(
+                re.search(
+                    r"\b(19|20)\d{2}\b|\bq[1-4]\b|\bquarter\s+[1-4]\b|\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\b|\b(last|this|next)\s+(month|quarter|year)\b",
+                    combined_text
+                )
+            )
+
+            # Slot 4: Partner Country (excluding cambodia)
+            partner_countries = [c for c in _TRADE_COUNTRIES if c != "cambodia"]
+            has_partner_country = any(re.search(rf"\b{re.escape(c)}\b", combined_text) for c in partner_countries)
+
+            # Check escape hatch signals ("whatever", "idk", "latest", "any") or max retries cap
+            ask_back_count = getattr(session_context, 'ask_back_count', 0) if session_context else 0
+            is_escape_hatch = any(term in service_query.lower() for term in ["whatever", "idk", "don't know", "dont know", "any", "latest", "default"]) or ask_back_count >= MAX_PRODUCT_ASK_BACK_RETRIES
+
+            missing_slots = []
+            if not product_entity:
+                missing_slots.append("product")
+            if not has_flow:
+                missing_slots.append("flow")
+            if not has_time_period:
+                missing_slots.append("trade_period")
+            if not has_partner_country:
+                missing_slots.append("partner_country")
+
+            EXPECTED_TERMS_MAP = {
+                "product": ["commodity name", "HS code", "e.g. rice, coffee, motor vehicle"],
+                "flow": ["import", "export"],
+                "trade_period": ["month", "quarter", "year", "date range", "e.g. Q1 2026, 2025, last month"],
+                "partner_country": ["trading partner country", "e.g. Thailand, China, Vietnam, USA"]
+            }
+
+            if missing_slots and not is_escape_hatch:
+                product_name = product_entity or "the product"
+                friendly_message = await self._generate_trade_clarification_message(
+                    query=service_query,
+                    missing_slots=missing_slots,
+                    product_name=product_name
+                )
+                logger.info(f"[{context.request_id}] Trade query missing mandatory parameters: {missing_slots}. Prompting user with LLM message.")
+                
+                if session_context:
+                    session_context.pending_clarification = True
+                    session_context.clarification_intents = ["trade_query"]
+                    session_context.clarification_entity = missing_slots
+                    session_context.pending_rewritten_query = context.question
+                    session_context.ask_back_count += 1
+                    session_context._trigger_change()
+
+                context.set_result("trade_query", {
+                    "answer": friendly_message,
+                    "clarification_required": True,
+                    "missing_fields": missing_slots,
+                    "metadata": {
+                        "pending_clarification": True,
+                        "clarification_entity": missing_slots,
+                        "clarification_expected_terms": {s: EXPECTED_TERMS_MAP[s] for s in missing_slots if s in EXPECTED_TERMS_MAP},
+                        "original_query": context.question,
+                        "guard_triggered": "trade_mandatory_params"
+                    }
+                })
+                context.status = WorkflowStatus.CLARIFICATION_REQUIRED
+                return
+
+            # Clear pending clarification and reset ask_back_count on resolution / escape hatch execution
+            if session_context:
+                session_context.pending_clarification = False
+                session_context.clarification_intents = []
+                session_context.ask_back_count = 0
+                session_context._trigger_change()
+
             timeout_sec = min(self.timeout_config.get_intent_timeout(context.intent), self.timeout_config.get_service_timeout("trade_data"))
             
             async def run_call():
@@ -1802,6 +2106,19 @@ class ServiceCoordinator:
                 client_call_fn=run_call,
                 request_payload={"question": context.question}
             )
+
+            # Transparent escape hatch header if defaults were substituted
+            if is_escape_hatch and missing_slots and result and isinstance(result, dict):
+                disclosed_defaults = []
+                if "flow" in missing_slots: disclosed_defaults.append("**Import**")
+                if "trade_period" in missing_slots: disclosed_defaults.append("**2024 (latest year)**")
+                if "partner_country" in missing_slots: disclosed_defaults.append("**All Countries**")
+                if disclosed_defaults:
+                    notice = f"_Showing trade statistics using assumed defaults: {', '.join(disclosed_defaults)}._\n\n"
+                    orig_ans = result.get("final_answer") or result.get("answer") or ""
+                    result["final_answer"] = notice + orig_ans
+                    result["answer"] = notice + orig_ans
+
             context.set_result("trade_query", result)
             context.status = WorkflowStatus.COMPLETED
         except Exception as e:
@@ -1819,6 +2136,10 @@ class ServiceCoordinator:
             service_query = self._get_service_query(context)
             from ..utils import clean_hs_query_for_retrieval
             clean_query = clean_hs_query_for_retrieval(service_query)
+            if self._looks_like_short_product_lookup(clean_query):
+                service_query = f"what is hs code of {clean_query}"
+                clean_query = clean_hs_query_for_retrieval(service_query)
+                context.question = service_query
             logger.info(f"[{context.request_id}] Cleaned retrieval query: '{service_query}' -> '{clean_query}'")
 
             timeout_sec = min(
@@ -1879,6 +2200,22 @@ class ServiceCoordinator:
                 current_round = getattr(session, "product_ask_back_count", 0)
 
                 if is_generic and current_round < MAX_PRODUCT_ASK_BACK_RETRIES:
+                    # Fix 1b/1c: Invalidate stale hs_code and last_entity on confirmed topic change
+                    # Only run invalidation when NOT mid-spec-merge (Fix 1c for Guard 4 edge case)
+                    spec_merge_done = context.metadata.get("_spec_merge_done", False)
+                    if not getattr(session, "product_clarification_needed", False) and not spec_merge_done:
+                        prev_entity = session.last_entity or ""
+                        new_entity = context.original_input or ""
+                        prev_tokens = set(re.findall(r"[a-z0-9]+", prev_entity.lower()))
+                        new_tokens = set(re.findall(r"[a-z0-9]+", new_entity.lower()))
+                        if prev_tokens and not (prev_tokens & new_tokens):
+                            session.hs_code = None
+                            session.last_entity = new_entity
+                            logger.info(
+                                f"[{context.request_id}] [FIX-1b] Topic change detected "
+                                f"('{prev_entity}' → '{new_entity}') — cleared stale hs_code + last_entity."
+                            )
+
                     # Entity: use original_input (pre-rewrite) on first round;
                     # use accumulated merged query on subsequent rounds.
                     if current_round == 0:
@@ -1911,10 +2248,66 @@ class ServiceCoordinator:
                             "— cleared product clarification state."
                         )
 
+                    # Fix 1a: Persist resolved hs_code on successful specific lookup
+                    resolved_code = result.get("hs_code") or result.get("selected_code")
+                    if not is_generic and resolved_code:
+                        session.hs_code = resolved_code
+                        session.last_entity = session.last_entity or context.original_input
+                        session._trigger_change()
+
         except Exception as e:
             context.add_error(f"HS code lookup service error: {str(e)}")
             context.status = WorkflowStatus.FAILED
     
+    def _is_rag_no_info_response(self, answer_text: str, result_dict: dict) -> bool:
+        """Determines if the RAG response indicates no information was found in official documents."""
+        if not result_dict or not isinstance(result_dict, dict):
+            return True
+        if result_dict.get("is_generic") is True:
+            return True
+        if not answer_text:
+            return True
+        low = answer_text.lower()
+        no_info_patterns = [
+            "no definition",
+            "no information",
+            "not contain information",
+            "does not contain information",
+            "do not contain information",
+            "not mentioned in the provided documents",
+            "not mentioned in the documents",
+            "based on the provided documents",
+            "provided documents do not contain",
+            "provided documents do not",
+            "no specific information",
+            "is not mentioned",
+            "there is no information",
+            "cannot find information",
+        ]
+        return any(pat in low for pat in no_info_patterns)
+
+    async def _generate_parametric_definition_answer(self, query: str) -> str:
+        """Generates a direct LLM parametric answer for general terminology/definition queries when RAG has no document info."""
+        if self.llm_service and self.llm_service.is_available():
+            prompt = _prompt_manager.render(
+                "generate_parametric_definition",
+                query=query,
+            )
+            try:
+                provider = self.llm_service.router.providers.get("gemini")
+                if provider and provider.is_available():
+                    response = await asyncio.to_thread(
+                        provider.client.models.generate_content,
+                        model=provider.model_name,
+                        contents=prompt,
+                    )
+                    content = (response.text or "").strip()
+                    if content:
+                        return content
+            except Exception as e:
+                logger.warning(f"LLM parametric definition generation failed: {e}")
+        return f"I could not find an official document reference for '{query}'. Please specify if you are looking for customs procedures, tariff classifications, or duty calculations."
+
     async def _handle_definition(self, context: WorkflowContext):
         try:
             if not self.general_client:
@@ -1943,6 +2336,17 @@ class ServiceCoordinator:
                 client_call_fn=run_call,
                 request_payload={"query": service_query, "top_k": 5, "generate_answer": True, "session_id": context.session_id}
             )
+
+            # Fallback check: If RAG returned no document info, use direct LLM parametric knowledge
+            if result and isinstance(result, dict):
+                ans_text = result.get("final_answer") or result.get("answer") or ""
+                if self._is_rag_no_info_response(ans_text, result):
+                    logger.info(f"[{context.request_id}] RAG returned no document info for query '{service_query}'. Invoking LLM parametric fallback.")
+                    parametric_ans = await self._generate_parametric_definition_answer(service_query)
+                    result["answer"] = parametric_ans
+                    result["final_answer"] = parametric_ans
+                    result["source"] = "llm_parametric_knowledge"
+
             cache.cache_response(question=service_query, response=result, intent=intent_key, ttl_seconds=48*3600, source="general")
             context.set_result("retrieval", result)
             context.status = WorkflowStatus.COMPLETED
@@ -1976,13 +2380,49 @@ class ServiceCoordinator:
                 client_call_fn=run_call,
                 request_payload={"query": service_query, "top_k": 5, "generate_answer": True, "session_id": context.session_id}
             )
+
+            # Fallback check: If RAG returned no document info, use direct LLM parametric knowledge
+            if result and isinstance(result, dict):
+                ans_text = result.get("final_answer") or result.get("answer") or ""
+                if self._is_rag_no_info_response(ans_text, result):
+                    logger.info(f"[{context.request_id}] RAG returned no document info for query '{service_query}'. Invoking LLM parametric fallback.")
+                    parametric_ans = await self._generate_parametric_definition_answer(service_query)
+                    result["answer"] = parametric_ans
+                    result["final_answer"] = parametric_ans
+                    result["source"] = "llm_parametric_knowledge"
+
             cache.cache_response(question=service_query, response=result, intent="general", ttl_seconds=24*3600, source="general")
             context.set_result("retrieval", result)
             context.status = WorkflowStatus.COMPLETED
         except Exception as e:
             context.add_error(f"General service error: {str(e)}")
             context.status = WorkflowStatus.FAILED
-    
+            
+    async def _handle_small_talk(self, context: WorkflowContext):
+        logger.info(f"[{context.request_id}] Routing to small talk handler")
+        try:
+            # Audit and warn if customs keywords are confidently classified as small_talk (Gap 3 Resolved)
+            low = (context.question or "").lower()
+            customs_keywords = ["duty", "tariff", "hs code", "atiga", "rcep", "import", "export", "calculate", "tax"]
+            matched_kws = [kw for kw in customs_keywords if re.search(rf"\b{re.escape(kw)}\b", low)]
+            if matched_kws:
+                logger.warning(
+                    f"[{context.request_id}] [MONITOR] Query with customs keywords {matched_kws} "
+                    f"was routed to small_talk: '{context.question}'"
+                )
+
+            # Check if already cached in metadata (e.g. from _try_merge_product_spec)
+            small_talk_response = context.metadata.get("small_talk_response")
+            if not small_talk_response:
+                small_talk_response = await generate_small_talk_response(context.question, self.llm_service)
+            
+            context.set_result("small_talk", {"answer": small_talk_response})
+            context.status = WorkflowStatus.COMPLETED
+        except Exception as e:
+            logger.error(f"[{context.request_id}] Small talk handler failed: {e}")
+            context.add_error(f"Small talk service error: {str(e)}")
+            context.status = WorkflowStatus.FAILED
+
     def _build_ask_back_response(self, context: WorkflowContext, question: str, clarification_question: str, candidate_intents: list, trigger_reason: str = "") -> Dict[str, Any]:
         return {
             "request_id": context.request_id,
@@ -2007,6 +2447,11 @@ class ServiceCoordinator:
             "citations": [],
             "metadata": {}
         }
+        
+        if context.small_talk_result:
+            response["answer"] = context.small_talk_result.get("answer")
+            if "metadata" in context.small_talk_result and isinstance(context.small_talk_result["metadata"], dict):
+                response["metadata"].update(context.small_talk_result["metadata"])
         
         # ===== DIRECT EXTRACT FOR RETRIEVAL/HS_CODE_LOOKUP RESULT =====
         if context.retrieval_result:

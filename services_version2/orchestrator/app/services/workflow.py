@@ -48,7 +48,7 @@ class WorkflowContext:
     request_id: str
     question: str
     session_id: Optional[str] = None
-    intent: Optional[WorkflowIntent] = None
+    _intent: Optional[WorkflowIntent] = None
     status: WorkflowStatus = WorkflowStatus.PENDING
     
     # Input rewriting (context-aware input processing)
@@ -67,6 +67,7 @@ class WorkflowContext:
     retrieval_result: Optional[Dict[str, Any]] = None
     calculation_result: Optional[Dict[str, Any]] = None
     trade_query_result: Optional[Dict[str, Any]] = None
+    small_talk_result: Optional[Dict[str, Any]] = None
     
     # Currency extraction (for calculation workflows)
     detected_currency: Optional[str] = None
@@ -81,6 +82,23 @@ class WorkflowContext:
     # Error tracking
     errors: List[str] = None
     clarifications: List[str] = None
+
+    @property
+    def intent(self) -> Optional[WorkflowIntent]:
+        if hasattr(self, "_intent") and self.metadata and self.metadata.get("_safety_gate_postponed"):
+            import inspect
+            frame = inspect.currentframe().f_back
+            caller_name = frame.f_code.co_name if frame else "unknown"
+            if caller_name not in ["process_query", "_process_query_core", "_apply_intent_safety_gate", "detect_intent_with_confidence"]:
+                logger.warning(
+                    f"🚨 [WARNING] context.intent read while safety gate is postponed! "
+                    f"Caller: {caller_name}. Value is provisional."
+                )
+        return self._intent
+
+    @intent.setter
+    def intent(self, value: Optional[WorkflowIntent]):
+        self._intent = value
     
     def __post_init__(self):
         """Initialize default values."""
@@ -108,7 +126,7 @@ class WorkflowContext:
         Set result for a service call.
         
         Args:
-            result_type: Type of result (retrieval, calculation, trade_query)
+            result_type: Type of result (retrieval, calculation, trade_query, small_talk)
             result: The result dictionary
         """
         if result_type == "retrieval":
@@ -117,6 +135,8 @@ class WorkflowContext:
             self.calculation_result = result
         elif result_type == "trade_query":
             self.trade_query_result = result
+        elif result_type == "small_talk":
+            self.small_talk_result = result
     
     def finalize(self):
         """Mark workflow as completed and calculate latency."""

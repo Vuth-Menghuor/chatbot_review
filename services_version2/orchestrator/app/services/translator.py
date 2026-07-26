@@ -5,6 +5,11 @@ import logging
 from typing import Optional
 from ..ai import OrchestratorLLMService
 
+from prompts.dynamic_prompt_manager import DynamicPromptManager
+
+# Module-level prompt manager — loads from prompts/ directory on import
+_prompt_manager = DynamicPromptManager()
+
 logger = logging.getLogger(__name__)
 
 class QueryTranslator:
@@ -54,14 +59,7 @@ class QueryTranslator:
         if not query or not query.strip():
             return query
 
-        prompt = (
-            "You are a professional translator for Cambodia Customs and Trade.\n"
-            "Translate the following Khmer query to clear, standard English.\n"
-            "Guidelines:\n"
-            "- Preserve any customs/tariff technical jargon, abbreviations, or numbers exactly.\n"
-            "- Do not add explanations or conversational filler. Return ONLY the translated query.\n\n"
-            f"Query: {query}"
-        )
+        prompt = _prompt_manager.render("shared_translate_to_english", text=query)
 
         if self.openrouter_api_key:
             try:
@@ -83,15 +81,7 @@ class QueryTranslator:
         if not text or not text.strip():
             return text
 
-        prompt = (
-            "You are a professional translator for Cambodia Customs and Trade.\n"
-            "Translate the following English text/response to natural, polite Khmer.\n"
-            "Guidelines:\n"
-            "- Preserve all markdown structures, tables, bullet points, list items, and spacing exactly.\n"
-            "- Retain technical abbreviations or reference numbers in English if they don't have standard Khmer translations.\n"
-            "- Do not add explanations or conversational filler. Return ONLY the translated text.\n\n"
-            f"Text:\n{text}"
-        )
+        prompt = _prompt_manager.render("shared_translate_to_khmer", text=text)
 
         if self.openrouter_api_key:
             try:

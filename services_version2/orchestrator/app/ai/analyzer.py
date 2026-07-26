@@ -23,6 +23,11 @@ from ..schemas.ai_models import (
     RewriteResult,
 )
 
+from prompts.dynamic_prompt_manager import DynamicPromptManager
+
+# Module-level prompt manager — loads from prompts/ directory on import
+_prompt_manager = DynamicPromptManager()
+
 logger = logging.getLogger(__name__)
 
 # Request-scoped context variable to prevent cross-session concurrent data bleeding
@@ -106,6 +111,13 @@ class FirstLayerPipeline:
             self._rewriter_service = get_rewriter_service(config)
         return self._rewriter_service
 
+    @property
+    def ask_back_service(self):
+        """Lazy load ask back service."""
+        if self._ask_back_service is None:
+            self._ask_back_service = LLMAskBackService(self)
+        return self._ask_back_service
+
     async def process(
         self,
         query: str,
@@ -151,7 +163,7 @@ class FirstLayerPipeline:
         )
 
         try:
-            # ===== STEP 1: INPUT VALIDATION =====
+            # STEP 1: INPUT VALIDATION
             logger.debug(f"[{request_id}] [1/5] Validating input...")
             try:
                 result.validation = await self._step_validate(query)
@@ -170,7 +182,7 @@ class FirstLayerPipeline:
                 errors.append(f"validation_error: {e}")
                 result.validation = ValidationResult(ValidationStatus.INVALID, str(e))
 
-            # ===== STEP 2: INTENT DETECTION =====
+            # STEP 2: INTENT DETECTION
             logger.debug(f"[{request_id}] [2/5] Detecting intent...")
             try:
                 intent_obj = result.intent = await self._step_detect_intent(query)
@@ -183,7 +195,7 @@ class FirstLayerPipeline:
                 logger.error(f"[{request_id}] Intent detection failed: {e}")
                 errors.append(f"intent_error: {e}")
 
-            # ===== STEP 3: AMBIGUITY CHECK =====
+            # STEP 3: AMBIGUITY CHECK
             logger.debug(f"[{request_id}] [3/5] Checking for ambiguity...")
             try:
                 ambiguity_obj = result.ambiguity = await self._step_check_ambiguity(
@@ -210,7 +222,7 @@ class FirstLayerPipeline:
                 result.errors = errors
                 return result
 
-            # ===== STEP 4: CURRENCY DETECTION =====
+            # STEP 4: CURRENCY DETECTION
             logger.debug(f"[{request_id}] [4/5] Detecting currency...")
             try:
                 currency_obj = result.currency = await self._step_detect_currency(query)
@@ -225,7 +237,7 @@ class FirstLayerPipeline:
                 logger.error(f"[{request_id}] Currency detection failed: {e}")
                 errors.append(f"currency_error: {e}")
 
-            # ===== STEP 5: QUERY REWRITING (CONDITIONAL) =====
+            # STEP 5: QUERY REWRITING (CONDITIONAL)
             is_ambiguous = self._is_query_ambiguous(query, session_context, result.intent.intent)
             if is_ambiguous or result.intent.intent not in self.config.skip_rewrite_for_intents:
                 logger.debug(f"[{request_id}] [5/5] Rewriting query...")
@@ -504,6 +516,16 @@ class LLMFirstLayerService:
         from ..services.session_context import SessionManager
         self.session_manager = SessionManager()
 
+    @property
+    def ask_back_service(self):
+        return self._pipeline.ask_back_service
+
+    async def get_clarification_async(self, *args, **kwargs):
+        return await self._pipeline.ask_back_service.get_clarification_async(*args, **kwargs)
+
+    def resolve_from_user_response(self, user_text: str, candidate_intents: list) -> Optional[str]:
+        return self._pipeline.ask_back_service.resolve_from_user_response(user_text, candidate_intents)
+
     def get_or_create_session(self, session_id: str) -> Any:
         """Retrieve or create session context for a session ID."""
         return self.session_manager.get_or_create_session(session_id)
@@ -605,12 +627,24 @@ class LLMFirstLayerService:
                             llm_service.classify_intent, rewritten
                         )
                         intent_val = re_intent.value if hasattr(re_intent, "value") else re_intent
-                        logger.info(
-                            f"Re-classified unified intent on rewritten query '{rewritten}' "
-                            f"from '{res.get('intent')}' to '{intent_val}'"
-                        )
-                        res["intent"] = intent_val
-                        res["confidence"] = re_conf
+                        original_intent = res.get("intent")
+                        
+                        # Option B Guard: Don't let isolated re-classification downgrade an actionable intent to a low-signal intent
+                        ACTIONABLE_INTENTS = {"hs_code_lookup", "calculation", "trade_query"}
+                        LOW_SIGNAL_INTENTS = {"small_talk", "general", "unclassified"}
+                        
+                        if original_intent in ACTIONABLE_INTENTS and intent_val in LOW_SIGNAL_INTENTS:
+                            logger.info(
+                                f"Re-classified intent '{intent_val}' on rewritten query '{rewritten}' "
+                                f"was ignored. Retaining original actionable intent '{original_intent}' to prevent context loss."
+                            )
+                        else:
+                            logger.info(
+                                f"Re-classified unified intent on rewritten query '{rewritten}' "
+                                f"from '{original_intent}' to '{intent_val}'"
+                            )
+                            res["intent"] = intent_val
+                            res["confidence"] = re_conf
                     except Exception as e:
                         logger.warning(f"Failed to re-classify intent on rewritten query: {e}")
                 
@@ -648,9 +682,7 @@ class LLMFirstLayerService:
             intent_hint=intent_hint,
         )
 
-    # ------------------------------------------------------------------
     # Primary async API
-    # ------------------------------------------------------------------
 
     async def process(
         self,
@@ -667,9 +699,7 @@ class LLMFirstLayerService:
             session_id=session_id,
         )
 
-    # ------------------------------------------------------------------
     # Synchronous shim helpers (used by legacy / sync callers)
-    # ------------------------------------------------------------------
 
     def detect_intent(
         self,
@@ -700,9 +730,7 @@ class LLMFirstLayerService:
 
         return _IntentValue(intent.intent), intent.confidence, intent.reasoning
 
-    # ------------------------------------------------------------------
     # Internal helpers
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _run_sync(coro) -> Any:
@@ -734,3 +762,155 @@ def get_llm_first_layer_service(
     if _instance is None:
         _instance = LLMFirstLayerService(config)
     return _instance
+
+
+class LLMAskBackService:
+    def __init__(self, pipeline: "FirstLayerPipeline"):
+        self.pipeline = pipeline
+
+    async def get_clarification_async(
+        self,
+        query: str,
+        intent_label: str,
+        confidence: float,
+        session: Optional[Any] = None,
+        candidate_scores: Optional[dict] = None,
+        turn_number: int = 1,
+    ) -> Any:
+        """
+        Generates clarification questions when intent is ambiguous or correct intent but missing entity.
+        Distinguishes:
+        - "correct intent, missing entity" (capability questions like "can you help me with hs code"):
+          asks for product details/context.
+        - "ambiguous intent" (multiple plausible intents):
+          asks which of the candidate intents the user meant.
+        """
+        low_query = (query or "").lower()
+        has_hs = any(w in low_query for w in ["hs", "tariff", "classify", "code"])
+        has_calc = any(w in low_query for w in ["calculate", "calculation", "duty", "tax", "fee"])
+        has_trade = any(w in low_query for w in ["trade", "stat", "volume", "import", "export", "data"])
+        
+        if intent_label == "hs_code_lookup" and has_hs:
+            from ..utils import extract_entity
+            entity = extract_entity(low_query)
+            is_capability_ask = any(cap in low_query for cap in ["can you", "could you", "help me", "how to"]) and not entity
+            if is_capability_ask:
+                question = "Of course! I can help you with HS code classification. What product are you trying to look up?"
+                candidates = ["hs_code_lookup"]
+        elif intent_label == "calculation" and has_calc:
+            question = "Sure! I can help you estimate customs duties and taxes. What product are you importing, and what is its CIF value or import details?"
+            candidates = ["calculation"]
+        elif intent_label == "trade_query" and has_trade:
+            from ..utils import extract_entity
+            has_product = bool(extract_entity(low_query))
+            has_time_period = bool(
+                re.search(
+                    r"\b(19|20)\d{2}\b|\bq[1-4]\b|\bquarter\s+[1-4]\b|\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\b|\b(last|this|next)\s+(month|quarter|year)\b",
+                    low_query
+                )
+            )
+            
+            if not has_product and not has_time_period:
+                question = "Happy to help. Could you tell me (1) which product or commodity, and (2) what time period — e.g. 'rice imports for Q1 2026'?"
+            elif has_product and not has_time_period:
+                question = "Sure — trade data for what time period? For example: last month, Q1 2026, or 2025."
+            elif not has_product and has_time_period:
+                question = "Certainly! Which product or commodity trade data are you looking for?"
+            else:
+                question = "Certainly! I can help you with trade statistics. What trade details would you like to see?"
+            candidates = ["trade_query"]
+        else:
+            # Ambiguous intent: let the LLM generate a clarification question
+            question = f"I want to make sure I assist you correctly. Are you looking to find an HS code, calculate import duties/taxes, check trade statistics, or something else?"
+            candidates = [intent_label]
+            
+            # Optionally call LLM to generate a natural clarification question
+            llm_service = self.pipeline.intent_service._llm_provider
+            if llm_service and hasattr(llm_service, "router") and llm_service.is_available():
+                prompt = _prompt_manager.render(
+                    "ask_back_ambiguous_intent",
+                    query=query,
+                    intent_label=intent_label,
+                    confidence=f"{confidence:.2f}",
+                )
+                try:
+                    provider = llm_service.router.providers.get("gemini")
+                    if provider and provider.is_available():
+                        response = await asyncio.to_thread(
+                            provider.client.models.generate_content,
+                            model=provider.model_name,
+                            contents=prompt,
+                        )
+                        content = (response.text or "").strip()
+                        if content:
+                            question = content
+                except Exception as e:
+                    logger.warning(f"Failed to generate LLM clarification question: {e}")
+
+        class AskBackResult:
+            def __init__(self, should_ask_back: bool, question: str, candidate_intents: list):
+                self.should_ask_back = should_ask_back
+                self.question = question
+                self.candidate_intents = candidate_intents
+                self.trigger_reason = "low_confidence_or_ambiguous"
+
+        return AskBackResult(should_ask_back=True, question=question, candidate_intents=candidates)
+
+    def resolve_from_user_response(self, user_text: str, candidate_intents: list) -> Optional[str]:
+        """
+        Synchronously resolves which candidate intent the user selected.
+        If there is only one candidate, resolves to it unless the user explicitly requested a different intent.
+        """
+        if not candidate_intents:
+            return None
+
+        low_text = (user_text or "").lower().strip()
+
+        # Check if user explicitly requested a DIFFERENT core intent than what is in candidate_intents
+        has_other_hs = any(re.search(rf"\b{re.escape(w)}\b", low_text) for w in ["hs", "tariff", "hs code", "hs-code", "hscode", "tariff code", "ahtn", "hs classification", "tariff classification"])
+        has_other_calc = any(re.search(rf"\b{re.escape(w)}\b", low_text) for w in ["calculate duty", "calculate tax", "compute duty", "calculate import", "duty calculation", "calc duty", "calc tax", "calculate"])
+        has_other_trade = any(re.search(rf"\b{re.escape(w)}\b", low_text) for w in ["trade data", "trade statistics", "trade volume", "trade flow", "import statistics", "export statistics"])
+
+        # Robust calculation signal: calculation verbs/nouns or monetary/numeric patterns (e.g. "$20", "5 units", "cif", "tax", "duty")
+        has_calc_signal = (
+            any(re.search(rf"\b{re.escape(w)}\b", low_text) for w in [
+                "calculate", "calc", "compute", "duty", "tax", "vat", "cif", "fob",
+                "value", "cost", "price", "fee", "rate", "amount", "total"
+            ])
+            or bool(re.search(r"[$€£¥₩]\s*\d+|\d+\s*[$€£¥₩]|\b\d+\b", low_text))
+        )
+
+        # Counter-signal: if query contains ANY calculation signal AND calculation is an eligible candidate,
+        # suppress has_other_hs unless the query explicitly asks for an HS code/tariff code ("hs code", "tariff code", "ahtn").
+        is_explicit_hs_code = any(re.search(rf"\b{re.escape(w)}\b", low_text) for w in ["hs code", "hs-code", "hscode", "tariff code", "ahtn"])
+        if has_calc_signal and "calculation" in candidate_intents and not is_explicit_hs_code:
+            has_other_hs = False
+
+        if has_other_hs and "hs_code_lookup" not in candidate_intents:
+            return None
+        if has_other_calc and "calculation" not in candidate_intents:
+            return None
+        if has_other_trade and "trade_query" not in candidate_intents:
+            return None
+
+        if len(candidate_intents) == 1:
+            return candidate_intents[0]
+            
+        # Simple rule-based resolution
+        # Check for hs lookup keywords
+        hs_kws = ["hs", "lookup", "tariff", "classify", "code", "first", "1"]
+        calc_kws = ["calculate", "calculation", "tax", "duty", "fee", "second", "2"]
+        trade_kws = ["trade", "stat", "volume", "third", "3"]
+        general_kws = ["general", "policy", "rule", "document", "fourth", "4"]
+        
+        if any(w in low_text for w in hs_kws) and "hs_code_lookup" in candidate_intents:
+            return "hs_code_lookup"
+        if any(w in low_text for w in calc_kws) and "calculation" in candidate_intents:
+            return "calculation"
+        if any(w in low_text for w in trade_kws) and "trade_query" in candidate_intents:
+            return "trade_query"
+        if any(w in low_text for w in general_kws) and "general" in candidate_intents:
+            return "general"
+            
+        # Default fallback to first candidate if no keyword matches
+        return candidate_intents[0]

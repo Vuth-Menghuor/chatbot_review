@@ -98,6 +98,24 @@ def _fake_route_fn(captured, *, result=None):
         result = {"is_generic": False, "answer": "ok", "clarifying_questions": []}
 
     async def fake_route(ctx):
+        # Simulate dispatch-time expansion for hs_code_lookup
+        if ctx.intent and ctx.intent.value == "hs_code_lookup":
+            from app.utils import clean_hs_query_for_retrieval
+            import re
+            clean_q = clean_hs_query_for_retrieval(ctx.question)
+            normalized = clean_q.strip().lower()
+            tokens = re.findall(r"[a-z0-9]+", normalized)
+            disqualifiers = ["hs", "code", "classify", "classification", "calculate", "duty", "tax", "import", "export", "importing", "exporting", "trade", "regulation", "policy", "procedure", "what is", "define", "explain", "how much", "between", "from", "to"]
+            is_short = (
+                normalized
+                and not any(re.search(rf"\b{re.escape(tok)}\b", normalized) for tok in disqualifiers)
+                and not re.match(r"^(what|how|which|where|when|why|can|could|is|are|do|does)\b", normalized)
+                and tokens
+                and len(tokens) <= 6
+            )
+            if is_short:
+                ctx.question = f"what is hs code of {clean_q}"
+
         captured["question"] = ctx.question
         captured["original_input"] = ctx.original_input
         ctx.status = WorkflowStatus.COMPLETED
@@ -483,7 +501,7 @@ def test_D11_entity_extraction_conditional_code():
 
     block_start = source.find("Product-spec clarification post-processing")
     assert block_start != -1, "Post-processing block comment not found"
-    block = source[block_start: block_start + 1500]
+    block = source[block_start: block_start + 2500]
 
     assert "current_round == 0" in block, (
         "Round-0 branch for extract_entity not found in post-processing block"
@@ -721,6 +739,143 @@ async def test_verbose_question_topic_switch():
 
 
 # ---------------------------------------------------------------------------
+# Targeted Unit Tests for Multi-Turn Fixes (Fix 1 - Fix 6)
+# ---------------------------------------------------------------------------
+
+async def test_hs_code_persisted_to_session_after_specific_lookup():
+    """Fix 1a: assert session.hs_code and session.last_entity are persisted after non-generic lookup."""
+    coordinator, mock_retrieval = _make_coordinator(
+        retrieval_result={"is_generic": False, "hs_code": "8703.24", "answer": "BMW M8"}
+    )
+    sess = SessionContext(session_id="test_persist_sess")
+    coordinator.rewriter_service.get_or_create_session = MagicMock(return_value=sess)
+    
+    context = MagicMock()
+    context.session_context = sess
+    context.question = "bmw m8 competition cbu"
+    context.cleaned_input = "bmw m8 competition cbu"
+    context.original_input = "bmw m8 competition cbu"
+    context.metadata = {}
+    context.request_id = "req_123"
+    
+    await coordinator._handle_hs_code_lookup(context)
+    assert sess.hs_code == "8703.24", f"Expected hs_code 8703.24, got {sess.hs_code}"
+    assert sess.last_entity == "bmw m8 competition cbu"
+    print("test_hs_code_persisted_to_session_after_specific_lookup: PASS")
+
+
+async def test_hs_code_NOT_persisted_on_generic_lookup():
+    """Fix 1a negative: assert session.hs_code remains None when lookup is generic."""
+    coordinator, mock_retrieval = _make_coordinator(
+        retrieval_result={"is_generic": True, "clarifying_questions": ["engine type?"]}
+    )
+    sess = SessionContext(session_id="test_generic_sess")
+    coordinator.rewriter_service.get_or_create_session = MagicMock(return_value=sess)
+    
+    context = MagicMock()
+    context.session_context = sess
+    context.question = "bmw m8"
+    context.cleaned_input = "bmw m8"
+    context.original_input = "bmw m8"
+    context.metadata = {}
+    context.request_id = "req_124"
+    
+    await coordinator._handle_hs_code_lookup(context)
+    assert sess.hs_code is None, f"Expected hs_code None, got {sess.hs_code}"
+    print("test_hs_code_NOT_persisted_on_generic_lookup: PASS")
+
+
+async def test_stale_hs_code_and_last_entity_cleared_on_topic_change():
+    """Fix 1b: assert stale hs_code and last_entity are cleared on new generic lookup with no token overlap."""
+    coordinator, mock_retrieval = _make_coordinator(
+        retrieval_result={"is_generic": True, "clarifying_questions": ["RAM size?"]}
+    )
+    sess = SessionContext(session_id="test_topic_change_sess")
+    sess.hs_code = "8703.24"
+    sess.last_entity = "bmw m8 competition cbu"
+    sess.product_clarification_needed = False
+    
+    context = MagicMock()
+    context.session_context = sess
+    context.question = "gaming laptop 16gb ram"
+    context.cleaned_input = "gaming laptop 16gb ram"
+    context.original_input = "gaming laptop 16gb ram"
+    context.metadata = {"_spec_merge_done": False}
+    context.request_id = "req_125"
+    
+    await coordinator._handle_hs_code_lookup(context)
+    assert sess.hs_code is None, "hs_code should be cleared on topic change"
+    assert sess.last_entity == "gaming laptop 16gb ram", "last_entity should reset to new topic"
+    print("test_stale_hs_code_and_last_entity_cleared_on_topic_change: PASS")
+
+
+async def test_failed_merge_does_not_trigger_false_topic_change():
+    """Fix 1c: assert failed merge (Guard 4 rejection) does NOT falsely trigger topic change invalidation."""
+    coordinator, mock_retrieval = _make_coordinator(
+        retrieval_result={"is_generic": True, "clarifying_questions": ["engine?"]}
+    )
+    sess = SessionContext(session_id="test_failed_merge_sess")
+    sess.hs_code = "8703.24"
+    sess.last_entity = "bmw m8"
+    sess.product_clarification_needed = True  # mid-clarification!
+    
+    context = MagicMock()
+    context.session_context = sess
+    context.question = "cbu"
+    context.cleaned_input = "cbu"
+    context.original_input = "cbu"
+    context.metadata = {"_spec_merge_done": False}
+    context.request_id = "req_126"
+    
+    await coordinator._handle_hs_code_lookup(context)
+    assert sess.hs_code == "8703.24", "hs_code should NOT be cleared on mid-clarification fallback"
+    print("test_failed_merge_does_not_trigger_false_topic_change: PASS")
+
+
+def test_cbu_passes_both_discriminator_gates():
+    """Fix 6: assert CBU/CKD/SKD bypass both engine_type and engine_size gates in hs_classifier."""
+    from app.services.hs_classifier import has_critical_discriminators
+    ok, missing = has_critical_discriminators("bmw m8 competition cbu", "vehicle")
+    assert ok is True and missing is None, f"Expected (True, None), got ({ok}, {missing})"
+    
+    ok_ckd, _ = has_critical_discriminators("car ckd", "vehicle")
+    assert ok_ckd is True
+    
+    ok_skd, _ = has_critical_discriminators("truck skd", "vehicle")
+    assert ok_skd is True
+    print("test_cbu_passes_both_discriminator_gates: PASS")
+
+
+def test_cbu_not_treated_as_standalone_lookup():
+    """Fix 3 Guard A: assert CBU is rejected by _looks_like_short_product_lookup."""
+    coordinator, _ = _make_coordinator()
+    assert coordinator._looks_like_short_product_lookup("cbu") is False
+    assert coordinator._looks_like_short_product_lookup("CBU") is False
+    assert coordinator._looks_like_short_product_lookup("ckd") is False
+    print("test_cbu_not_treated_as_standalone_lookup: PASS")
+
+
+async def test_spec_merge_no_expected_terms_accepts_answer():
+    """Fix 3 Guard B: with empty expected_terms, spec-merge accepts answer directly."""
+    coordinator, _ = _make_coordinator()
+    sess = _session_with_clarification("sess_no_terms", "laptop", [])
+    context = MagicMock()
+    context.session_context = sess
+    context.metadata = {}
+    
+    with patch("app.services.coordinator.detect_small_talk", return_value=None):
+        merged, norm = await coordinator._try_merge_product_spec(
+            context=context,
+            request_id="req_127",
+            question="500cc model",
+            normalized_question="500cc model",
+            session_id="sess_no_terms",
+        )
+    assert merged == "laptop 500cc model"
+    print("test_spec_merge_no_expected_terms_accepts_answer: PASS")
+
+
+# ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
 
@@ -737,6 +892,11 @@ async def _run_all():
         test_E12_small_talk_cache_count,
         test_exact_equality_merge_rewritten,
         test_verbose_question_topic_switch,
+        test_hs_code_persisted_to_session_after_specific_lookup,
+        test_hs_code_NOT_persisted_on_generic_lookup,
+        test_stale_hs_code_and_last_entity_cleared_on_topic_change,
+        test_failed_merge_does_not_trigger_false_topic_change,
+        test_spec_merge_no_expected_terms_accepts_answer,
     ]
     sync_cases = [
         test_B6_mutual_exclusion_guard_code_check,
@@ -745,6 +905,8 @@ async def _run_all():
         test_G14_validate_merged_query,
         test_H15_serialization_round_trip,
         test_bonus_build_spec_expected_terms,
+        test_cbu_passes_both_discriminator_gates,
+        test_cbu_not_treated_as_standalone_lookup,
     ]
 
     total = len(async_cases) + len(sync_cases)

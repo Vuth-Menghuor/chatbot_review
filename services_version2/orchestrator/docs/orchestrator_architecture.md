@@ -1,142 +1,129 @@
 # GDCE Chatbot Orchestrator Architecture
 
-The **Orchestrator Service (v2)** is a FastAPI-based central routing gateway for the GDCE Chatbot system. It manages user input validation, intent classification, multi-turn session memory, context-aware query rewriting, downstream service invocation, response aggregation, and cache population.
+The **Orchestrator Service (v2)** is a FastAPI-based central routing gateway for the GDCE Chatbot system. It manages user input validation, intent classification, multi-turn session memory, context-aware query rewriting, bilingual translation, downstream service invocation, SSE response streaming, response aggregation, and Redis hybrid cache management.
 
 ---
 
 ## 🏗️ Architectural Layers
 
-The service is structured into three distinct layers to segregate HTTP handling, business logic, and backend infrastructure:
+The service is structured into modular layers to segregate HTTP handling, business logic, AI prompt management, and backend infrastructure:
 
 ```mermaid
 graph TD
-    User([User Query]) --> API[API Layer: FastAPI HTTP Interface]
+    User([User Query / UI Client]) --> API[API Layer: FastAPI & SSE Interface]
     
     subgraph API Layer
-        API --> InputVal[Input Validator: safety, injections]
-        InputVal --> CachePre[Cache Pre-check: bypass latency]
+        API --> InputVal[Input & Safety Validator]
+        API --> SSE[SSE Stream Handler: /api/v1/chat/stream]
+        InputVal --> CachePre[Redis/Memory Hybrid Cache Check]
     end
     
-    subgraph Coordination & Flow Layer
+    subgraph Coordination & AI Flow Layer
         CachePre -- Cache Miss --> Coord[Service Coordinator]
-        Coord --> SmallTalk[Small Talk Gate]
-        Coord --> Context[Session Context & Rewriter]
-        Coord --> Intent[Intent Detection & Confidence Scoring]
+        Coord --> DynPrompts[Dynamic Prompt Manager: YAML Configs]
+        Coord --> Translator[Translator Service: Khmer <-> English]
+        Coord --> SessionStore[Session Manager & DB Lock: ChatSession/ChatMessage]
+        Coord --> Intent[LLM Intent Detection & Safety Gates]
         Coord --> AskBack[Ask-back Clarification Logic]
     end
     
-    subgraph Infrastructure Client Layer
-        Intent -- CALCULATION --> CalcClient[Calculator Client]
-        Intent -- TRADE_QUERY --> TradeClient[Trade Data Client]
-        Intent -- HS_CODE_LOOKUP --> RetrievalClient[Retrieval Client: hs_code_lookup]
-        Intent -- DEFINITION / POLICY --> RetrievalClient2[Retrieval Client: definition / policy_inquiry]
+    subgraph Infrastructure & Downstream Layer
+        Intent -- CALCULATION --> CalcClient[Calculator Microservice: 8002]
+        Intent -- TRADE_QUERY --> TradeClient[Trade Data Microservice: 8004]
+        Intent -- HS_CODE_LOOKUP --> RetrievalClient[Retrieval Microservice: 8003]
+        Intent -- DEFINITION / POLICY / GENERAL --> GeneralClient[General/Retrieval Microservices: 8003/8005]
     end
     
-    CalcClient --> Down1[(Calculator Service)]
-    TradeClient --> Down2[(Trade Data Service)]
-    RetrievalClient --> Down3[(Retrieval Service)]
-    RetrievalClient2 --> Down3
-    
-    Down1 & Down2 & Down3 --> Finalize[Result Formatting, Citation & Output Validation]
-    Finalize --> CachePop[Cache Populate]
-    CachePop --> Response([Final Response])
+    CalcClient & TradeClient & RetrievalClient & GeneralClient --> Formatter[Response Formatter & Translator]
+    Formatter --> SSE
+    Formatter --> RedisCache[(Redis / Memory Cache)]
+    Formatter --> DBStore[(PostgreSQL Session & History DB)]
+    SSE -- Real-Time Token Stream --> User
 ```
 
-### 1. API Layer (`api/endpoints.py`)
-This layer handles external interfaces, request validation, and caching.
-* **Endpoints:** Exposes the main `/query` and `/chat` (alias) routes, plus diagnostics (`/health`, `/status`, `/info`, and `/query/explain`).
-* **First-line Security:** Performs initial input validation (using `input_validator` for injection attacks and scope checking) before any downstream processing happens.
-* **Pre-Coordinator Cache:** Checks the cache service. If there's a cached response for the normalized query and it matches a cacheable intent (`calculation`, `hs_code_lookup`, `definition`, etc.), it bypasses downstream calls entirely.
+### 1. API Layer (`app/api/`)
+This layer handles external HTTP interfaces, request validation, SSE streaming, and caching.
+* **Endpoints (`api/endpoints.py`):** Exposes `/api/v1/chat`, real-time Server-Sent Events `/api/v1/chat/stream`, `/api/v1/session/{session_id}`, plus health & diagnostic routes (`/health`, `/ready`, `/metrics`, `/admin/cache-stats`).
+* **Real-time SSE Streaming:** Uses FastAPI `StreamingResponse(text/event-stream)` to deliver token-by-token response deltas (`type: content`), citations, metadata (`type: metadata`), and stream termination signals (`type: done`) directly to the frontend UI with sub-300ms Time-To-First-Token.
+* **First-line Security & Middleware:** Applies `RequestLoggingMiddleware` (injecting `X-Request-ID` correlation headers) and runs `input_validator` for prompt injection, SQL injection, and scope verification.
+* **Pre-Coordinator Cache:** Checks the `CacheService` (Hybrid Memory + Redis). On a cache hit for cacheable intents (`calculation`, `hs_code_lookup`, `definition`, `policy`, `trade_query`), it bypasses downstream microservices and returns the cached response instantly.
 
-### 2. Coordination & Flow Layer ([coordinator.py](file:///e:/GDCE-Intern/Repo/services_version2/orchestrator/core/coordinator.py), [workflow.py](file:///e:/GDCE-Intern/Repo/services_version2/orchestrator/core/workflow.py))
-This layer executes the main orchestrator workflow and maintains dialogue state.
-* **Chitchat Detection:** Runs a fast chitchat classifier (`detect_small_talk`). If the user says "Hello" or asks a joke, it responds immediately without invoking downstream databases. *Note: Bypasses the LLM check on turn 2+ to prevent follow-up fragments from being misclassified.*
-* **Session Management & Conversational History:** Resolves pronouns or incomplete requests by merging user inputs with the current session context (`RewriterService`). Tracks turn-to-turn context via session parameters (`last_intent`, `last_entity`, `last_raw_query`, `last_normalized_query`).
-* **Intent Classifier & Confidence Engine:** Analyzes query semantics (`WorkflowExecutor`) via LLM intent services, falling back to a deterministic keyword-based rule ladder if the LLM fails.
-* **Ask-Back Clarification:** If the intent confidence is too low or a calculation/classification query is ambiguous, the orchestrator yields a `clarification_required` response, prompting the user for details instead of routing a bad request. *Bypassed if the turn 2+ query is deemed self-sufficient (e.g. high intent confidence or explicit keywords).*
-* **Input Rewriting:** Rewrites the query to optimize it for retrieval services (skipping Trade queries, direct HS lookup, and Calculation queries, which bypass rewriting).
+### 2. Coordination & Flow Layer (`app/services/` & `prompts/`)
+Executes business logic, manages prompt templates dynamically, and maintains dialogue state.
+* **Dynamic Prompt Manager (`prompts/dynamic_prompt_manager.py`):** Replaces hardcoded strings with dynamic YAML-based prompt templates loaded from `prompts/config/`, `prompts/core_tasks/`, `prompts/formatting/`, and `prompts/safety/`.
+* **Translation Layer (`app/services/translator.py`):** Provides bidirectional translation (Khmer <-> English) for incoming user queries and outgoing formatted answers to support seamless bilingual query processing.
+* **Session Management & DB Persistence (`app/infrastructure/database.py`):** Persists session history (`ChatSession`, `ChatMessage`, `ChatFeedback`, `ChatAttachment`) into PostgreSQL via `ChatbotDBService`. Implements distributed/per-session locks (`_session_locks`) to handle concurrent user requests safely.
+* **Context-Aware Query Rewriter (`RewriterService`):** Resolves pronouns, missing entities, and turn-to-turn context by evaluating previous dialogue state (`last_intent`, `last_entity`, `last_normalized_query`).
+* **Intent Detection & Safety Gates (`WorkflowExecutor`):** Uses an LLM first layer to detect user intent (`hs_code_lookup`, `calculation`, `trade_query`, `policy`, `definition`), backed by a deterministic keyword ladder fallback.
+* **Ask-Back Clarification Logic:** Triggers structured ask-back prompts (`MAX_PRODUCT_ASK_BACK_RETRIES = 2`) when product specifications (e.g. engine CC, vehicle type) are missing, forcing clarification before routing.
 
-### 3. Infrastructure Client Layer (`infrastructure/clients.py`)
-This layer handles communication with remote microservices and encapsulates data adapter lookups.
-* **Service Clients:** Houses adapters for:
-  - `RetrievalServiceClient` (semantic lookup, definitions, FAQs, and HS Code extraction).
-  - `CalculatorServiceClient` (calculating customs duties, taxes, and handling currency extraction/conversions).
-  - `TradeDataServiceClient` (fetching trade volumes and trends).
+### 3. Infrastructure & Microservices Layer (`app/infrastructure/`)
+Manages downstream HTTP microservice clients, circuit breakers, and database connections.
+* **Microservice Clients:** Communicates via HTTP REST endpoints with:
+  - **Retrieval Microservice (Port 8003):** Vector lookup in Qdrant, HS code candidate ranking, and document chunk retrieval.
+  - **Calculator Microservice (Port 8002):** Customs duty, excise tax, VAT calculations, and exchange rate processing.
+  - **Trade Data Microservice (Port 8004):** Customs import/export volume statistics.
+  - **General Microservice (Port 8005):** GDCE regulations, FAQ knowledge, and general procedures.
+* **Redis & Memory Hybrid Cache (`app/infrastructure/cache_service.py`):** Supports `CacheLevel.HYBRID` (In-Memory + Redis) with intent-specific TTLs (24h for calculations/trade data, 48h for definitions/policies).
 * **Resilience Mechanisms:** 
-  - **Circuit Breaker:** Every client implements a circuit breaker (`CLOSED`, `OPEN`, `HALF_OPEN`) to fail-fast if a downstream service goes offline, preventing thread exhaustion.
-  - **Retries with Jitter:** Connect errors, timeouts, and transient status codes (5xx, 429) automatically trigger exponential backoff retries with jitter to prevent a thundering herd.
-  - **Telemetry Propagation:** Downstream calls are injected with a correlation ID (`X-Request-ID`) to ensure unified tracing.
+  - **Circuit Breaker:** Prevents cascading failures by monitoring error rates (`CLOSED`, `OPEN`, `HALF_OPEN`).
+  - **Exponential Backoff & Retries:** Automatically handles transient network glitches and timeouts.
+  - **Prometheus Telemetry (`/metrics`):** Exposes query counters, duration histograms, cache hit rates, and error metrics.
 
 ---
 
 ## 🔄 Query Processing Lifecycle
 
-When a request reaches the orchestrator, it runs through the following sequence:
-
 ```
-[Request] ──> Input Validation ──> Cache Check ──> Session Recovery & Clarification Merge
-                  │                                            │
-                  └──> Intent Classification & Safety Gates ───┘
-                            │
-                            ▼
-                  [Service Routing]
-                  ├── CALCULATION    ──> Calculator Client (Forward Query / Currency Extract)
-                  ├── TRADE_QUERY    ──> Trade Client (Extract Trade Params)
-                  ├── HS_CODE_LOOKUP ──> Retrieval Client (Generate Answer + Code Validation)
-                  └── DEFINITION     ──> Retrieval Client (Definition / FAQ Search)
-                            │
-                            ▼
-                  Response Polishing & Formatting ──> Cache Save ──> [Response]
+[User Request] ──► Input Security Validation ──► Redis/Memory Cache Check
+                         │                                    │
+                         └──► Session Retrieval & DB Lock ───┘
+                                   │
+                                   ▼
+                         [Translation Layer (Khmer <-> EN)]
+                                   │
+                                   ▼
+                         [Intent Detection & Safety Gates]
+                         ├── CALCULATION    ──► Calculator Microservice (8002)
+                         ├── TRADE_QUERY    ──► Trade Data Microservice (8004)
+                         ├── HS_CODE_LOOKUP ──► Retrieval Microservice (8003)
+                         └── DEFINITION     ──► General/Retrieval Microservices (8003/8005)
+                                   │
+                                   ▼
+                         [Formatter & Dynamic Prompt Manager]
+                                   │
+                    ┌──────────────┴──────────────┐
+                    ▼                             ▼
+          [SSE Token Stream]             [PostgreSQL & Redis Save]
+       (/api/v1/chat/stream)                      │
+                    │                             ▼
+                    └─────────────────────► [Frontend UI Render]
 ```
 
-### Step 1: Input Validation & Scope Gate
-The API layer passes the query to `input_validator.validate_input_async(question)`:
-- **Security Check:** Scans for SQL injection, command injections, or malicious prompt injection patterns. If validation fails, it issues a refusal response.
-- **In-Scope Check:** Assures that the query contains customs-related keywords (such as `import`, `export`, `tariff`, `duty`, etc.). If the query is out-of-scope (e.g. general programming question), it is refused.
+### Step 1: Request Interception & Correlation
+`RequestLoggingMiddleware` assigns a unique `X-Request-ID` to trace the call across microservices and log structured execution metrics.
 
-### Step 2: Cache Lookup (Pre-Coordinator)
-The API layer executes a cache lookup using the raw question text:
-- If a cached response exists and the intent is cacheable (`calculation`, `hs_code_lookup`, `definition`, `general`, `policy`, `trade_query`), it directly returns the cached output. If the input rewriter is enabled and a session ID is present, the session state is updated (`update_session_for_query`) to preserve turn-to-turn context on subsequent turns.
-- If it misses, it forwards the query to `ServiceCoordinator.process_query()`.
+### Step 2: Input & Security Validation
+`InputValidator` checks the input string for prompt injection attacks, SQL injections, or out-of-scope topics.
 
-### Step 3: Small Talk Gate
-Before launching heavy LLM processing, the query is passed to `detect_small_talk()`. If the input is standard greeting or chitchat, the orchestrator bypasses retrieval/calculation entirely and returns a static or fast generative greeting. On Turn 2+, the LLM chitchat check is bypassed (passing `llm_service=None`) so follow-up fragments can go through rewrite/ask-back logic instead of being misclassified.
+### Step 3: Cache Pre-Check
+`CacheService` checks for an existing response in Redis/Memory. On a hit, it returns immediately and updates the session context.
 
-### Step 4: Dialogue Context & Clarification Merging
-If the request includes a `session_id`:
-- It loads the session context history early in the processing flow.
-- If the session history indicates the bot was waiting for clarification (e.g., the user answered a question about an engine's CC or preferred duty rate), it merges the new user reply with the pending query (`_merge_pending_with_clarification`).
-- **Clarification Merging Logic:** Uses the shared entity resolution utility (`extract_entity`). Priority: (1) entity in the turn-2 fragment, (2) turn-1 entity fallback (`last_entity`), (3) fallback to pending query. If the resolved intent is `CALCULATION` and the previous turn was also calculation, it retrieves context parameters (CIF, currency, origin country) using `CalculatorServiceClient._parse_question_for_calculation` and reformulates a fully defined calculation query. It also performs pronoun replacement ("its" etc.) and prepends the resolved entity if missing from the response.
+### Step 4: Session Recovery & Translation
+Loads dialogue history from PostgreSQL (`ChatSession`/`ChatMessage`). If the query is in Khmer, `TranslatorService` prepares English translations for downstream semantic vector searches.
 
-### Step 5: Two-Layer Intent Detection
-`WorkflowExecutor` determines the query's intent:
-1. **LLM Intent Classifier (Primary):** Semantically evaluates the query, generating an intent label and a confidence score.
-2. **Keyword Fallback (Secondary):** If the LLM confidence is low, the system falls back to a deterministic rule ladder matching key phrases (e.g. "calculate tax", "how to import") to assign the intent.
+### Step 5: Intent Classification & Rewriting
+`WorkflowExecutor` classifies the query intent using dynamic prompts (`prompts/core_tasks/`). `RewriterService` reformulates follow-up queries using prior dialogue entities.
 
-### Step 6: Clarification Ask-Back Check
-If the intent confidence is low or ambiguous:
-- The orchestrator suspends the workflow.
-- It triggers a `clarification_required` response to the user with a selection list or question (e.g. "I still wasn't sure which option you meant...").
-- **Self-Sufficiency Check:** On Turn 2+, if the query states its own intent clearly enough (either confidence >= 0.75 or has explicit intent-signalling keywords), it is deemed self-sufficient and the ask-back clarification check is skipped, routing the query directly.
+### Step 6: Clarification Gate (Ask-Back)
+If required entity attributes are missing (e.g. calculation parameters), the orchestrator returns an ask-back prompt, holding state in the session store.
 
-### Step 7: Safety Gates & Intent Overrides
-The coordinator applies structural overrides:
-- If the user is pursuing a calculation dialogue and mentions a product, it preserves the `CALCULATION` intent.
-- If the query consists of a short product category name (e.g. "tomatoes"), it overrides the intent to `HS_CODE_LOOKUP`.
-- Service-based questions (e.g. scanning fees) are forced to `POLICY_QUERY` to bypass product lookup.
+### Step 7: Microservice Routing
+The coordinator dispatches the request to the appropriate microservice (Retrieval 8003, Calculator 8002, Trade Data 8004, or General 8005) via resilient HTTP clients protected by circuit breakers.
 
-### Step 8: Context-Aware Query Rewriting
-If rewriting is enabled and the intent is not `TRADE_QUERY`, `HS_CODE_LOOKUP`, or `CALCULATION` (which bypass rewriting so their downstream services receive the raw/canonical query for structured parsing), the coordinator asks the LLM to rewrite the query into an optimized form containing historical session context.
+### Step 8: Dynamic Formatting & Response Translation
+Downstream outputs are formatted using `OrchestratorFormatterService` guided by `prompts/formatting/` YAML configs. If requested in Khmer, `TranslatorService` translates the final answer back to Khmer.
 
-### Step 9: Downstream Client Routing
-The coordinator dispatches the cleaned query (`_route_query`) to the target client:
-* **`CALCULATION`**: Invokes the `CalculatorServiceClient` using the query, while the client automatically extracts explicit currencies and fetches exchange rates from PostgreSQL.
-* **`TRADE_QUERY`**: Extracts parameters (export, import, year, countries) and queries the `TradeDataServiceClient`.
-* **`HS_CODE_LOOKUP`**: Queries the `RetrievalServiceClient.hs_code_lookup()` endpoint, retrieving candidate codes.
-* **`DEFINITION` / `POLICY_QUERY` / Default**: Queries semantic retrieval indexes.
+### Step 9: SSE Token Streaming & Persistence
+If called via `/api/v1/chat/stream`, the response is streamed token-by-token to the UI via Server-Sent Events (`StreamingResponse`). Concurrently, the final message is saved into PostgreSQL database history and cached in Redis with an intent TTL.
 
-### Step 10: Response Formatting & Caching
-1. **Aggregating Results:** Downstream outputs, errors, and warnings are collected.
-2. **Polishing Response:** Unless it is a trade or calculation query (which are formatted using specific tables or markdown structures), the raw retrieval texts are passed to the `OrchestratorFormatterService` to compose a polished reply.
-3. **Caching:** The final formatted answer is saved back to the cache with an intent-specific TTL.
-4. **Return:** The finished `QueryResponse` containing the answer text, citation snippets, and metadata is returned to the user.

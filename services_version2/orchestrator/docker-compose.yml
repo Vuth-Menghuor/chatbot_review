@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   gdce-postgres-orches:
     image: postgres:15-alpine
@@ -23,6 +25,8 @@ services:
     image: redis:alpine
     container_name: gdce-redis-orches
     restart: unless-stopped
+    ports:
+      - "6379:6379"
     command: redis-server --requirepass redis_orchestrator
     volumes:
       - gdce_redis_data:/data

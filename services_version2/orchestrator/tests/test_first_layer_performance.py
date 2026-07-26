@@ -30,6 +30,7 @@ async def test_first_layer_performance_by_intent():
     mock_retrieval.hs_code_lookup.return_value = {"status": "success", "answer": "fresh potatoes AHTN is 0701.90.00", "citations": []}
     mock_retrieval.general.return_value = {"status": "success", "answer": "general RCEP import procedure...", "citations": []}
     mock_retrieval.definition.return_value = {"status": "success", "answer": "definition of RCEP...", "citations": []}
+    mock_retrieval.ask = mock_retrieval.general
     
     mock_calculator = AsyncMock()
     mock_calculator.query.return_value = {"status": "success", "result": "Calculated duty: $1200"}
@@ -203,6 +204,7 @@ async def test_concurrent_requests_no_cross_session_bleed():
     # 1. Setup mock services
     mock_retrieval = AsyncMock()
     mock_retrieval.general.return_value = {"status": "success", "answer": "Answer...", "citations": []}
+    mock_retrieval.ask = mock_retrieval.general
     mock_calculator = AsyncMock()
     mock_trade_data = AsyncMock()
 

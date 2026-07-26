@@ -66,7 +66,6 @@ def extract_entity(query: str) -> Optional[str]:
     if not text:
         return None
 
-    # Step 2: Strip leading intent-keyword prefixes iteratively.
     # Chained prefixes collapse on repeated passes.
     PREFIXES = [
         # HS-code signals

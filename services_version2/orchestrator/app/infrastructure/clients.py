@@ -19,6 +19,11 @@ try:
 except Exception:
     from ..core.logging import get_request_id
 
+from prompts.dynamic_prompt_manager import DynamicPromptManager
+
+# Module-level prompt manager — loads from prompts/ directory on import
+_prompt_manager = DynamicPromptManager()
+
 logger = logging.getLogger(__name__)
 
 # Type variable for generic retry function
@@ -596,11 +601,21 @@ class GeneralServiceClient(HttpxServiceClient):
         session_id: Optional[str] = None,
         intent: str = "general",
     ) -> Dict[str, Any]:
+        # Determine if the query is a general policy/procedure/cost inquiry that does not need a trade time period
+        q_lower = (query or "").lower()
+        disqualifiers = [
+            "cost", "price", "money", "tariff", "tax", "duty", "fee", "vat", 
+            "procedure", "process", "permit", "document", "regulation", "rule", "law", "policy",
+            "requirement", "compliance", "guide", "license", "certificate", "cbu", "ckd", "skd"
+        ]
+        require_period = not any(term in q_lower for term in disqualifiers)
+
         payload = {
             "query": query,
             "top_k": top_k,
             "generate_answer": generate_answer,
             "intent": intent,
+            "require_period_for_trade": require_period,
         }
         if session_id:
             payload["session_id"] = session_id
@@ -1049,6 +1064,23 @@ class CalculatorServiceClient(HttpxServiceClient):
             logger.info(f"Calculator service returned: total={result.get('total', 'N/A')}, "
                         f"currency={result.get('currency', 'N/A')}")
             return result
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 400:
+                try:
+                    error_json = e.response.json()
+                    detail = error_json.get("detail", str(e))
+                except Exception:
+                    detail = str(e)
+                logger.warning(f"Calculator service returned validation error 400: {detail}")
+                return {
+                    "success": False,
+                    "answer": detail,
+                    "error": detail,
+                    "source": "none",
+                    "confidence": 0.0,
+                }
+            logger.error(f"Calculator service error: {e}")
+            raise
         except Exception as e:
             logger.error(f"Calculator service error: {e}")
             raise
@@ -1064,6 +1096,23 @@ class CalculatorServiceClient(HttpxServiceClient):
             result = await self._post("query", payload)
             logger.info(f"Calculator service returned results")
             return result
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 400:
+                try:
+                    error_json = e.response.json()
+                    detail = error_json.get("detail", str(e))
+                except Exception:
+                    detail = str(e)
+                logger.warning(f"Calculator service returned validation error 400: {detail}")
+                return {
+                    "success": False,
+                    "answer": detail,
+                    "error": detail,
+                    "source": "none",
+                    "confidence": 0.0,
+                }
+            logger.error(f"Calculator service query error: {e}")
+            raise
         except Exception as e:
             logger.error(f"Calculator service query error: {e}")
             raise
@@ -1183,21 +1232,11 @@ class GeminiLLMClient:
                 for i, c in enumerate(candidates[:5])  # Top 5
             ])
             
-            prompt = f"""You are an expert in HS (Harmonized System) code classification for customs and tariffs.
-
-User Query: "{query}"
-
-Available HS Code Candidates:
-{candidates_text}
-
-Your task: Select the SINGLE BEST HS code that matches the user's query most accurately.
-
-Respond with a JSON object (no other text):
-{{
-  "selected_index": <0-based index of best candidate>,
-  "confidence": <0.0-1.0>,
-  "reason": "<brief explanation why this is the best match>"
-}}"""
+            prompt = _prompt_manager.render(
+                "hs_candidate_rerank",
+                query=query,
+                candidates_text=candidates_text,
+            )
 
             response = self.client.models.generate_content(
                 model=self.model,
@@ -1258,12 +1297,11 @@ Respond with a JSON object (no other text):
             return technical_description
         
         try:
-            prompt = f"""Rewrite this technical product description for HS code {hs_code} to be clear and user-friendly for customs/trade professionals. 
-Keep it concise (1-2 sentences). Include key distinguishing features.
-
-Technical Description: {technical_description}
-
-Respond with ONLY the user-friendly description, no other text."""
+            prompt = _prompt_manager.render(
+                "hs_description_rewrite",
+                hs_code=hs_code,
+                technical_description=technical_description,
+            )
 
             response = self.client.models.generate_content(
                 model=self.model,

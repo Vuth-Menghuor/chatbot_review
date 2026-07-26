@@ -85,14 +85,21 @@ def has_critical_discriminators(query: str, product_category: str) -> Tuple[bool
     """
     q = query.lower()
     
-    # Vehicles require engine type AND engine size
+    # Vehicles require engine type AND engine size — UNLESS a build-format spec is present.
+    # CBU/CKD/SKD are complete unit designations that identify the tariff at chapter level
+    # (8703) without requiring engine specs.
     if product_category == "vehicle":
         has_engine_type = any(x in q for x in ["petrol", "diesel", "electric", "hybrid", "ev", "battery"])
         has_engine_size = any(x in q for x in ["engine", "cc", "kw", "power", "gvwr", "gvw", "ton"])
-        
-        if not has_engine_type:
+        has_build_format = any(x in q for x in ["cbu", "ckd", "skd", "completely built", "completely knocked", "semi knocked"])
+
+        if has_build_format:
+            # Build-format overrides both engine gates — chapter-level classification
+            # (8703) is deterministic from CBU/CKD/SKD alone.
+            pass
+        elif not has_engine_type:
             return False, "vehicle_engine"
-        if not has_engine_size:
+        elif not has_engine_size:
             return False, "vehicle_size"
     
     # Prepared/preserved food requires preservation method

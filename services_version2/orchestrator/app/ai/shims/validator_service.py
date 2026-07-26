@@ -681,14 +681,11 @@ class RuleBasedValidatorProvider:
         if "`" in t or "$(" in t:
             return ValidationResult.injection("Suspicious command characters detected")
 
-        # 3. Blocklist Check (Out of Scope detection)
-        blocklist_words = {
-            "football", "soccer", "match last night", "cooking recipe", "cooking", "pasta", "recipe",
-            "cryptocurrency", "invest", "gambling", "betting", "lottery", "movie", "song", "music"
-        }
-        for w in blocklist_words:
-            if w in t_lower:
-                return ValidationResult.out_of_scope(f"out_of_scope: {w}")
+        # 3. Topic Blocklist — REMOVED.
+        # All non-trade conversational topics (sports, cooking, movies, crypto, etc.)
+        # are now handled by the small_talk LLM, which gives friendly answers or polite
+        # refusals as appropriate. The only hard-reject here is injection (above).
+        # Do NOT add casual-topic keywords back to this block.
 
         # 3.5 Conversational question fast-path
         # Any WH-question or modal question is a valid general/definition/policy query.
@@ -947,7 +944,7 @@ class ValidatorService:
         t = (text or "").strip()
         if not t:
             return ValidationResult.format_error("empty")
-        if len(t) < 3:
+        if len(t) < 1:
             return ValidationResult.format_error("too short")
         if len(t) > 5000:
             return ValidationResult.format_error("too long")
@@ -997,7 +994,7 @@ class ValidatorService:
                     
                     if not is_safe:
                         return ValidationResult.injection(reason or "Potential injection detected by LLM")
-                    if is_on_topic:
+                    if is_on_topic or category == "small_talk":
                         v_res = ValidationResult.in_scope(reason=f"llm_validated:{category}", keywords=[])
                         v_res.llm_confidence = confidence
                         return v_res
