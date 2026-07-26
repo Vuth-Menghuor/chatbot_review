@@ -2,7 +2,7 @@
 
 > **Owner:** Vechika | **Port:** `8002` | **Version:** `2.0.0` (reference microservice)
 
-Import tax calculation service for Cambodia customs (GDCE).
+Import tax calculation service for Cambodia customs (GDCE).  
 This is the **reference implementation** for the GDCE-ChatBot microservice migration.
 
 ---
@@ -133,7 +133,7 @@ Swagger UI: `http://127.0.0.1:8002/docs`
 
 ## Configuration
 
-All settings are documented in [`config.yaml`](./config.yaml).
+All settings are documented in [`config.yaml`](./config.yaml).  
 Override any setting with environment variables (see the reference table at the bottom of that file).
 
 Key variables for local dev:

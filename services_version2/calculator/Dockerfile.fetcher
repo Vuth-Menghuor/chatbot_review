@@ -6,8 +6,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy only the fetcher script. Runtime config comes from docker-compose env_file.
+# Copy only the fetcher script and .env
 COPY exchange_rate_fetcher.py .
+COPY .env .
 
 ENV PYTHONUNBUFFERED=1
 
