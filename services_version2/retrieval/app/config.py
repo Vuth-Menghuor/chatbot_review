@@ -20,8 +20,8 @@ class RetrievalConfig:
     """Centralized configuration for retrieval service."""
 
     def __init__(self, env_file: Optional[Path] = None):
-        self.service_root = Path(__file__).resolve().parents[1]
-        default_env = self.service_root / ".env"
+        service_root = Path(__file__).resolve().parent
+        default_env = service_root / ".env"
 
         if env_file and env_file.exists():
             load_dotenv(env_file)
@@ -34,7 +34,8 @@ class RetrievalConfig:
         self._load_service_config()
 
     def _setup_paths(self):
-        self.repo_root = self.service_root.parent.parent
+        self.service_root = Path(__file__).resolve().parent
+        self.repo_root = self.service_root.parent.parent.parent
         self.configs_dir = self.repo_root / "configs"
         self.data_dir = self.repo_root / "data"
         self.model_dir = self.repo_root / "model"

@@ -1,7 +1,0 @@
-# Retrieval service configuration (new structure)
-# Fill in with actual config values as you migrate logic.
-vector_store_url: ""
-embedding_provider: ""
-top_k_default: 10
-timeout: 30
-cache_enabled: true

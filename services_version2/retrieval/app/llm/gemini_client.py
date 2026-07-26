@@ -78,7 +78,7 @@ class GeminiClient:
                     model=self.model_name,
                     contents=p,
                     config=types.GenerateContentConfig(
-                        thinking_config=types.ThinkingConfig(thinking_level="high")
+                        thinking_config=types.ThinkingConfig(thinking_level="low")
                     ),
                 )
             except Exception as exc:
@@ -97,7 +97,7 @@ class GeminiClient:
                     model=self.model_name,
                     contents=p,
                     config=types.GenerateContentConfig(
-                        thinking_config=types.ThinkingConfig(thinking_level="high")
+                        thinking_config=types.ThinkingConfig(thinking_level="low")
                     ),
                 )
                 text2 = _extract_text(response2)
