@@ -6,6 +6,7 @@ Falls back to keyword-based embeddings if the model can't be loaded.
 
 import logging
 import hashlib
+import asyncio
 from typing import Optional, Dict, Any, List
 
 logger = logging.getLogger(__name__)
@@ -76,8 +77,7 @@ class EmbeddingClient:
             if self.embedder is None:
                 logger.warning("Using keyword-based fallback embeddings")
 
-    async def embed_query(self, query: str) -> List[float]:
-        """Embed a query."""
+    def _embed_query_sync(self, query: str) -> List[float]:
         try:
             self._load_embedder()
             if self.embedder is not None:
@@ -88,6 +88,10 @@ class EmbeddingClient:
         except Exception as e:
             logger.warning(f"Query embedding error: {e}, using fallback")
             return create_keyword_embedding(query, self.embedding_dimension)
+
+    async def embed_query(self, query: str) -> List[float]:
+        """Embed a query without blocking the event loop."""
+        return await asyncio.to_thread(self._embed_query_sync, query)
 
     async def health(self) -> Dict[str, Any]:
         """Check health of embeddings service."""

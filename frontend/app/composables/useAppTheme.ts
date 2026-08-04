@@ -1,7 +1,7 @@
 import { computed, watch } from 'vue';
 import { useTheme } from 'vuetify';
 import { useUiStore } from '~/stores/ui.store';
-import type { AppThemeName } from '~/utils/theme/vuetifyThemes';
+import { resolveVuetifyThemeName, type AppThemeName } from '~/utils/theme/vuetifyThemes';
 import { syncVuetifyThemeToDocument } from '~/utils/theme/syncVuetifyThemeToDocument';
 
 let themeBridgeInitialized = false;
@@ -19,31 +19,41 @@ export const useAppTheme = () => {
     syncVuetifyThemeToDocument({ dark: current.dark, colors: current.colors });
   };
 
+  const applyResolvedTheme = (theme: AppThemeName) => {
+    const resolvedTheme = resolveVuetifyThemeName(theme);
+    if (vuetifyTheme.global.name.value !== resolvedTheme) {
+      vuetifyTheme.change(resolvedTheme);
+    }
+    sync();
+  };
+
   const applyTheme = (theme: AppThemeName) => {
     uiStore.setTheme(theme);
-    vuetifyTheme.change(theme);
-    sync();
+    applyResolvedTheme(theme);
   };
 
   if (!themeBridgeInitialized) {
     themeBridgeInitialized = true;
 
-    if (vuetifyTheme.global.name.value !== uiStore.theme) {
-      vuetifyTheme.change(uiStore.theme);
-    }
-    sync();
+    applyResolvedTheme(uiStore.theme);
 
     watch(
       () => uiStore.theme,
       (themeName) => {
-        if (vuetifyTheme.global.name.value !== themeName) {
-          vuetifyTheme.change(themeName);
-        }
-        sync();
+        applyResolvedTheme(themeName);
       },
     );
 
     watch(() => vuetifyTheme.global.name.value, sync);
+
+    if (typeof window !== 'undefined') {
+      const systemThemeListener = window.matchMedia('(prefers-color-scheme: dark)');
+      systemThemeListener.addEventListener('change', () => {
+        if (uiStore.theme === 'system') {
+          applyResolvedTheme('system');
+        }
+      });
+    }
   }
 
   return {

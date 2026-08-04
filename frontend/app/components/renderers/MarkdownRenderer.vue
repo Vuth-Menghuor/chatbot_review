@@ -257,4 +257,35 @@ useMarkdownFenceHighlighter(containerRef, mermaidIsDark, sanitizedHtml);
 :global(.dark) .markdown-body :deep(.md-limitation-note::before) {
   color: rgb(252 211 77);
 }
+
+.markdown-body :deep(.calculator-section-heading) {
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+  border-top: 1px solid rgb(229 231 235);
+  padding-top: 1.25rem;
+  color: rgb(17 24 39);
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.markdown-body :deep(h2.calculator-section-heading) {
+  margin-top: 2.25rem;
+  margin-bottom: 1.25rem;
+  padding-top: 1.5rem;
+  font-size: 1.25rem;
+}
+
+.markdown-body :deep(.calculator-section-heading + .md-paragraph) {
+  margin-top: 0;
+}
+
+.markdown-body :deep(.calculator-section-heading + .md-list) {
+  margin-top: 0;
+}
+
+:global(.dark) .markdown-body :deep(.calculator-section-heading) {
+  border-top-color: rgb(39 39 42);
+  color: rgb(245 245 245);
+}
 </style>

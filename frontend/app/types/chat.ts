@@ -20,8 +20,12 @@ export type MessageStatus =
 export type CanonicalMessageBlockType =
   | 'markdown'
   | 'reasoning'
+  | 'summary'
+  | 'key_value'
   | 'code'
   | 'table'
+  | 'details'
+  | 'references'
   | 'image'
   | 'chart'
   | 'workflow'

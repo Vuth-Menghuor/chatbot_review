@@ -1,8 +1,19 @@
 import { defineStore } from 'pinia';
-import { computed, ref } from 'vue';
+import { ref } from 'vue';
 import { readJson, readString, storageKeys, writeJson, writeString } from '~/utils/storage';
 
-type ToastType = 'success' | 'info';
+const RESPONSE_COMPLETED_ID = 'responseCompleted';
+const ENABLED_CHANNEL: NotificationChannel = 'push';
+const DISABLED_CHANNEL: NotificationChannel = 'off';
+const DEFAULT_TOAST_DURATION_MS = 3200;
+const NOTIFICATION_SOUND = {
+  type: 'sine' as OscillatorType,
+  frequency: 740,
+  volume: 0.04,
+  durationSeconds: 0.08,
+};
+
+type ToastType = 'success' | 'info' | 'error';
 
 export type NotificationChannel = 'push' | 'email' | 'off';
 
@@ -10,32 +21,39 @@ export type NotificationPreferenceId =
   | 'responseCompleted'
   | 'projects'
   | 'tasks'
-  | 'newMessages';
+  | 'newMessages'
+  | 'sound';
 
 export type NotificationPreferences = Record<NotificationPreferenceId, NotificationChannel>;
+
+export const NOTIFICATION_IDS: NotificationPreferenceId[] = [
+  RESPONSE_COMPLETED_ID,
+  'projects',
+  'tasks',
+  'newMessages',
+  'sound',
+];
 
 export type AppToast = {
   id: string;
   title: string;
   message?: string;
   type: ToastType;
+  notificationId?: NotificationPreferenceId;
 };
 
 export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
-  responseCompleted: 'push',
+  responseCompleted: ENABLED_CHANNEL,
   projects: 'email',
-  tasks: 'push',
-  newMessages: 'push',
+  tasks: ENABLED_CHANNEL,
+  newMessages: ENABLED_CHANNEL,
+  sound: ENABLED_CHANNEL,
 };
 
 export const useNotificationStore = defineStore('notification', () => {
   const preferences = ref<NotificationPreferences>({ ...DEFAULT_NOTIFICATION_PREFERENCES });
   const toasts = ref<AppToast[]>([]);
   let toastId = 0;
-
-  const responseCompletionToast = computed(
-    () => preferences.value.responseCompleted === 'push',
-  );
 
   function persistPreferences() {
     writeJson(storageKeys.notificationPreferences, preferences.value);
@@ -58,41 +76,53 @@ export const useNotificationStore = defineStore('notification', () => {
     if (legacy !== null) {
       preferences.value = {
         ...DEFAULT_NOTIFICATION_PREFERENCES,
-        responseCompleted: legacy === 'true' ? 'push' : 'off',
+        responseCompleted: legacy === 'true' ? ENABLED_CHANNEL : DISABLED_CHANNEL,
       };
       persistPreferences();
     }
-  }
-
-  function getChannel(id: NotificationPreferenceId): NotificationChannel {
-    return preferences.value[id];
   }
 
   function setNotificationChannel(id: NotificationPreferenceId, channel: NotificationChannel) {
     preferences.value = { ...preferences.value, [id]: channel };
     persistPreferences();
 
-    if (id === 'responseCompleted') {
-      writeString(storageKeys.responseCompletionToast, String(channel === 'push'));
+    if (id === RESPONSE_COMPLETED_ID) {
+      writeString(storageKeys.responseCompletionToast, String(channel === ENABLED_CHANNEL));
     }
-  }
-
-  function isNotificationEnabled(id: NotificationPreferenceId): boolean {
-    return preferences.value[id] !== 'off';
   }
 
   function setNotificationEnabled(id: NotificationPreferenceId, enabled: boolean) {
     if (!enabled) {
-      setNotificationChannel(id, 'off');
+      setNotificationChannel(id, DISABLED_CHANNEL);
       return;
     }
 
-    const channel = preferences.value[id] === 'off' ? 'push' : preferences.value[id];
+    const channel =
+      preferences.value[id] === DISABLED_CHANNEL ? ENABLED_CHANNEL : preferences.value[id];
     setNotificationChannel(id, channel);
   }
 
-  function setResponseCompletionToast(value: boolean) {
-    setNotificationChannel('responseCompleted', value ? 'push' : 'off');
+  function playNotificationSound() {
+    if (!import.meta.client || preferences.value.sound === 'off') return;
+
+    try {
+      const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextCtor) return;
+
+      const audioContext = new AudioContextCtor();
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+
+      oscillator.type = NOTIFICATION_SOUND.type;
+      oscillator.frequency.value = NOTIFICATION_SOUND.frequency;
+      gain.gain.value = NOTIFICATION_SOUND.volume;
+      oscillator.connect(gain);
+      gain.connect(audioContext.destination);
+      oscillator.start();
+      oscillator.stop(audioContext.currentTime + NOTIFICATION_SOUND.durationSeconds);
+    } catch {
+      // Ignore browsers that block audio until a stronger user gesture.
+    }
   }
 
   function resetNotificationPreferences() {
@@ -100,21 +130,22 @@ export const useNotificationStore = defineStore('notification', () => {
     persistPreferences();
     writeString(
       storageKeys.responseCompletionToast,
-      String(DEFAULT_NOTIFICATION_PREFERENCES.responseCompleted === 'push'),
+      String(DEFAULT_NOTIFICATION_PREFERENCES.responseCompleted === ENABLED_CHANNEL),
     );
-  }
-
-  function shouldShowResponseCompletionToast(): boolean {
-    return preferences.value.responseCompleted === 'push';
   }
 
   function removeToast(id: string) {
     toasts.value = toasts.value.filter((toast) => toast.id !== id);
   }
 
-  function showToast(toast: Omit<AppToast, 'id'>, duration = 3200) {
+  function showToast(toast: Omit<AppToast, 'id'>, duration = DEFAULT_TOAST_DURATION_MS) {
+    if (toast.notificationId && preferences.value[toast.notificationId] === DISABLED_CHANNEL) {
+      return;
+    }
+
     const id = `toast-${Date.now()}-${toastId++}`;
     toasts.value = [...toasts.value, { id, ...toast }];
+    if (toast.notificationId) playNotificationSound();
 
     if (import.meta.client) {
       window.setTimeout(() => removeToast(id), duration);
@@ -123,17 +154,12 @@ export const useNotificationStore = defineStore('notification', () => {
 
   return {
     preferences,
-    responseCompletionToast,
     toasts,
     init,
-    getChannel,
-    setNotificationChannel,
-    isNotificationEnabled,
     setNotificationEnabled,
-    setResponseCompletionToast,
     resetNotificationPreferences,
-    shouldShowResponseCompletionToast,
     showToast,
+    playNotificationSound,
     removeToast,
   };
 });

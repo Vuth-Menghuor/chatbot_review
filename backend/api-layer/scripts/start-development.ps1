@@ -31,5 +31,3 @@ Start-Stack "services_version2\calculator"
 Start-Stack "services_version2\trade"
 Start-Stack "services_version2\orchestrator"
 Start-Stack "backend\api-layer"
-
-python (Join-Path $PSScriptRoot "check_integration.py")

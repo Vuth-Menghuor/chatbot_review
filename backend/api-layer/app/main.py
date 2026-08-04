@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -12,17 +13,39 @@ from app.core.redis import close_redis
 from app.middleware.rate_limit_middleware import GeneralRateLimitMiddleware
 from app.middleware.request_id_middleware import RequestIdMiddleware
 from app.middleware.request_log_middleware import RequestLogMiddleware
+from app.services.main_chatbot_client import main_chatbot_client
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_logging()
+    # Create one outbound HTTP client for the whole app so orchestrator calls reuse connections.
+    app.state.http_client = httpx.AsyncClient(
+        timeout=httpx.Timeout(
+            connect=5.0,
+            read=settings.http_timeout_seconds,
+            write=10.0,
+            pool=5.0,
+        ),
+        limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+    )
+    # Inject the lifespan-owned client into the service wrapper used by endpoints.
+    main_chatbot_client.set_client(app.state.http_client)
     yield
+    # Close outbound and infrastructure clients during graceful shutdown.
+    await main_chatbot_client.aclose()
     await close_redis()
     await engine.dispose()
 
 
-app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)
+app = FastAPI(
+    title=settings.app_name,
+    version="1.0.0",
+    lifespan=lifespan,
+    docs_url="/docs" if settings.enable_docs else None,
+    redoc_url="/redoc" if settings.enable_docs else None,
+    openapi_url="/openapi.json" if settings.enable_docs else None,
+)
 register_exception_handlers(app)
 app.add_middleware(
     CORSMiddleware,

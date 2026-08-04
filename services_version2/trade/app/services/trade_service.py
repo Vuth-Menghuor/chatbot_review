@@ -40,7 +40,15 @@ class TradeService:
         # with a validation-feedback repair loop around the LLM extraction call.
         scoped, final = self._build_validated_plan(question, extracted_params)
 
-        # Convert back to compat dict format for the handlers & normalisers
+        original_limit = final.limit or 100
+        # Compute deterministic cache-buster limit offset from temporal parameters
+        # to prevent DAL cache collisions on period/year (DAL ignores period in its cache hash).
+        scope_str = f"{final.period}_{final.start_period}_{final.end_period}_{final.frequency}"
+        h_val = 0
+        for char in scope_str:
+            h_val = (h_val * 31 + ord(char)) & 0xFFFFFFFF
+        cache_buster = (h_val % 47) + 1  # Offset 1 to 47
+
         dal_params = {
             "intent": final.intent,
             "version": final.version,
@@ -53,7 +61,7 @@ class TradeService:
             "end_period": final.end_period,
             "frequency": final.frequency,
             "sort": final.sort,
-            "limit": final.limit,
+            "limit": original_limit + cache_buster,
             "offset": final.offset,
             "extra": final.extra,
             "question": question,
@@ -81,7 +89,24 @@ class TradeService:
             logger.info("[TradeService] Range query detected with FLOW filter. Temporarily keeping FLOW filter in request to bypass DAL bug.")
             flow_filter_value = dal_request.filters.get("FLOW")
 
+        # Client-side workaround for DAL range query subtraction compiler bug:
+        # Strip the sub-period suffixes (e.g., -MM, -Qn, -Sn) from the query parameters sent to the DB
+        # to prevent subtraction inside the unquoted DAL compiler. Python post-filtering will restore the exact bounds.
+        if dal_request.start_period and "-" in dal_request.start_period:
+            logger.info(f"[TradeService] Workaround: stripping database start_period '{dal_request.start_period}' to year prefix.")
+            dal_request.start_period = dal_request.start_period.split("-")[0]
+        if dal_request.end_period and "-" in dal_request.end_period:
+            logger.info(f"[TradeService] Workaround: stripping database end_period '{dal_request.end_period}' to year prefix.")
+            dal_request.end_period = dal_request.end_period.split("-")[0]
+
         dal_response = self.dal_client.execute(dal_request)
+
+        # Truncate response records back to original limit to undo cache buster offset
+        if isinstance(dal_response, dict):
+            if "records" in dal_response and isinstance(dal_response["records"], list):
+                dal_response["records"] = dal_response["records"][:original_limit]
+            if "data" in dal_response and isinstance(dal_response["data"], list):
+                dal_response["data"] = dal_response["data"][:original_limit]
 
         # 1. Flow Post-filtering (workaround for range query bug / database leak)
         if flow_filter_value:
@@ -89,7 +114,14 @@ class TradeService:
             dal_request.filters["FLOW"] = flow_filter_value
 
             allowed_flows = flow_filter_value if isinstance(flow_filter_value, list) else [flow_filter_value]
-            allowed_flows_upper = {str(f).upper() for f in allowed_flows}
+            
+            def norm_flow(f):
+                if not f:
+                    return ""
+                f_clean = str(f).strip().upper()
+                return "EX" if f_clean in ("EX", "EXPORT") else "IM" if f_clean in ("IM", "IMPORT") else f_clean
+
+            allowed_flows_norm = {norm_flow(f) for f in allowed_flows}
 
             raw_records = dal_response.get("records", [])
             filtered_records = []
@@ -100,8 +132,8 @@ class TradeService:
                         flow_key_in_record = k
                         break
                 if flow_key_in_record:
-                    val = str(r.get(flow_key_in_record)).upper()
-                    if val in allowed_flows_upper:
+                    val = norm_flow(r.get(flow_key_in_record))
+                    if val in allowed_flows_norm:
                         filtered_records.append(r)
                 else:
                     filtered_records.append(r)
@@ -166,6 +198,23 @@ class TradeService:
             if did_filter_time:
                 dal_response["records"] = filtered_records
 
+        # 3. Specific Years Post-filtering (to handle non-contiguous comparisons like 2026 vs 2024)
+        if scoped.years and len(scoped.years) >= 2:
+            records = dal_response.get("records", [])
+            original_len = len(records)
+            filtered_records = []
+            for r in records:
+                p_str = str(r.get("PERIOD", r.get("period", "")))
+                try:
+                    p_yr = int(p_str[:4])
+                    if p_yr in scoped.years:
+                        filtered_records.append(r)
+                except (ValueError, TypeError):
+                    filtered_records.append(r)
+            if len(filtered_records) != original_len:
+                logger.info(f"[TradeService] Post-filtering by specific years {scoped.years}. Kept {len(filtered_records)} records.")
+                dal_response["records"] = filtered_records
+
         # Summary recalculation (recalculate dal_response summary total to match filtered records)
         if "summary" in dal_response and isinstance(dal_response["summary"], dict):
             total_val = sum(float(r.get("VALUE_USD", r.get("trade_value", 0.0)) or 0.0) for r in dal_response.get("records", []))
@@ -183,7 +232,7 @@ class TradeService:
                     r_p_str = str(r_p)
                     if not (r_p_str == req_p_str or r_p_str.startswith(req_p_str + "-")):
                         mismatched_periods.add(r_p_str)
-
+            
             if mismatched_periods:
                 returned_period = sorted(list(mismatched_periods))[0]
                 logger.warning(

@@ -1,0 +1,31 @@
+{
+  "request_id": "fixture-retrieval-citations",
+  "session_id": "fixture-session-retrieval",
+  "service": "retrieval",
+  "intent": "retrieval",
+  "answer": "Customs declarations should be supported by commercial and transport documents.",
+  "citations": [
+    {
+      "id": "doc-1",
+      "title": "Import Declaration Guidance",
+      "url": "https://example.test/import-declaration",
+      "snippet": "Import declaration requirements.",
+      "document_id": "import-guidance",
+      "filename": "import-guidance.pdf",
+      "chunk_index": 2,
+      "retrieval_method": "semantic"
+    },
+    {
+      "id": "doc-1-duplicate",
+      "title": "Import Declaration Guidance Copy",
+      "url": "https://example.test/import-declaration",
+      "snippet": "Duplicate source should be removed."
+    },
+    {
+      "id": "doc-2",
+      "title": "Transport Document Guidance",
+      "url": "https://example.test/transport-document",
+      "snippet": "Transport documents support customs declarations."
+    }
+  ]
+}

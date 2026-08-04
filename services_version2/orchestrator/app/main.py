@@ -14,7 +14,7 @@ from prometheus_client import make_asgi_app
 from .core.logging import setup_structured_logging, get_logger
 from .core.middleware import RequestLoggingMiddleware
 from .core.config import get_config, FormatterServiceConfig, LLMFirstLayerConfig
-from .services import ServiceCoordinator, get_policy_engine
+from .services import ServiceCoordinator
 from .ai.summarizer import get_formatter_service
 from .ai import get_llm_first_layer_service
 from .api import router as api_router
@@ -147,10 +147,7 @@ def create_app() -> FastAPI:
             await initialize_service_clients(config)
             logger.info("[OK] Service clients initialized")
             
-            # Initialize policy engine
-            logger.info("[5/7] Initializing policy engine...")
-            policy_engine = get_policy_engine(config.repo_root if hasattr(config, 'repo_root') else None)
-            logger.info("[OK] Policy engine initialized")
+            policy_engine = None
             
             # Initialize unified LLM_first_layer service
             logger.info("[6/7] Initializing unified LLM_first_layer service...")

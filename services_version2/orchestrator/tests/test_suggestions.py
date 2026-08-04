@@ -33,7 +33,7 @@ async def test_coordinator_generates_suggestions_during_clarification():
     context.set_result("retrieval", {"final_answer": "Do you mean electric car?"})
 
     response = await coordinator._build_response(context)
-    assert len(response.get("suggestions", [])) > 0
+    assert len(response.get("suggestion", [])) > 0
 
 
 # Complex scenarios: SuggestionService
@@ -68,7 +68,8 @@ def test_suggestion_service_non_string_entity_from_extract_entity():
 
     # Should not raise, and should fall back to generic fallbacks since
     # the malformed entity is coerced to "" by _safe_str.
-    assert suggestions == service.generic_fallbacks[:3]
+    en_fallbacks = service.generic_fallbacks.get("en", []) if isinstance(service.generic_fallbacks, dict) else service.generic_fallbacks
+    assert suggestions == en_fallbacks[:3]
 
 
 def test_suggestion_service_non_string_last_entity_from_session():
@@ -85,7 +86,8 @@ def test_suggestion_service_non_string_last_entity_from_session():
             session_context=session
         )
 
-    assert suggestions == service.generic_fallbacks[:3]
+    en_fallbacks = service.generic_fallbacks.get("en", []) if isinstance(service.generic_fallbacks, dict) else service.generic_fallbacks
+    assert suggestions == en_fallbacks[:3]
 
 
 def test_suggestion_service_entity_priority_current_over_session():
@@ -116,7 +118,8 @@ def test_suggestion_service_unmapped_intent_routes_to_fallback():
         rewritten_query="tell me about electric car"
     )
 
-    assert suggestions == service.generic_fallbacks[:3]
+    en_fallbacks = service.generic_fallbacks.get("en", []) if isinstance(service.generic_fallbacks, dict) else service.generic_fallbacks
+    assert suggestions == en_fallbacks[:3]
     # None of the fallback strings should have been templated with an entity
     for s in suggestions:
         assert "{entity}" not in s
@@ -147,7 +150,8 @@ def test_suggestion_service_minimum_count_padding():
     assert len(suggestions) >= 2
     # Padding should have come from generic_fallbacks since both templates
     # collided with the query and were filtered out.
-    assert any(s in service.generic_fallbacks for s in suggestions)
+    en_fallbacks = service.generic_fallbacks.get("en", []) if isinstance(service.generic_fallbacks, dict) else service.generic_fallbacks
+    assert any(s in en_fallbacks for s in suggestions)
 
 
 def test_suggestion_service_import_procedure_intent_present():
@@ -185,7 +189,7 @@ async def test_coordinator_suppresses_suggestions_on_unclassified():
     context.status = WorkflowStatus.COMPLETED
 
     response = await coordinator._build_response(context)
-    assert response.get("suggestions", []) == []
+    assert response.get("suggestion", []) == []
 
 
 @pytest.mark.asyncio
@@ -204,7 +208,7 @@ async def test_coordinator_suppresses_suggestions_on_small_talk():
     context.status = WorkflowStatus.COMPLETED
 
     response = await coordinator._build_response(context)
-    assert response.get("suggestions", []) == []
+    assert response.get("suggestion", []) == []
 
 
 @pytest.mark.asyncio
@@ -245,7 +249,7 @@ async def test_coordinator_suggestion_failure_does_not_break_response():
     # Must not raise
     response = await coordinator._build_response(context)
 
-    assert response.get("suggestions", []) == []
+    assert response.get("suggestion", []) == []
     # Primary answer must still be intact despite the suggestion failure
     assert "final_answer" in str(response) or response.get("answer")
 
@@ -286,8 +290,100 @@ async def test_coordinator_suggestions_reflect_multi_turn_entity_carryover():
     with patch("app.services.suggestion_service.extract_entity", return_value=None):
         response = await coordinator._build_response(context)
 
-    assert len(response.get("suggestions", [])) > 0
-    assert any("electric car" in s.lower() for s in response["suggestions"])
+    assert len(response.get("suggestion", [])) > 0
+    assert any("electric car" in s.lower() for s in response["suggestion"])
+
+
+def test_suggestion_service_parameter_noise_sanitization():
+    """Complex calculation queries with key-value parameters must not yield parameter math noise in chips."""
+    service = SuggestionService()
+
+    suggestions = service.get_suggestions(
+        current_intent="calculation",
+        rewritten_query="import tax pls — hs 8703.24.00, cif=40000usd, china, acfta, dv=0, dq 40%"
+    )
+
+    assert len(suggestions) >= 2
+    for s in suggestions:
+        assert "=" not in s
+        assert "pls" not in s.lower()
+        assert "dq" not in s.lower()
+        assert "cif=" not in s.lower()
+
+
+def test_suggestion_service_no_hs_lookup_chip_for_calculation_intent():
+    """Calculation intent must NOT suggest HS code lookup — the user already provided the HS code.
+    Instead it should suggest procedure/trade adjacent follow-ups."""
+    from app.utils.entity_utils import extract_entity
+
+    query = "hi how much tax if i import a car hs 8703.22.00 cif is $10500, from china, ACFTA rate, dv=0"
+    entity = extract_entity(query)
+    assert entity == "car", f"Expected 'car', got '{entity}'"
+
+    service = SuggestionService()
+    suggestions = service.get_suggestions(
+        current_intent="calculation",
+        rewritten_query=query,
+    )
+
+    assert len(suggestions) >= 2
+    for s in suggestions:
+        assert "hs code for" not in s.lower(), f"Unexpected hs_code_lookup chip: '{s}'"
+        assert "=" not in s
+
+
+def test_suggestion_service_calculation_product_description_from_result_payload():
+    """When query has no explicit product name but calculation result contains assumptions with product description,
+    suggestions must hydrate with the product description (e.g. General merchandise) instead of query noise."""
+    from app.utils.entity_utils import extract_entity
+
+    query = "need tax calc for hs code 8703.24.00, cif $40,000, importing from china"
+    extracted = extract_entity(query)
+    # The raw query has no product noun (only HS code & financial parameters), so extract_entity yields None
+    assert extracted is None, f"Expected None for query with no product name, got '{extracted}'"
+
+    service = SuggestionService()
+    result_payload = {
+        "assumptions": [
+            "+ HS Code: 8703.24.00",
+            "+ Product: General merchandise",
+            "+ Origin country: CN"
+        ]
+    }
+
+    suggestions = service.get_suggestions(
+        current_intent="calculation",
+        rewritten_query=query,
+        result_payload=result_payload
+    )
+
+    assert len(suggestions) >= 2
+    assert not any("need calc for 000" in s.lower() for s in suggestions), f"Bogus noise entity in suggestions: {suggestions}"
+    assert any("General merchandise" in s for s in suggestions), f"Expected 'General merchandise' in suggestions, got {suggestions}"
+
+
+def test_suggestion_service_calculation_extracts_product_from_answer_header():
+    """For queries like 'can u calculate tax for 8703.22.00 china cif10500usd acfta dv 0',
+    suggestions must extract entity from PRODUCT INFORMATION: * HS Code: 8703.22.00 (General merchandise)."""
+    query = "can u calculate tax for 8703.22.00 china cif10500usd acfta dv 0"
+    service = SuggestionService()
+    result_payload = {
+        "answer": (
+            "PRODUCT INFORMATION:\n"
+            "* HS Code: 8703.22.00 (General merchandise)\n"
+            "* Origin Country: CN\n"
+        )
+    }
+
+    suggestions = service.get_suggestions(
+        current_intent="calculation",
+        rewritten_query=query,
+        result_payload=result_payload
+    )
+
+    assert len(suggestions) >= 2
+    assert not any("can u calculate" in s.lower() for s in suggestions), f"Bogus noise entity in suggestions: {suggestions}"
+    assert any("General merchandise" in s for s in suggestions), f"Expected 'General merchandise' in suggestions, got {suggestions}"
 
 
 if __name__ == "__main__":

@@ -11,13 +11,18 @@
 import { onMounted, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useAppLocale } from '~/composables/common/useAppLocale';
-import { usePreferencesStore, type FontSizePreference } from '~/stores/preferences.store';
+import {
+  usePreferencesStore,
+  type FontSizePreference,
+  type FontStylePreference,
+} from '~/stores/preferences.store';
 
 const { locale } = useAppLocale();
 const preferencesStore = usePreferencesStore();
-const { fontSize } = storeToRefs(preferencesStore);
+const { fontSize, fontStyle } = storeToRefs(preferencesStore);
 
 const FONT_SIZE_CLASSES = ['font-size-small', 'font-size-medium', 'font-size-large'] as const;
+const FONT_STYLE_CLASSES = ['font-style-system', 'font-style-serif', 'font-style-mono'] as const;
 
 function applyFontSize(size: FontSizePreference) {
   if (typeof document === 'undefined') return;
@@ -26,15 +31,24 @@ function applyFontSize(size: FontSizePreference) {
   root.classList.add(`font-size-${size}`);
 }
 
+function applyFontStyle(style: FontStylePreference) {
+  if (typeof document === 'undefined') return;
+  const root = document.documentElement;
+  FONT_STYLE_CLASSES.forEach((className) => root.classList.remove(className));
+  root.classList.add(`font-style-${style}`);
+}
+
 // Connect Pinia theme ↔ Vuetify (must run in setup, not in a Nuxt plugin).
 useAppTheme();
 
 onMounted(() => {
   preferencesStore.init();
   applyFontSize(fontSize.value);
+  applyFontStyle(fontStyle.value);
 });
 
 watch(fontSize, applyFontSize);
+watch(fontStyle, applyFontStyle);
 
 useHead(() => ({
   htmlAttrs: {

@@ -12,7 +12,7 @@ import uuid
 import re
 from datetime import datetime, timezone
 
-from ..utils import extract_entity
+from ..utils import extract_entity, strip_clarification_questions_from_prose
 
 from ..infrastructure.cache_service import get_cache_service
 from ..ai import OrchestratorLLMService, LLMServiceConfig, get_llm_service
@@ -51,157 +51,55 @@ from .hs_classifier import detect_simple_product_category
 
 logger = logging.getLogger(__name__)
 
-# Shared lists of countries and prefix families to filter out non-product descriptions
-_TRADE_COUNTRIES = frozenset([
-    "cambodia", "vietnam", "thailand", "china", "laos", "myanmar", "malaysia", "singapore", 
-    "indonesia", "philippines", "brunei", "japan", "korea", "usa", "america", "europe", 
-    "india", "germany", "france", "uk", "united kingdom", "australia", "canada"
-])
-
-_NON_PRODUCT_PREFIXES = (
-    "regulat",   # regulate, regulation, regulatory, regulator
-    "procedur",  # procedure, procedures, procedural
-    "document",  # document, documents, documentation, documented
-    "certif",    # certificate, certification, certified
-    "declar",    # declare, declaration, declarant
-    "clearanc",  # clearance, clearances
+# Imported heuristics and constants
+from .heuristics import (
+    _TRADE_COUNTRIES,
+    _NON_PRODUCT_PREFIXES,
+    _CLARIFY_STOP_WORDS,
+    _CLARIFY_GENERIC_NOUNS,
+    _SPEC_DISCRIMINATORS,
+    ALL_ESCAPE_HATCH_TERMS,
+    MAX_PRODUCT_ASK_BACK_RETRIES,
+    Heuristics,
 )
-
-# Product-spec clarification state machine constants
-# Maximum number of spec follow-up merges before we give up and route
-# the next user input as a fresh query.
-MAX_PRODUCT_ASK_BACK_RETRIES = 2
-
-# Stop words stripped when extracting expected terms from clarifying questions.
-_CLARIFY_STOP_WORDS = frozenset([
-    "is", "the", "a", "an", "or", "as", "and", "of", "for", "are", "does",
-    "do", "was", "with", "its", "this", "that", "your", "it", "in", "to",
-    "has", "have", "can", "will", "be", "if", "not", "from", "you", "how",
-])
-
-# Generic nouns that survive stop-word stripping but are too broad to be
-# useful as merge-eligibility signals — e.g. "vehicle" in
-# "Is the vehicle imported as CBU?" must not match a topic-switch like
-# "looking for a vehicle export permit".
-_CLARIFY_GENERIC_NOUNS = frozenset([
-    "vehicle", "product", "item", "type", "unit", "specify", "details",
-    "model", "specific", "question", "questions", "classification",
-    "code", "codes", "tariff", "tariffs", "goods", "import", "export",
-    "imported", "exported", "use", "used",
-    # Generic parts and helper tokens from verbose questions (excluding body types like car/sedan)
-    "wheel", "wheels", "drive", "built", "kits", "kit", "four", "two", "three", "one", "first", "second", "third",
-    "number", "numbers", "option", "options", "select", "choice", "choices", "equipped",
-    "completely", "knocked", "down", "fully",
-])
-
-# Category-specific technical discriminators: words that genuinely answer
-# a spec question and cannot be mistaken for a new product name.
-_SPEC_DISCRIMINATORS: Dict[str, frozenset] = {
-    "vehicle": frozenset([
-        "petrol", "diesel", "electric", "hybrid", "ev", "battery",
-        "engine", "cc", "kw", "hp", "4wd", "cbu", "ckd",
-    ]),
-    "food": frozenset([
-        "fresh", "frozen", "airtight", "salted", "dried", "smoked",
-        "prepared", "preserved",
-    ]),
-    "textile": frozenset([
-        "knitted", "woven", "crocheted", "wool", "synthetic",
-        "cotton", "artificial",
-    ]),
-}
-
-# Words that indicate the user already wrote a full question/statement,
-# OR is making small talk — neither should be rewritten as an HS query.
-_QUESTION_SIGNALS = frozenset([
-    # Question words
-    "what", "which", "where", "when", "who", "how", "why",
-    "is", "are", "can", "does", "do", "tell", "find",
-    # Domain keywords (already a trade/customs query)
-    "hs", "code", "tariff", "import", "export", "classify",
-    "calculate", "duty", "rate", "definition",
-    # Greetings & farewells
-    "hello", "hi", "hey", "hiya", "howdy",
-    "bye", "goodbye", "farewell", "ciao",
-    "good", "morning", "afternoon", "evening", "night",
-    # Politeness / small-talk
-    "thanks", "thank", "please", "sorry", "excuse",
-    "yes", "no", "ok", "okay", "sure", "nope", "yep",
-    "great", "awesome", "nice", "cool", "wow",
-])
+from .clarification_manager import ClarificationManager
+from .handlers.small_talk import SmallTalkHandler, generate_small_talk_response
+from .handlers.definition import DefinitionHandler
+from .handlers.calculation import CalculationHandler
+from .handlers.trade_query import TradeQueryHandler
+from .handlers.hs_lookup import HsCodeLookupHandler
 
 
-async def generate_small_talk_response(query: str, llm_service=None) -> str:
+
+
+
+async def generate_out_of_scope_refusal(query: str, llm_service=None, language: str = "en") -> str:
     """
-    Generates a polite/friendly response for small talk, chitchat, or out-of-scope queries.
-    Utilizes static predefined responses for common greetings to bypass LLM calls,
-    and applies a strict scope guardrail prompt if an LLM call is required.
+    Generates a warm, LLM-written refusal for off-topic queries that are outside
+    GDCE's operational domain (customs, trade, tax, HS codes).
+
+    Falls back to a safe static message if the LLM is unavailable.
+    The response is never cached (called only from the out-of-scope short-circuit path).
     """
-    PREDEFINED_RESPONSES = {
-        "greeting": "Hello! I'm here to help you with Cambodia customs and trade questions. How can I assist you today?",
-        "goodbye": "Thank you for using GDCE ChatBot. Have a wonderful day ahead, and feel free to reach out anytime you need customs assistance!",
-        "gratitude": "You're very welcome! If you have any more questions about imports, exports, or customs procedures, I'm here to help.",
-        "casual": "I am doing well, thank you for asking! Ready to help you with any customs or trade questions you have.",
-        "joke": "Why did the customs officer go to school? To learn how to classify himself! Let me know if you need help classifying actual goods.",
-        "roast": "You must be an HS code, because you're incredibly complicated to classify.",
-        "social": "Nice to meet you too! Let me know if there's anything about customs or trade you'd like to discuss.",
-        "confirmation": "Got it! Please go ahead with your customs or trade-related question.",
-        "identity": "I am the GDCE ChatBot, a specialized assistant designed to help you with Cambodia customs regulations, duty calculations, HS code lookups, and trade queries."
+    _FALLBACK = {
+        "en": (
+            "That's outside my area of expertise! I specialize in Cambodia customs regulations, "
+            "import/export duties, HS code lookups, and trade statistics. "
+            "Feel free to ask me anything related to customs or trade!"
+        ),
+        "km": (
+            "សំណួររបស់អ្នកនៅក្រៅវិសាលភាពរបស់ខ្ញុំ! ខ្ញុំជំនាញក្នុងបទប្បញ្ញត្តិគយ "
+            "ពន្ធនាំចូល/នាំចេញ ការរកលេខកូដ HS និងស្ថិតិពាណិជ្ជកម្មរបស់ប្រទេសកម្ពុជា។ "
+            "សូមសួរខ្ញុំអំពីរឿងទាក់ទងនឹងគយ ឬពាណិជ្ជកម្ម!"
+        ),
     }
-    
-    low = (query or "").strip().lower()
-    is_obvious_small_talk = False
-    matched_category = "confirmation"
-    
-    # Static word-boundary matching and length limits
-    if len(low) < 15:
-        if any(re.search(rf"\b{pat}\b", low) for pat in ["hi", "hello", "hey", "yo", "greetings", "helo", "bello"]):
-            is_obvious_small_talk = True
-            matched_category = "greeting"
-        elif any(re.search(rf"\b{pat}\b", low) for pat in ["thanks", "thank", "thank you", "appreciate"]):
-            is_obvious_small_talk = True
-            matched_category = "gratitude"
-        elif any(re.search(rf"\b{pat}\b", low) for pat in ["bye", "goodbye", "farewell"]):
-            is_obvious_small_talk = True
-            matched_category = "goodbye"
-            
-    # Longer pattern checks (social, jokes, casual, capability checks)
-    if not is_obvious_small_talk:
-        if any(re.search(rf"\b{re.escape(w)}\b", low) for w in ["nice to meet you", "pleasure to meet you", "glad to meet you"]):
-            is_obvious_small_talk = True
-            matched_category = "social"
-        elif any(re.search(rf"\b{re.escape(w)}\b", low) for w in ["how are you", "whats up", "how is your day", "hows your day", "hows it going", "how is it going"]):
-            is_obvious_small_talk = True
-            matched_category = "casual"
-        elif any(re.search(rf"\b{re.escape(w)}\b", low) for w in ["tell me a joke", "tell a joke", "make me laugh", "joke"]):
-            is_obvious_small_talk = True
-            matched_category = "joke"
-        elif any(re.search(rf"\b{re.escape(w)}\b", low) for w in ["roast me"]):
-            is_obvious_small_talk = True
-            matched_category = "roast"
-        elif any(re.search(pat, low) for pat in [
-            r"\b(what|who)\s+are\s+you\b",
-            r"\bwhat\s+is\s+your\s+(name|purpose)\b",
-            r"\bwhat\s+(can|do)\s+you\s+do\b",
-            r"\bare\s+you\s+(a\s+)?(bot|ai|robot|chatbot|assistant)\b",
-            r"\btell\s+me\s+about\s+yourself\b",
-            r"\bcapabilities\b",
-            r"\bhow\s+can\s+you\s+help\b"
-        ]):
-            is_obvious_small_talk = True
-            matched_category = "identity"
 
-    if is_obvious_small_talk:
-        return PREDEFINED_RESPONSES[matched_category]
-
-    # Call LLM as a general-purpose conversational assistant.
-    # Inject the current server datetime so date/time questions are answered correctly.
     if llm_service and llm_service.is_available():
-        current_datetime = datetime.now(timezone.utc).strftime("%A, %B %d, %Y at %H:%M UTC")
+        lang_label = "Khmer" if language == "km" else "English"
         prompt = _prompt_manager.render(
-            "generate_small_talk_response",
+            "generate_out_of_scope_refusal",
             query=query,
-            current_datetime=current_datetime,
+            language=lang_label,
         )
         try:
             provider = llm_service.router.providers.get("gemini")
@@ -215,12 +113,13 @@ async def generate_small_talk_response(query: str, llm_service=None) -> str:
                 if content:
                     return content
         except Exception as e:
-            logger.warning(f"LLM small talk generation failed: {e}")
+            logger.warning(f"LLM out-of-scope refusal generation failed: {e}")
 
-    return PREDEFINED_RESPONSES["greeting"]
+    return _FALLBACK.get(language, _FALLBACK["en"])
 
 
 async def detect_small_talk(query: str, llm_service=None, force_llm_fallback: bool = False) -> Optional[str]:
+
     """Detects if the query is small talk/casual/unrelated and provides a friendly response."""
     # To avoid classification logic duplication, if force_llm_fallback=True (meaning we know it's small talk),
     # we directly call the generation helper.
@@ -312,10 +211,25 @@ class ServiceCoordinator:
             llm_intent_timeout=llm_intent_timeout,
             llm_service=self.llm_service,
         )
+        from .translator import QueryTranslator
+        self.query_translator = QueryTranslator(self.llm_service)
         self.policy_engine = policy_engine
         self.timeout_config = timeout_config or get_timeout_config()
         self.use_input_rewriter = use_input_rewriter
         logger.info(f" LLM abstraction layer initialized (input rewrite enabled: {use_input_rewriter})")
+
+    async def _detect_small_talk(self, query: str, llm_service=None, force_llm_fallback: bool = False) -> Optional[str]:
+        return await detect_small_talk(query, llm_service, force_llm_fallback)
+
+    def _normalize_turn2_input(self, text: str) -> str:
+        return Heuristics.normalize_turn2_input(text)
+
+    def _is_turn2_escape_hatch(self, text: str) -> bool:
+        return Heuristics.is_turn2_escape_hatch(text)
+
+    def _is_vague_trade_query(self, query: str) -> bool:
+        return Heuristics.is_vague_trade_query(query)
+    
     
     async def process_query(
         self,
@@ -352,8 +266,11 @@ class ServiceCoordinator:
 
         # For streaming mode, Khmer translation is handled by the endpoint after
         # the stream completes so we skip it here.
-        if not stream and is_km:
-            response["question"] = original_question
+        target_lang = response.get("metadata", {}).get("language")
+        if not target_lang and hasattr(response.get("context"), "session_context"):
+            target_lang = getattr(response["context"].session_context, "target_language", "en")
+
+        if not stream and (is_km or target_lang == "km"):
             if "metadata" not in response:
                 response["metadata"] = {}
             response["metadata"]["language"] = "km"
@@ -364,12 +281,13 @@ class ServiceCoordinator:
 
             english_text = response.get(text_key)
             if english_text and isinstance(english_text, str) and english_text.strip():
-                try:
-                    khmer_text = await translator.translate_to_khmer(english_text)
-                    logger.info(f"Translated English response '{english_text[:100]}...' to Khmer '{khmer_text[:100]}...'")
-                    response[text_key] = khmer_text
-                except Exception as e:
-                    logger.error(f"Failed to translate response to Khmer: {e}")
+                if not translator.is_khmer(english_text):
+                    try:
+                        khmer_text = await translator.translate_to_khmer(english_text)
+                        logger.info(f"Translated English response '{english_text[:100]}...' to Khmer '{khmer_text[:100]}...'")
+                        response[text_key] = khmer_text
+                    except Exception as e:
+                        logger.error(f"Failed to translate response to Khmer: {e}")
 
         return response
 
@@ -474,8 +392,13 @@ class ServiceCoordinator:
                                 cache_intent = cache.get("intent")
                                 cache_conf = cache.get("confidence", 0.0)
 
-                    # Guard 1: Small talk exit check (authoritative signal)
-                    if cache_intent == "small_talk":
+                    # Layer 1: Deterministic structural fragment check
+                    is_slot_reply = self._is_slot_fragment_reply(
+                        normalized_question, context.session_context.clarification_intents
+                    )
+
+                    # Guard 1: Small talk exit check (only if NOT a slot fragment reply)
+                    if not is_slot_reply and cache_intent == "small_talk":
                         logger.info(f"[{request_id}] [ASK-BACK-EXIT] Small talk detected during clarification. Exiting.")
                         context.session_context.resolve_clarification(None)
                         context.intent = WorkflowIntent.SMALL_TALK
@@ -549,110 +472,135 @@ class ServiceCoordinator:
                                 logger.info(f"[{request_id}] [ASK-BACK-IGNORE] Extremely low-confidence topic switch candidate {cache_intent} (conf={cache_conf} < 0.30) treated as classifier noise; staying in clarification.")
 
                         if not should_exit:
-                            # Resolve which of the candidate intents the user meant based on their response
-                            resolved_intent = ask_back_svc.resolve_from_user_response(
-                                user_text=question,
-                                candidate_intents=context.session_context.clarification_intents,
-                            )
-                            if resolved_intent:
-                                try: locked_intent = WorkflowIntent(resolved_intent)
-                                except ValueError: locked_intent = None
-                                
-                                # Retrieve the original pending query and merge it with the new clarification details.
-                                # Pass session_last_entity so _merge_pending_with_clarification can fall back
-                                # to the turn-1 entity if the turn-2 fragment carried no entity of its own.
-                                session_last_entity = getattr(context.session_context, 'last_entity', None)
-                                pending_query = context.session_context.resolve_clarification(resolved_intent)
-                                
-                                # If the pending query is missing (e.g. session was created fresh without a prior
-                                # ask-back turn), fall back to the last normalized query from the session.
-                                # This lets the merge reconstruct context (CIF, origin, entity) from Turn 1.
-                                if not pending_query and getattr(context.session_context, 'last_normalized_query', None):
-                                    pending_query = context.session_context.last_normalized_query
-                                    logger.info(
-                                        f"[{request_id}] [MERGE] pending_rewritten_query was None; "
-                                        f"falling back to last_normalized_query: '{pending_query}'"
-                                    )
-                                
-                                merged_query = self._merge_pending_with_clarification(
-                                    pending_query=pending_query,
-                                    clarification_response=question,
-                                    resolved_intent=resolved_intent,
-                                    session_last_entity=session_last_entity,
-                                    session_context=context.session_context,
-                                )
-                                logger.info(
-                                    f"[{request_id}] [MERGE] Merged pending query '{pending_query}' with "
-                                    f"clarification '{question}' (resolved intent: '{resolved_intent}') -> '{merged_query}'"
-                                )
-                                context.clarification_confidence = 0.90
-                                
-                                # Validate the merged query; if invalid, fall back to using the user's latest message only
-                                if not self._validate_merged_query(merged_query, resolved_intent):
-                                    logger.warning(
-                                        f"[{request_id}] [MERGE] Merged query '{merged_query}' failed validation for intent '{resolved_intent}'. "
-                                        f"Falling back to latest clarification response: '{question}'"
-                                    )
-                                    merged_query = question
-                                
-                                # Update the context query and clean/normalize it
-                                context.question = merged_query
-                                normalized_question = self._light_normalize_query(context.question)
-                                original_query = self.workflow_executor.cleanup_query(context.question)
-                                context.cleaned_input = original_query
-                                
-                                logger.info(
-                                    f"[{request_id}] [MERGE] Cleaned/rewritten merged query -> '{original_query}'"
-                                )
-                                
-                                # Set intent flags to lock the resolved intent and skip subsequent intent detection
-                                context.clarification_locked_intent = locked_intent
+                            # Check if the user reply is a pure escape-hatch (e.g. "idk", "whatever", "មិនដឹង") without an entity
+                            norm_reply = self._normalize_turn2_input(question)
+                            has_country_match = any(c in norm_reply for c in _TRADE_COUNTRIES)
+                            if context.metadata.get("has_nlu_entity", False):
+                                extracted_entity = context.metadata.get("nlu_entity")
+                            else:
+                                extracted_entity = extract_entity(norm_reply)
+                            has_entity_signal = bool(has_country_match or extracted_entity)
+
+                            if self._is_turn2_escape_hatch(question) and not has_entity_signal:
+                                logger.info(f"[{request_id}] [ASK-BACK-ESCAPE] User replied with escape hatch phrase '{question}'. Resolving with macro trade defaults.")
+                                context.session_context.resolve_clarification(None)
+                                context.intent = WorkflowIntent.TRADE_QUERY
+                                context.question = "top 10 import partners Cambodia 2025"
+                                normalized_question = "top 10 import partners Cambodia 2025"
+                                context.cleaned_input = normalized_question
                                 context.skip_intent_detection = True
-                                context.intent = locked_intent
-                                
                                 context.metadata["clarification_resolved"] = {
-                                    "resolved_intent": resolved_intent,
-                                    "via": "keyword",
-                                    "merged_query": merged_query,
-                                    "original_pending_query": pending_query,
-                                    "clarification_response": question,
-                                    "confidence": context.clarification_confidence,
+                                    "resolved_intent": "trade_query",
+                                    "via": "escape_hatch_macro_default",
+                                    "merged_query": normalized_question,
                                 }
                             else:
-                                # Clarification could not be resolved. Handle retries up to MAX_ASK_BACK_RETRIES
-                                MAX_ASK_BACK_RETRIES = 2
-                                if context.session_context.ask_back_count >= MAX_ASK_BACK_RETRIES:
-                                    # Too many failed attempts: clear pending state and fall through to standard processing
-                                    context.session_context.pending_clarification = False
-                                    context.session_context.clarification_intents = []
-                                    context.session_context.ask_back_count = 0
+                                # Resolve which of the candidate intents the user meant based on their response
+                                resolved_intent = ask_back_svc.resolve_from_user_response(
+                                    user_text=question,
+                                    candidate_intents=context.session_context.clarification_intents,
+                                )
+                                if resolved_intent:
+                                    try: locked_intent = WorkflowIntent(resolved_intent)
+                                    except ValueError: locked_intent = None
+                                    
+                                    # Retrieve the original pending query and merge it with the new clarification details.
+                                    session_last_entity = getattr(context.session_context, 'last_entity', None)
+                                    was_awaiting = context.session_context.is_awaiting_clarification()
+                                    pending_query = context.session_context.resolve_clarification(resolved_intent)
+                                
+                                    # If the pending query is missing (e.g. session was created fresh without a prior
+                                    # ask-back turn), fall back to the last normalized query from the session.
+                                    # This lets the merge reconstruct context (CIF, origin, entity) from Turn 1.
+                                    if not pending_query and getattr(context.session_context, 'last_normalized_query', None):
+                                        pending_query = context.session_context.last_normalized_query
+                                        logger.info(
+                                            f"[{request_id}] [MERGE] pending_rewritten_query was None; "
+                                            f"falling back to last_normalized_query: '{pending_query}'"
+                                        )
+                                    
+                                    merged_query = self._merge_pending_with_clarification(
+                                        pending_query=pending_query,
+                                        clarification_response=question,
+                                        resolved_intent=resolved_intent,
+                                        session_last_entity=session_last_entity,
+                                        session_context=context.session_context,
+                                        was_clarification_pending=was_awaiting,
+                                    )
+                                    logger.info(
+                                        f"[{request_id}] [MERGE] Merged pending query '{pending_query}' with "
+                                        f"clarification '{question}' (resolved intent: '{resolved_intent}') -> '{merged_query}'"
+                                    )
+                                    context.clarification_confidence = 0.90
+                                    
+                                    # Validate the merged query; if invalid, fall back to using the user's latest message only
+                                    if not self._validate_merged_query(merged_query, resolved_intent):
+                                        logger.warning(
+                                            f"[{request_id}] [MERGE] Merged query '{merged_query}' failed validation for intent '{resolved_intent}'. "
+                                            f"Falling back to latest clarification response: '{question}'"
+                                        )
+                                        merged_query = question
+                                    
+                                    # Update the context query and clean/normalize it
+                                    context.question = merged_query
+                                    normalized_question = self._light_normalize_query(context.question)
+                                    original_query = self.workflow_executor.cleanup_query(context.question)
+                                    context.cleaned_input = original_query
+                                    
+                                    logger.info(
+                                        f"[{request_id}] [MERGE] Cleaned/rewritten merged query -> '{original_query}'"
+                                    )
+                                    
+                                    # Set intent flags to lock the resolved intent and skip subsequent intent detection
+                                    context.clarification_locked_intent = locked_intent
+                                    context.skip_intent_detection = True
+                                    context.intent = locked_intent
+                                    
+                                    context.metadata["clarification_resolved"] = {
+                                        "resolved_intent": resolved_intent,
+                                        "via": "keyword",
+                                        "merged_query": merged_query,
+                                        "original_pending_query": pending_query,
+                                        "clarification_response": question,
+                                        "confidence": context.clarification_confidence,
+                                    }
                                 else:
-                                    # Re-prompt the user to clarify with candidates
-                                    context.session_context.set_pending_clarification(
-                                        candidate_intents=context.session_context.clarification_intents,
-                                        rewritten_query=context.session_context.pending_rewritten_query,
-                                    )
-                                    context.finalize()
-                                    return self._build_ask_back_response(
-                                        context,
-                                        question=context.session_context.pending_rewritten_query or question,
-                                        clarification_question=(
-                                            "I still wasn't sure which option you meant. "
-                                            + ask_back_svc._template.generate(
-                                                query=question,
-                                                candidate_intents=context.session_context.clarification_intents,
-                                                session=context.session_context,
-                                            )
-                                        ),
-                                        candidate_intents=context.session_context.clarification_intents,
-                                        trigger_reason="unresolved_retry",
-                                    )
+                                    # Clarification could not be resolved. Handle retries up to MAX_ASK_BACK_RETRIES
+                                    MAX_ASK_BACK_RETRIES = 2
+                                    if context.session_context.ask_back_count >= MAX_ASK_BACK_RETRIES:
+                                        # Too many failed attempts: clear pending state and fall through to standard processing
+                                        context.session_context.pending_clarification = False
+                                        context.session_context.clarification_intents = []
+                                        context.session_context.ask_back_count = 0
+                                    else:
+                                        # Re-prompt the user to clarify with candidates
+                                        context.session_context.set_pending_clarification(
+                                            candidate_intents=context.session_context.clarification_intents,
+                                            rewritten_query=context.session_context.pending_rewritten_query,
+                                        )
+                                        context.finalize()
+                                        return self._build_ask_back_response(
+                                            context,
+                                            question=context.session_context.pending_rewritten_query or question,
+                                            clarification_question=(
+                                                "I still wasn't sure which option you meant. "
+                                                + ask_back_svc._template.generate(
+                                                    query=question,
+                                                    candidate_intents=context.session_context.clarification_intents,
+                                                    session=context.session_context,
+                                                )
+                                            ),
+                                            candidate_intents=context.session_context.clarification_intents,
+                                            trigger_reason="unresolved_retry",
+                                        )
                 except Exception as e:
                     logger.warning(f"[{request_id}] Clarification resolution failed: {e}")
 
             # Step 5: Validate query formatting and check domain/safety scope boundaries
             validator = get_validator()
             validation_result = await validator.validate_input_full_async(normalized_question, context.session_context)
+            if getattr(validation_result, "slots", None):
+                context.metadata["layer1_slots"] = validation_result.slots
             
             # If the query fails basic validation rules (safety, injection, format), fail early
             if not validation_result.is_valid and validation_result.decision not in (ValidationDecision.OUT_OF_SCOPE, ValidationDecision.AMBIGUOUS):
@@ -666,16 +614,38 @@ class ServiceCoordinator:
                     "metadata": {"latency_ms": context.latency_ms, "request_id": request_id, "validation_failed": True}
                 }
             
-            # If the query is out of the system's operational scope, route to SMALL_TALK
+            # If the query is out of the system's operational scope, return an immediate refusal.
+            # Design decisions (per plan):
+            #   - pending_clarification is NOT cleared (validator false-positive is recoverable)
+            #   - response is NOT cached (static refusal must not pollute cache keyed by query text)
+            #   - intent is returned as "out_of_scope" (not "small_talk") for clean analytics
+            #   - language is matched to query language; falls back to English
             if not validation_result.is_in_scope:
+                logger.warning(
+                    f"[{request_id}] [Validator] Out-of-scope refusal triggered (early gate) for query: '{normalized_question}' "
+                    f"(reason={validation_result.scope_reason!r})"
+                )
                 context.metadata["scope_check"] = {
                     "in_scope": False,
                     "reason": validation_result.scope_reason,
                     "keywords": validation_result.scope_keywords_matched
                 }
-                logger.info(f"[{request_id}] Query is out of scope. Routing to small talk.")
-                context.intent = WorkflowIntent.SMALL_TALK
-                context.skip_intent_detection = True
+                from .translator import QueryTranslator
+                _oos_lang = "en"
+                if context.session_context and getattr(context.session_context, "target_language", None) == "km":
+                    _oos_lang = "km"
+                elif QueryTranslator.is_khmer(normalized_question):
+                    _oos_lang = "km"
+                return await self._build_out_of_scope_response(
+                    context=context,
+                    question=question,
+                    normalized_question=normalized_question,
+                    session_id=session_id,
+                    request_id=request_id,
+                    language=_oos_lang,
+                    scope_reason=validation_result.scope_reason,
+                )
+
             
             context.metadata["validation_passed"] = True
             context.metadata["scope_keywords_detected"] = validation_result.scope_keywords_matched
@@ -723,8 +693,90 @@ class ServiceCoordinator:
                     else:
                         context.intent, _intent_confidence = self.workflow_executor.detect_intent_with_confidence(normalized_question)
                     raw_detected_intent = context.intent
+                # Propagate the resolved LLM confidence into context.metadata so that
+                # _apply_intent_safety_gate and downstream logging can read it correctly.
+                # Without this write, context.metadata.get("llm_confidence") silently
+                # returns the default 1.0, rendering any confidence-based guard ineffective.
+                context.metadata["llm_confidence"] = _intent_confidence
+
+                # ===== MULTILINGUAL LANGUAGE RESOLUTION & NORMALIZATION =====
+                SUPPORTED_SUGGESTION_LANGUAGES = {"en", "km"}
+                resolved_lang = "en"
+                
+                # Fetch structured NLU result from Gemini unified first-layer
+                nlu_cache = self.first_layer_service.get_request_unified_result() if self.first_layer_service else None
+                if nlu_cache:
+                    context.metadata["nlu_unified_result"] = nlu_cache
+                req_lang = nlu_cache.get("requested_language") if nlu_cache else None
+                is_explicit_lang = nlu_cache.get("is_language_explicitly_requested", False) if nlu_cache else False
+
+                has_nlu_entity = nlu_cache is not None and "entity_confidence" in nlu_cache
+                if has_nlu_entity:
+                    context.metadata["nlu_entity"] = nlu_cache.get("entity")
+                    context.metadata["nlu_entity_confidence"] = nlu_cache.get("entity_confidence")
+                    context.metadata["has_nlu_entity"] = True
+                else:
+                    context.metadata["nlu_entity"] = None
+                    context.metadata["nlu_entity_confidence"] = None
+                    context.metadata["has_nlu_entity"] = False
+
+                has_khmer_directive = bool(re.search(
+                    r"\b(in\s+khmer|translate\s+in\s+khmer|translate\s+into\s+khmer|translate\s+to\s+khmer|khmer\s+output|khmer\s+language|as\s+khmer|to\s+khmer|into\s+khmer|ជាភាសាខ្មែរ|បកប្រែជាភាសាខ្មែរ|ជាខ្មែរ)\b",
+                    question.lower()
+                ))
+
+                if (is_explicit_lang and req_lang in SUPPORTED_SUGGESTION_LANGUAGES) or has_khmer_directive:
+                    resolved_lang = req_lang if (is_explicit_lang and req_lang in SUPPORTED_SUGGESTION_LANGUAGES) else "km"
+                    if context.session_context:
+                        context.session_context.target_language = resolved_lang
+                        context.session_context.is_language_pinned = True
+                elif context.session_context and getattr(context.session_context, "is_language_pinned", False):
+                    resolved_lang = getattr(context.session_context, "target_language", "en")
+                else:
+                    from .translator import QueryTranslator
+                    if QueryTranslator.is_khmer(question):
+                        resolved_lang = "km"
+                    elif context.session_context and getattr(context.session_context, "target_language", None) in SUPPORTED_SUGGESTION_LANGUAGES:
+                        resolved_lang = context.session_context.target_language
+                    else:
+                        resolved_lang = "en"
+
+                context.metadata["language"] = resolved_lang
+                setattr(context, "language", resolved_lang)
+                if context.session_context:
+                    context.session_context.target_language = resolved_lang
+                    context.session_context.language = resolved_lang
+
                 # Run security check safety gate to prevent malformed or risky intent transitions
                 context.intent = self._apply_intent_safety_gate(context, original_query)
+
+                # ── Out-of-scope post-intent gate ────────────────────────────────────────────
+                # INTERIM FIX (Phase 1): The first-layer LLM collapses two distinct categories
+                # under the single 'small_talk' label: genuine greetings/farewells AND general
+                # off-topic knowledge queries. The validator treats both as is_in_scope=True,
+                # so the early gate above never fires for off-topic general questions.
+                # Here we intercept after intent resolution: if intent is SMALL_TALK but the
+                # query doesn't match any genuine conversational pattern (greeting, farewell,
+                # identity, casual social — in English or Khmer), we refuse it as out_of_scope.
+                #
+                # SUPERSEDED BY (Phase 2): Update gemini_unified_first_layer prompt to emit
+                # distinct 'greeting' vs 'general_off_topic' labels, removing this regex list.
+                # ────────────────────────────────────────────────────────────────────────────
+                if context.intent == WorkflowIntent.SMALL_TALK:
+                    if not self._is_genuine_conversational_small_talk(normalized_question):
+                        logger.warning(
+                            f"[{request_id}] [Validator] Out-of-scope refusal triggered (post-intent gate) "
+                            f"for query: '{normalized_question}'"
+                        )
+                        return await self._build_out_of_scope_response(
+                            context=context,
+                            question=question,
+                            normalized_question=normalized_question,
+                            session_id=session_id,
+                            request_id=request_id,
+                            language=resolved_lang,
+                            scope_reason="llm_classified_as_small_talk_not_conversational",
+                        )
 
             # Step 10: Dynamic Clarification (Ask-Back) Triggering
             # Trigger ask-back if the intent detection confidence is below 0.75 (meaning the query is ambiguous),
@@ -736,7 +788,33 @@ class ServiceCoordinator:
             trigger_reason = ""
             
             if not _already_resolved:
-                if _intent_confidence < 0.60:
+                # Retrieve NLU metadata cached during First Layer validation
+                nlu_cache = context.metadata.get("nlu_unified_result") or {}
+                is_ambig = nlu_cache.get("is_ambiguous") if isinstance(nlu_cache, dict) else None
+                nlu_conf = nlu_cache.get("confidence") if isinstance(nlu_cache, dict) else None
+                if nlu_conf is None:
+                    nlu_conf = _intent_confidence if _intent_confidence is not None else 0.0
+
+                regex_vague = self._is_vague_trade_query(normalized_question)
+
+                if context.intent == WorkflowIntent.TRADE_QUERY:
+                    # Implement 7-row decision matrix
+                    if nlu_conf >= 0.85:
+                        if is_ambig is True:
+                            should_ask_back = True
+                            trigger_reason = "high_conf_nlu_ambiguous"
+                        else:
+                            should_ask_back = False
+                    elif 0.60 <= nlu_conf < 0.85:
+                        if regex_vague:
+                            should_ask_back = True
+                            trigger_reason = "med_conf_regex_vague"
+                        else:
+                            should_ask_back = False
+                    else:  # nlu_conf < 0.60 or nlu_conf is None (0.0)
+                        should_ask_back = True
+                        trigger_reason = "low_conf_ambiguous"
+                elif _intent_confidence < 0.60:
                     should_ask_back = True
                     trigger_reason = "low_confidence_ambiguous"
                 elif (
@@ -920,34 +998,25 @@ class ServiceCoordinator:
             # Step 13: Update session tracking with processed query info
             if self.use_input_rewriter and session_id and context.session_context:
                 try:
-                    # Detect and set product category & import/export mode in session
-                    from .hs_classifier import detect_simple_product_category
-                    tracking_query = context.rewritten_input if rewrite_status == "applied" else (context.cleaned_input or context.original_input)
-                    category = detect_simple_product_category(tracking_query)
-                    mode = "import" if "import" in tracking_query.lower() else "export" if "export" in tracking_query.lower() else None
-
+                    tracking_query = (
+                        context.rewritten_input 
+                        if (context.rewrite_metadata or {}).get("validation_status") == "accepted" 
+                        else (context.cleaned_input or context.original_input or question)
+                    )
                     # ---- Two-turn state: populate last_intent / last_entity / last_*_query ----
-                    # last_raw_query: pre-standardization text (for audit/logging only)
-                    # last_normalized_query: post-standardization canonical form used by merge logic
-                    # last_entity: core subject noun phrase extracted via shared utility
-                    last_entity_val = extract_entity(tracking_query)
-                    if not last_entity_val and context.session_context:
-                        last_entity_val = getattr(context.session_context, 'last_entity', None)
-
-                    update_kwargs = {
-                        "last_intent": context.intent.value if context.intent else None,
-                        "last_raw_query": question,          # original pre-standardization input
-                        "last_normalized_query": tracking_query,  # post-standardization canonical form
-                        "last_entity": last_entity_val,
-                    }
-                    if context.detected_currency:
-                        update_kwargs["currency"] = context.detected_currency
-                    if category and category != "other":
-                        update_kwargs["product_category"] = category
-                    if mode:
-                        update_kwargs["import_export_mode"] = mode
-
+                    update_kwargs = self._build_session_update_payload(
+                        raw_query=question,
+                        normalized_query=tracking_query,
+                        intent_value=context.intent.value if context.intent else None,
+                        detected_currency=context.detected_currency,
+                        session_context=context.session_context,
+                        nlu_entity=context.metadata.get("nlu_entity"),
+                        has_nlu_entity=context.metadata.get("has_nlu_entity", False),
+                        nlu_entity_confidence=context.metadata.get("nlu_entity_confidence"),
+                    )
                     self.rewriter_service.update_session_context(session_id, **update_kwargs)
+
+
 
                     if not stream:
                         # Synchronous mode: save turn with placeholder answer summary now.
@@ -1036,302 +1105,105 @@ class ServiceCoordinator:
         resolved_intent: str,
         session_last_entity: Optional[str] = None,
         session_context: Optional[Any] = None,
+        was_clarification_pending: bool = False,
     ) -> str:
-        """
-        Assemble a usable query out of an incomplete fragment + the user's
-        chosen intent from the ask-back round-trip.
-
-        Entity resolution priority:
-        1. extract_entity(pending_query)    — entity named in turn-2 fragment
-        2. session_last_entity              — entity from turn-1 (SessionContext.last_entity)
-        3. extract_entity(clarification_response) — entity from clarification response
-        4. fall back to pending_query as-is
-        """
-        try:
-            # ---- Step 1: extract entity from the clarification response (the user's answer) ----
-            entity = extract_entity(clarification_response) if clarification_response else None
-
-            # ---- Step 2: fall back to the pending query fragment ----
-            if entity is None and pending_query:
-                entity = extract_entity(pending_query)
-
-            # ---- Step 3: fall back to turn-1 entity held in session state ----
-            if entity is None and session_last_entity:
-                entity = session_last_entity
-
-            # ---- Step 2.6: Perform pronoun replacement early ----
-            response_lower = clarification_response.strip().lower()
-            pronouns = ["its", "it", "that", "this", "these", "those"]
-            pronoun_match = None
-            for pronoun in pronouns:
-                if response_lower.startswith(pronoun):
-                    if len(response_lower) == len(pronoun) or response_lower[len(pronoun)].isspace() or response_lower[len(pronoun)] == '-':
-                        pronoun_match = pronoun
-                        break
-
-            if pronoun_match and entity:
-                clarification_response = clarification_response.replace(pronoun_match, entity, 1).strip()
-                response_lower = clarification_response.lower()
-
-            # Detect if user clarification response is just an intent keyword choice
-            is_keyword_choice = False
-            intent_whitelist_patterns = [
-                r"^calculation$", r"^calculator$", r"^calculate$", r"^tax$", r"^duty$",
-                r"^hs[-_\s]*code(?:[-_\s]*lookup)?$", r"^hs$", r"^code$", r"^lookup$",
-                r"^classify$", r"^classification$",
-                r"^trade[-_\s]*query$", r"^trade$", r"^trade[-_\s]*data$", r"^statistics$", r"^volume$",
-                r"^general$", r"^general[-_\s]*question$", r"^definition$", r"^policy$", r"^procedure$"
-            ]
-            if any(re.match(pat, response_lower) for pat in intent_whitelist_patterns):
-                is_keyword_choice = True
-
-            # If user provided a longer, substantive new query rather than just a selection option,
-            # we can use that query directly.
-            if not is_keyword_choice and clarification_response and clarification_response.strip():
-                if len(clarification_response) > len(pending_query or ""):
-                    merged = clarification_response
-                    if entity and entity.lower() not in merged.lower():
-                        merged = f"{entity} {merged}"
-                    if resolved_intent == "calculation" and not any(
-                        phrase in merged.lower() for phrase in ["calculate", "import tax", "duty", "tariff"]
-                    ):
-                        merged = f"Calculate {merged}"
-                    return merged
-
-            # Otherwise, reconstruct the query based on the resolved intent and extracted entity
-            product = entity or "goods"
-            if resolved_intent == "calculation":
-                cif_val = None
-                currency = "USD"
-                origin = "Thailand"
-                if session_context:
-                    # Scan backwards in session history to find the most recent calculation parameters
-                    turns_to_check = []
-                    if hasattr(session_context, "turns") and session_context.turns:
-                        turns_to_check = [turn.get("user") or turn.get("user_input", "") for turn in reversed(session_context.turns)]
-                    
-                    last_norm = getattr(session_context, 'last_normalized_query', None)
-                    if last_norm:
-                        turns_to_check.insert(0, last_norm)
-                        
-                    for q in turns_to_check:
-                        if not q:
-                            continue
-                        try:
-                            from ..infrastructure.clients import CalculatorServiceClient
-                            params = CalculatorServiceClient._parse_question_for_calculation(q)
-                            if params.get("cif_value") is not None and params.get("origin_country"):
-                                cif_val = params.get("cif_value")
-                                currency = params.get("currency") or "USD"
-                                origin = params.get("origin_country")
-                                break
-                        except Exception:
-                            pass
-                
-                if cif_val is not None and origin:
-                    cif_display = int(cif_val) if cif_val == int(cif_val) else cif_val
-                    sym_map = {
-                        "USD": "$", "KHR": "៛", "EUR": "€", "GBP": "£",
-                        "CNY": "¥", "JPY": "¥", "THB": "฿", "VND": "₫",
-                        "KRW": "₩", "INR": "₹"
-                    }
-                    cur_str = sym_map.get(currency, f"{currency} ")
-                    return f"Calculate import tax for {product} {cur_str}{cif_display} from {origin}"
-                else:
-                    return f"Calculate import tax for {product}"
-
-            elif resolved_intent == "hs_code_lookup":
-                return f"What is the HS code for {product}?"
-
-            elif resolved_intent == "trade_query":
-                # Extract mode, country, year, or month from current turn and session history
-                mode = None
-                country_phrase = None
-                year = None
-                month = None
-
-                if session_context and getattr(session_context, 'import_export_mode', None):
-                    mode = session_context.import_export_mode
-
-                texts_to_scan = []
-                if clarification_response:
-                    texts_to_scan.append(clarification_response)
-                if pending_query:
-                    texts_to_scan.append(pending_query)
-                if session_context:
-                    if getattr(session_context, 'last_normalized_query', None):
-                        texts_to_scan.append(session_context.last_normalized_query)
-                    if hasattr(session_context, "turns") and session_context.turns:
-                        for turn in reversed(session_context.turns):
-                            texts_to_scan.append(turn.get("user") or turn.get("user_input", ""))
-
-                COUNTRIES = list(_TRADE_COUNTRIES)
-                MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december", "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
-
-                for t in texts_to_scan:
-                    if not t:
-                        continue
-                    t_lower = t.lower()
-                    
-                    if not mode:
-                        if "export" in t_lower:
-                            mode = "export"
-                        elif "import" in t_lower:
-                            mode = "import"
-                            
-                    if not country_phrase:
-                        country_pat = "|".join(COUNTRIES)
-                        prep_match = re.search(r"\b(to|from|in|into|with|for)\s+(" + country_pat + r")\b", t_lower)
-                        if prep_match:
-                            country_phrase = prep_match.group(0)
-                        else:
-                            c_match = re.search(r"\b(" + country_pat + r")\b", t_lower)
-                            if c_match:
-                                country_name = c_match.group(1)
-                                if mode == "export":
-                                    country_phrase = f"to {country_name}"
-                                elif mode == "import":
-                                    country_phrase = f"from {country_name}"
-                                else:
-                                    country_phrase = f"with {country_name}"
-                                    
-                    if not year:
-                        year_match = re.search(r"\b(20\d{2}|19\d{2})\b", t_lower)
-                        if year_match:
-                            year = year_match.group(1)
-                            
-                    if not month:
-                        month_pat = "|".join(MONTHS)
-                        month_match = re.search(r"\b(" + month_pat + r")\b", t_lower)
-                        if month_match:
-                            month = month_match.group(1)
-
-                mode = mode or "import"
-                query_parts = [f"What are the {mode} statistics for {product}"]
-                if country_phrase:
-                    # Title case country words for professional display
-                    words = country_phrase.split()
-                    if len(words) > 1:
-                        words[1:] = [w.capitalize() for w in words[1:]]
-                        country_phrase = " ".join(words)
-                    else:
-                        country_phrase = country_phrase.capitalize()
-                    query_parts.append(country_phrase)
-                
-                time_parts = []
-                if month:
-                    time_parts.append(month.capitalize())
-                if year:
-                    time_parts.append(year)
-                if time_parts:
-                    query_parts.append("in " + " ".join(time_parts))
-                
-                return " ".join(query_parts) + "?"
-
-
-            elif resolved_intent == "general":
-                return f"Tell me about {product}"
-
-            # Prepend entity to clarification response if missing fallback
-            if clarification_response and clarification_response.strip() and entity:
-                if entity.lower() not in clarification_response.lower():
-                    return f"{entity} {clarification_response}"
-
-            return pending_query if pending_query and pending_query.strip() else clarification_response or ""
-        except Exception as e:
-            logger.error(f"[MERGE] Unexpected error during merge: {str(e)}", exc_info=True)
-            return clarification_response or ""
+        return ClarificationManager.merge_pending_with_clarification(
+            self,
+            pending_query,
+            clarification_response,
+            resolved_intent,
+            session_last_entity,
+            session_context,
+            was_clarification_pending,
+        )
 
     def _validate_merged_query(self, merged_query: str, resolved_intent: str) -> bool:
-        """
-        Validates that a merged/combined query is substantive enough and contains 
-        relevant keywords for the detected intent.
-        """
-        # Check 1: Query must exist, and be at least 5 characters long
-        if not merged_query or not merged_query.strip() or len(merged_query.strip()) < 5:
-            return False  
-                
-        # Check 2: If the intent is a calculation task, verify calculation-related keywords are present
-        if resolved_intent == "calculation":
-            calc_keywords = ["tax", "duty", "tariff", "import", "cif", "value", "calculate", "cost"]
-            if not any(kw in merged_query.lower() for kw in calc_keywords): 
-                return False
-
-        # Check 3: If the intent is HS code lookup, verify HS code-related keywords are present
-        if resolved_intent == "hs_code_lookup":
-            hs_keywords = ["hs code", "hs-code", "tariff code", "code", "ahtn", "harmonized code"]
-
-            # ACCEPT if either:
-            # A) User explicitly mentions HS code keywords, OR
-            # B) Text looks like a commercial/product description (naked description)
-            has_explicit_hs_keywords = any(kw in merged_query.lower() for kw in hs_keywords)
-            looks_commercial = self._looks_like_commercial_description(merged_query)
-
-            if not (has_explicit_hs_keywords or looks_commercial): 
-                return False
-
-        return True
+        return ClarificationManager.validate_merged_query(self, merged_query, resolved_intent)
 
 
     def _looks_like_commercial_description(self, text: str) -> bool:
+        return Heuristics.looks_like_commercial_description(text)
+
+    def _is_entity_clearing_correction(self, query: str) -> bool:
         """
-        Structural heuristic to detect if text appears to be copied from a logistics sheet,
-        shipping manifest, or commercial product listing. Uses pattern matching for 
-        specifications, model codes, and domain-specific vocabulary.
+        Check if query is a grammatical correction fragment targeting the entity slot.
+        Temporary stopgap before LLM returns is_correction_fragment directly.
         """
-        if not text: 
-            return False
-        
-        # Convert to lowercase for case-insensitive matching
-        low = text.lower()
-        
-        # Pattern 1: Match specifications and technical units
-        # Looks for patterns like: "500cc", "2000wh", "19 seats", "2024", "500g x 10", etc.
-        spec_unit_pattern = re.compile(
-            r"\b(?:\d+[\.\d]*\s*cc|cc\b|\d+[\.\d]*\s*(?:wh|kwh|v|ah)\b|\d+\s*seats?\b|\d+\s*wheels?\b|(?:19|20)\d{2}\b|\d+\s*(?:g|kg|ml|l|pcs|bags|ctn)\s*x\s*\d+)\b", 
-            re.IGNORECASE
+        cleaned = query.strip().lower()
+        negation_patterns = [
+            r"^(?:actually\s+)?none$",
+            r"^(?:actually\s+)?no\s+(?:product|commodity|entity|item|goods)$",
+            r"^clear\s+(?:product|commodity|entity|item|goods)$",
+            r"^remove\s+(?:product|commodity|entity|item|goods)$",
+            r"^not\s+a\s+(?:product|commodity|entity|item|goods)$",
+            r"^គ្មានទេ$",
+            r"^មិនមែនទំនិញទេ$",
+        ]
+        return any(re.match(pat, cleaned) for pat in negation_patterns)
+
+    def _build_session_update_payload(
+        self,
+        raw_query: str,
+        normalized_query: str,
+        intent_value: Optional[str],
+        detected_currency: Optional[str] = None,
+        session_context: Optional[Any] = None,
+        nlu_entity: Optional[str] = None,
+        has_nlu_entity: bool = False,
+        nlu_entity_confidence: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Helper to build standardized session state kwargs across turns."""
+        from .hs_classifier import detect_simple_product_category
+        category = detect_simple_product_category(normalized_query)
+        q_lower = normalized_query.lower()
+        mode = "import" if "import" in q_lower else "export" if "export" in q_lower else None
+
+        prev_entity = getattr(session_context, "last_entity", None) if session_context else None
+        last_entity_val = prev_entity
+        entity_state_log = "fallback_preserved"
+
+        # State 1: High-confidence NLU entity found
+        if has_nlu_entity and nlu_entity and nlu_entity_confidence == "high":
+            last_entity_val = nlu_entity
+            entity_state_log = "found"
+
+        # State 2: Explicit confirmation of no entity
+        elif has_nlu_entity and (not nlu_entity) and nlu_entity_confidence == "explicit_none":
+            if self._is_entity_clearing_correction(raw_query):
+                last_entity_val = None
+                entity_state_log = "explicit_none_cleared"
+            else:
+                last_entity_val = prev_entity
+                entity_state_log = "explicit_none_preserved"
+
+        # State 3: Regex fallback / Low confidence / Gemini down
+        else:
+            # We preserve long-term last_entity, but we can still compute a current-turn entity
+            # for immediate use (RAG search, suggestions, etc.) if needed via regex.
+            last_entity_val = prev_entity
+            entity_state_log = "fallback_preserved"
+
+        logger.debug(
+            f"[ENTITY_STATE] state: {entity_state_log} | "
+            f"raw_query: '{raw_query}' | "
+            f"nlu_entity: '{nlu_entity}' (conf: {nlu_entity_confidence}) | "
+            f"has_nlu_entity: {has_nlu_entity} | "
+            f"prev_entity: '{prev_entity}' -> last_entity: '{last_entity_val}'"
         )
-        
-        # Pattern 2: Match model codes and product identifiers
-        # - Case-sensitive: Pure alphabetical codes (must be uppercase) or parenthesized numbers
-        # - Case-insensitive: Alphanumeric codes containing at least one digit (e.g., "m8", "abc123", "12v")
-        model_code_pattern_case_sensitive = re.compile(
-            r"\b[A-Z]{4,}\b|\(\d+\)"
-        )
-        model_code_pattern_case_insensitive = re.compile(
-            r"\b[a-z0-9]{2,}[0-9][a-z0-9]*\b|\b[a-z][0-9]\b|\b[0-9][a-z]\b",
-            re.IGNORECASE
-        )
-        
-        # Pattern 3: Dictionary of commercial/product-related keywords
-        # Covers vehicles, food products, electronics, packaging, etc.
-        commercial_words = {
-            "new", "used", "moto", "auto", "electric", "hybrid", "plug", "diesel", "petrol", "lpg", "cng", 
-            "hev", "bev", "phev", "ckd", "ikd", "cbp",  
-            "sedan", "suv", "van", "truck", "bus", "wheel", "seat", "door", "battery",  
-            "tea", "bag", "bags", "powder", "powdered", "whole", "rice", "food", "pack", "packs", "box",  
-            "frozen", "fresh", "organic", "grade",
-            # Additional vehicle/product category terms
-            "car", "sports", "competition", "salmon", "fillet", "fish", "meat", "seafood",
-            "textile", "garment", "apparel", "clothing", "cotton", "wool", "polyester",
-            "laptop", "phone", "tablet", "computer", "electronics"
+
+        update_kwargs = {
+            "last_intent": intent_value,
+            "last_raw_query": raw_query,
+            "last_normalized_query": normalized_query,
+            "last_entity": last_entity_val,
         }
-        
-        # Check if the text contains specification patterns (e.g., "500cc", "2024")
-        has_spec = bool(spec_unit_pattern.search(low))
-        
-        # Check if the text contains model codes or product identifiers
-        has_model = bool(
-            model_code_pattern_case_sensitive.search(text)
-            or model_code_pattern_case_insensitive.search(text)
-        )
-        
-        # Extract all words from text and check how many match commercial keywords
-        words_set = set(re.findall(r"[a-z]+", low))  # Extract all alphabetic words
-        descriptor_hits = len(words_set & commercial_words)  # Count matches
-        
-        # Return True if at least 2 out of 3 indicators are present, OR if there are multiple commercial descriptor hits
-        return sum([has_spec, has_model, descriptor_hits >= 1]) >= 2 or descriptor_hits >= 2
+        if detected_currency:
+            update_kwargs["currency"] = detected_currency
+        if category and category != "other":
+            update_kwargs["product_category"] = category
+        if mode:
+            update_kwargs["import_export_mode"] = mode
+        return update_kwargs
 
     def update_session_for_query(
         self,
@@ -1347,30 +1219,77 @@ class ServiceCoordinator:
             return
         try:
             session_context = self.rewriter_service.get_or_create_session(session_id)
-            from .hs_classifier import detect_simple_product_category
-            
-            cleaned_query = self.workflow_executor.cleanup_query(query)
-            category = detect_simple_product_category(query)
-            mode = "import" if "import" in query.lower() else "export" if "export" in query.lower() else None
-            last_entity_val = extract_entity(cleaned_query or query)
-
-            update_kwargs = {
-                "last_intent": intent_value,
-                "last_raw_query": query,
-                "last_normalized_query": cleaned_query,
-                "last_entity": last_entity_val,
-            }
-            if detected_currency:
-                update_kwargs["currency"] = detected_currency
-            if category and category != "other":
-                update_kwargs["product_category"] = category
-            if mode:
-                update_kwargs["import_export_mode"] = mode
-
+            cleaned_query = self.workflow_executor.cleanup_query(query) or query
+            update_kwargs = self._build_session_update_payload(
+                raw_query=query,
+                normalized_query=cleaned_query,
+                intent_value=intent_value,
+                detected_currency=detected_currency,
+                session_context=session_context
+            )
             self.rewriter_service.update_session_context(session_id, **update_kwargs)
             session_context.add_turn(user_input=query, bot_response=answer_summary[:200])
         except Exception as e:
             logger.warning(f"Failed to update session for query {query}: {e}")
+
+
+    async def _build_out_of_scope_response(
+        self,
+        context: WorkflowContext,
+        question: str,
+        normalized_question: str,
+        session_id: str,
+        request_id: str,
+        language: str,
+        scope_reason: str,
+    ) -> Dict[str, Any]:
+        """
+        Single shared helper that constructs the out_of_scope refusal response.
+        Called by BOTH refusal gates (early validator gate and post-intent gate)
+        to guarantee identical behaviour:
+          - Calls generate_out_of_scope_refusal() — LLM-driven, with static fallback
+          - Attaches localized generic_fallback suggestion chips
+          - Returns intent: 'out_of_scope' (never 'small_talk')
+          - Does NOT clear pending_clarification/session state (false-positive is recoverable)
+          - Does NOT cache the response
+        """
+        _refusal_text = await generate_out_of_scope_refusal(
+            query=question,
+            llm_service=self.llm_service,
+            language=language,
+        )
+        _oos_suggestions: list = []
+        try:
+            _oos_suggestions = self.suggestion_service.get_suggestions(
+                current_intent="small_talk",
+                rewritten_query=normalized_question,
+                session_context=context.session_context,
+                language=language,
+                nlu_entity=context.metadata.get("nlu_entity"),
+                has_nlu_entity=context.metadata.get("has_nlu_entity", False),
+            )
+        except Exception:
+            pass
+        context.finalize()
+        return {
+            "request_id": request_id,
+            "question": question,
+            "intent": "out_of_scope",
+            "status": "completed",
+            "latency_ms": context.latency_ms,
+            "answer": _refusal_text,
+            "citations": [],
+            "suggestion": _oos_suggestions,
+            "metadata": {
+                "request_id": request_id,
+                "session_id": session_id,
+                "out_of_scope": True,
+                "scope_reason": scope_reason,
+            }
+        }
+
+    def _is_genuine_conversational_small_talk(self, query: str) -> bool:
+        return Heuristics.is_genuine_conversational_small_talk(query)
 
     def _apply_intent_safety_gate(self, context: WorkflowContext, original_query: str, postpone_allowed: bool = True) -> WorkflowIntent:
         """
@@ -1415,79 +1334,82 @@ class ServiceCoordinator:
                         " Downgrading to SMALL_TALK."
                     )
                     return WorkflowIntent.SMALL_TALK
+        if detected_intent == WorkflowIntent.CALCULATION:
+            # Safety check: if the query is a generic/conceptual/educational query about
+            # how calculation works rather than requesting an actual calculation for a product,
+            # and it lacks specific parameters (cif, product), route it to GENERAL.
+            raw_lower = (context.original_input or original_query or "").strip().lower()
+            
+            # Primary path: utilize the LLM-classified query_nature (multilingual ready)
+            nlu_result = context.metadata.get("nlu_unified_result") or {}
+            query_nature = nlu_result.get("query_nature")
+            
+            should_downgrade = False
+            downgrade_reason = ""
+            
+            if query_nature == "procedural":
+                should_downgrade = True
+                downgrade_reason = "LLM query_nature == 'procedural'"
+            else:
+                # Fallback path: regex matching if query_nature is unavailable
+                procedural_patterns = [
+                    r"\bhow\s+(?:is|are)\s+.*calculated\b",
+                    r"\bhow\s+to\s+calculate\s+(?:duty|tax|tariff|customs)\b",
+                    r"\bformula\s+(?:for|of)\b",
+                    r"\bexplain\s+how\s+.*is\s+calculated\b",
+                    r"\bwhat\s+(?:is|are)\s+the\s+rules?\s+for\s+calculat\b",
+                    r"\bhow\s+do\s+you\s+calculate\b",
+                    r"\bprocedure\s+for\s+calculat\b",
+                    r"\bhow\s+.*\b(?:duty|tax|tariff|customs)\s+works?\b",
+                    r"\bexplain\s+.*\b(?:duty|tax|tariff|customs|calculation)\b"
+                ]
+                # Avoid blunt numeric checks (ignoring bare HS codes without CIF prices)
+                has_priceable_amount = bool(re.search(
+                    r'[$€£¥₩]\s*\d+|\d+\s*[$€£¥₩]|\b(?:cif|fob|usd|khr)\b', 
+                    raw_lower
+                ))
+                if any(re.search(pat, raw_lower) for pat in procedural_patterns) and not has_priceable_amount:
+                    should_downgrade = True
+                    downgrade_reason = "regex fallback matching procedural pattern without priceable amount"
+            
+            if should_downgrade:
+                logger.info(
+                    f"[{context.request_id}] [SAFETY-GATE] Downgrading CALCULATION to GENERAL. "
+                    f"Reason: {downgrade_reason} | query: '{raw_lower[:50]}'"
+                )
+                # Explicitly clear all spec and intent clarification states on the session
+                if context.session_context:
+                    context.session_context.product_clarification_needed = False
+                    context.session_context.clarification_entity = None
+                    context.session_context.clarification_last_query = None
+                    context.session_context.product_ask_back_count = 0
+                    context.session_context.clarification_expected_terms = []
+                    context.session_context.pending_clarification = False
+                    context.session_context.clarification_intents = []
+                    context.session_context.ask_back_count = 0
+                    context.session_context.pending_rewritten_query = None
+                    context.session_context._trigger_change()
+                return WorkflowIntent.GENERAL
             return detected_intent
 
-        # For lower-confidence intents (GENERAL, UNCLASSIFIED),
-        # perform additional analysis to see if we should reclassify
+        # For GENERAL / UNCLASSIFIED intents the LLM is trusted unconditionally.
+        # Genuinely ambiguous queries (low confidence) are already handled by the
+        # Step 10 ask-back loop at L739 (_intent_confidence < 0.60 → ask-back fires).
+        # Heuristic overrides that could flip a correct GENERAL classification into
+        # HS_CODE_LOOKUP or TRADE_QUERY have been removed: they caused the class of
+        # bug where "but which one more costly??" was forced into HS_CODE_LOOKUP
+        # even though Gemini returned GENERAL at 0.98 confidence.
         if detected_intent in {WorkflowIntent.GENERAL, WorkflowIntent.UNCLASSIFIED}:
-            # Use cleaned input if available, otherwise fall back to original query
-            candidate_query = context.cleaned_input or original_query
-            
-            # Check if the query looks like a product lookup despite being classified differently
-            if self._looks_like_short_product_lookup(candidate_query): 
-                return WorkflowIntent.HS_CODE_LOOKUP
-            
-            # Check if the query looks like a trade data request
-            if self._looks_like_trade_data_query(candidate_query): 
-                return WorkflowIntent.TRADE_QUERY
-        
+            return detected_intent
+
         # No reclassification needed; return the original detected intent
         return detected_intent
 
-    # Detects if query is asking for trade statistics/data (volume, flows, comparisons).
     def _looks_like_trade_data_query(self, query: str) -> bool:
-        q_lower = (query or "").lower()
-        disqualifiers = ["hs code", "tariff code", "classify", "classification", 
-                        "calculate", "duty", "tax", "vat", "fee", "regulation", "procedure"]
-        if any(token in q_lower for token in disqualifiers): 
-            return False
-        # check for required parameters (Trade data queries usually reference specific time periods)
-        has_year = re.search(r"\b20\d{2}\b", q_lower) is not None
-        # Core indicator that user is talking about trade movement
-        has_trade_flow = re.search(r"\b(import|imports|imported|im|export|exports|exported|ex)\b", q_lower) is not None
-        # Indicates comparison or bilateral trade ("from X to Y", "between A and B")
-        has_relation = re.search(r"\b(from|to|between|with|vs|versus)\b", q_lower) is not None
-        has_trade_term = re.search(r"\b(trade|volume|flow|shipment|shipping|cargo|freight|data)\b", q_lower) is not None
-        
-        return bool(has_year and ((has_trade_flow and has_relation) or has_trade_term))
+        return Heuristics.looks_like_trade_data_query(query)
 
-    # Detects if query is a NAKED PRODUCT DESCRIPTION (no explicit HS code request).e.g, "500cc motorcycle, automatic, sedan style"
     def _looks_like_short_product_lookup(self, query: str) -> bool:
-        normalized = (query or "").strip().lower()
-        if not normalized: 
-            return False
-        # Word-boundary check for disqualifiers to avoid substring false positives (e.g. Codeine / code)
-        disqualifiers = ["hs", "code", "classify", "classification", "calculate", "duty", "tax", "import", "export", "importing", "exporting", "trade", "regulation", "policy", "procedure", "what is", "define", "explain", "how much", "between", "from", "to"]
-        if any(re.search(rf"\b{re.escape(tok)}\b", normalized) for tok in disqualifiers):
-            return False
-        if re.match(r"^(what|how|which|where|when|why|can|could|is|are|do|does)\b", normalized): 
-            return False
-        # Product descriptions are short (product specs, not essays)
-        tokens = re.findall(r"[a-z0-9]+", normalized)
-        if not tokens or len(tokens) > 6: 
-            return False
-        # Guard A: known build-format abbreviations are spec answers, not standalone product lookups.
-        _BUILD_FORMAT_ABBREVS = {"cbu", "ckd", "skd"}
-        if len(tokens) == 1 and tokens[0] in _BUILD_FORMAT_ABBREVS:
-            return False
-        # Blocks casual chat/off-topic queries (including repeated-char greeting typos like "hii", "heyyy")
-        blocked_tokens = {"hello", "hi", "hey", "thanks", "please", "weather", "time", "date", "football", "soccer", "movie", "music", "recipe", "cook", "joke", "politics", "war", "crime", "hack", "hacking", "investment", "stock"}
-        if any(token in blocked_tokens for token in tokens):
-            return False
-        # Catch greeting typos: "hii", "hiii", "heyyy", "heyy", "helloooo" etc.
-        # These are strings that are just repetitions of a known greeting base character pattern.
-        if re.match(r"^(h[aeiou]{2,}|hey+|hell[o]+|hi+)$", normalized):
-            return False
-        # Filter countries
-        if any(token in _TRADE_COUNTRIES for token in tokens):
-            return False
-        # Filter non-product prefix families
-        if any(token.startswith(_NON_PRODUCT_PREFIXES) for token in tokens):
-            return False
-        # Filter purely numeric queries (e.g. year filters like "2025")
-        if all(token.isdigit() for token in tokens):
-            return False
-        return True
+        return Heuristics.looks_like_short_product_lookup(query)
 
     # ------------------------------------------------------------------ #
     # Product-spec clarification state machine – helpers                  #
@@ -1501,140 +1423,24 @@ class ServiceCoordinator:
         normalized_question: str,
         session_id: Optional[str],
     ):
-        """
-        Step 2c: Attempt to merge an incoming user message with a saved product
-        entity when the session is awaiting a spec clarification answer.
-
-        Returns (question, normalized_question) — either the merged form or the
-        original form (if any guard prevented merging), with all session state
-        already updated.
-
-        Guards applied in order:
-          1. Small-talk / exit check — caches result so Step 3 doesn't re-call.
-          2. Retry cap (MAX_PRODUCT_ASK_BACK_RETRIES).
-          3. Dynamic relevance guard — input must overlap with expected_terms;
-             falls back to _looks_like_short_product_lookup for "other" category.
-          4. Merged-query validation via _validate_merged_query.
-        """
-        session = context.session_context
-        stripped = question.strip()
-        normalized = self._light_normalize_query(stripped)
-        input_tokens = set(re.findall(r"[a-z0-9]+", normalized))
-
-        # ---- Guard 1: Small talk / explicit exit ---------------------------------
-        small_talk_resp = await detect_small_talk(normalized_question, llm_service=None)
-        if small_talk_resp:
-            logger.info(
-                f"[{request_id}] [SPEC-MERGE] Small talk detected ('{stripped[:40]}') — "
-                "resetting product clarification state."
-            )
-            # Cache so Step 3 skips its own detect_small_talk call.
-            context.metadata["small_talk_response"] = small_talk_resp
-            self._clear_product_clarification(session)
-            return question, normalized_question
-
-        # ---- Guard 2: Retry cap --------------------------------------------------
-        if session.product_ask_back_count >= MAX_PRODUCT_ASK_BACK_RETRIES:
-            logger.info(
-                f"[{request_id}] [SPEC-MERGE] Retry cap reached "
-                f"({session.product_ask_back_count}/{MAX_PRODUCT_ASK_BACK_RETRIES}) — "
-                "treating as fresh query."
-            )
-            self._clear_product_clarification(session)
-            return question, normalized_question
-
-        # ---- Guard 3: Dynamic relevance check -----------------------------------
-        expected_terms = set(session.clarification_expected_terms or [])
-        overlap = input_tokens & expected_terms
-        if not overlap:
-            # Fallback: for "other" category with no derived expected terms,
-            # accept the input as a spec answer (Guard 4 validates merged result).
-            if not expected_terms:
-                logger.info(
-                    f"[{request_id}] [SPEC-MERGE] No expected terms — accepting '{stripped[:40]}' "
-                    "as spec answer (Guard 4 validates the merged result)."
-                )
-            else:
-                logger.info(
-                    f"[{request_id}] [SPEC-MERGE] Input '{stripped[:40]}' has no overlap "
-                    f"with expected terms {list(expected_terms)[:6]} — resetting, treating as fresh query."
-                )
-                self._clear_product_clarification(session)
-                return question, normalized_question
-        else:
-            logger.info(
-                f"[{request_id}] [SPEC-MERGE] Matched expected terms: {list(overlap)}"
-            )
-
-        # ---- Guard 4: Validate merged query -------------------------------------
-        entity = session.clarification_entity or ""
-        merged = f"{entity} {stripped}".strip()
-        if not self._validate_merged_query(merged, "hs_code_lookup"):
-            logger.info(
-                f"[{request_id}] [SPEC-MERGE] Merged query '{merged[:60]}' failed "
-                "validation — treating as fresh query."
-            )
-            self._clear_product_clarification(session)
-            return question, normalized_question
-
-        # ---- All guards passed — inject merged query ----------------------------
-        logger.info(
-            f"[{request_id}] [SPEC-MERGE] Merging '{entity}' + '{stripped}' "
-            f"-> '{merged}' (round {session.product_ask_back_count + 1})"
+        return await ClarificationManager.try_merge_product_spec(
+            self,
+            context,
+            request_id,
+            question,
+            normalized_question,
+            session_id,
         )
-        session.product_ask_back_count += 1
-        # Temporarily clear the flag; _handle_hs_code_lookup will re-set it if
-        # the merged result is still generic.
-        session.product_clarification_needed = False
-        context.question = merged
-        context.original_input = merged
-        context.metadata["_spec_merge_done"] = True
-        context.metadata["spec_merge_entity"] = entity
-        context.metadata["spec_merge_answer"] = stripped
-        session.last_entity = merged  # Fix 4: stable product ground truth for subsequent turns
-        session._trigger_change()
-
-        normalized_merged = self._light_normalize_query(merged)
-        return merged, normalized_merged
 
     def _clear_product_clarification(self, session) -> None:
-        """Reset all product-spec clarification state on the session."""
-        session.product_clarification_needed = False
-        session.clarification_entity = None
-        session.clarification_last_query = None
-        session.product_ask_back_count = 0
-        session.clarification_expected_terms = []
-        session._trigger_change()
+        return ClarificationManager.clear_product_clarification(session)
 
     @staticmethod
     def _build_spec_expected_terms(
         clarifying_questions: Optional[list],
         category: str,
     ) -> list:
-        """
-        Build the list of allowed response tokens that Step 2c will accept on the
-        next user turn as a legitimate spec answer.
-
-        Combines:
-          - Category base discriminators from _SPEC_DISCRIMINATORS.
-          - Question-derived tokens (from the actual clarifying questions),
-            minus stop words and generic nouns.
-        """
-        base = set(_SPEC_DISCRIMINATORS.get(category, frozenset()))
-        if not clarifying_questions:
-            return sorted(base)
-
-        question_tokens: set = set()
-        for q in clarifying_questions:
-            for tok in re.findall(r"[a-z0-9]+", (q or "").lower()):
-                if (
-                    len(tok) > 2
-                    and tok not in _CLARIFY_STOP_WORDS
-                    and tok not in _CLARIFY_GENERIC_NOUNS
-                ):
-                    question_tokens.add(tok)
-
-        return sorted(base | question_tokens)
+        return ClarificationManager.build_spec_expected_terms(clarifying_questions, category)
 
     def _query_has_explicit_intent(self, query: str) -> bool:
         """
@@ -1829,127 +1635,14 @@ class ServiceCoordinator:
                 logger.error(f"Failed to log failed_request '{service_name}' to DB: {db_err}")
             raise
 
+    def _enrich_calculation_query_from_context(self, service_query: str, session_context: Optional[Any]) -> str:
+        return CalculationHandler.enrich_calculation_query_from_context(self, service_query, session_context)
+
     async def _handle_calculation(self, context: WorkflowContext):
-        logger.info(f"[{context.request_id}] Routing to calculator service")
-        try:
-            if not self.calculator_client:
-                context.add_error("Calculator service not configured")
-                context.status = WorkflowStatus.FAILED
-                return
-                
-            service_query = self._get_service_query(context)
-
-            # Check if mandatory calculation parameters (CIF value / numeric financial amount) are missing
-            cif_val = getattr(context.session_context, 'cif_value', None) if context.session_context else None
-            q_lower = service_query.lower()
-            has_numeric_val = bool(re.search(r'\d+(?:,\d{3})*(?:\.\d+)?', q_lower))
-            has_cif_keyword = any(k in q_lower for k in ["cif", "usd", "$", "khr", "price", "value", "worth", "cost"])
-
-            if not cif_val and not (has_numeric_val and has_cif_keyword):
-                logger.info(f"[{context.request_id}] Calculation missing CIF value. Prompting user for clarification.")
-                
-                # Extract specific subject/product name dynamically from session context or query
-                product_name = None
-                if context.session_context:
-                    product_name = (
-                        getattr(context.session_context, 'clarification_entity', None)
-                        or getattr(context.session_context, 'commercial_description', None)
-                        or getattr(context.session_context, 'product_category', None)
-                    )
-                if not product_name:
-                    cleaned_product = re.sub(
-                        r"(?i)\b(calculate|compute|how|about|the|tax|taxes|duty|duties|import|export|for|cbu|ckd|hs|code)\b",
-                        "",
-                        service_query
-                    ).strip()
-                    cleaned_product = re.sub(r"\s+", " ", cleaned_product).strip()
-                    product_name = cleaned_product if cleaned_product else "this product"
-
-                context.set_result("calculation", {
-                    "answer": (
-                        f"To calculate the import duty and taxes for **{product_name}**, please provide the **CIF value** "
-                        "(Cost, Insurance, and Freight invoice value in USD or KHR, e.g., `$80,000 USD`)."
-                    ),
-                    "clarification_required": True,
-                    "missing_fields": ["cif_value"]
-                })
-                context.status = WorkflowStatus.CLARIFICATION_REQUIRED
-                return
-
-            cache = get_cache_service()
-            cached_result = cache.get_cached_response(service_query, intent="calculation")
-            if cached_result:
-                context.set_result("calculation", cached_result)
-                context.status = WorkflowStatus.COMPLETED
-                return
-
-            timeout_sec = min(self.timeout_config.get_intent_timeout(context.intent), self.timeout_config.get_service_timeout("calculator"))
-            
-            async def run_call():
-                return await asyncio.wait_for(
-                    self.calculator_client.query(question=service_query), timeout=timeout_sec
-                )
-                
-            result = await self._execute_service_call(
-                context=context,
-                service_name="calculator",
-                client_call_fn=run_call,
-                request_payload={"question": service_query}
-            )
-            
-            cache.cache_response(question=service_query, response=result, intent="calculation", ttl_seconds=2 * 3600, source="calculator")
-            context.set_result("calculation", result)
-            context.status = WorkflowStatus.COMPLETED
-
-        except Exception as e:
-            logger.error(f"[{context.request_id}] Calculation failed: {e}")
-            context.add_error(f"Calculator service error: {str(e)}")
-            context.status = WorkflowStatus.FAILED
+        await CalculationHandler.handle(self, context)
     
     def _is_slot_fragment_reply(self, user_text: str, clarification_intents: list) -> bool:
-        """
-        Gated structural matcher that checks if user text is a parameter/slot fragment reply.
-        Filters out full conversational questions and exit markers before evaluating slot patterns.
-        """
-        if not user_text:
-            return False
-
-        low = user_text.lower().strip()
-
-        # 1. Discourse & Exit Markers
-        exit_markers = [
-            "never mind", "nevermind", "actually", "forget it", "cancel", "instead",
-            "what documents", "how do i", "what changed", "where can i", "is there any"
-        ]
-        if any(marker in low for marker in exit_markers):
-            return False
-
-        # 2. Key-Value Parameter Syntax
-        if any(kv in low for kv in ["partner country:", "flow:", "period:", "product:", "cif:"]):
-            return True
-
-        # 3. Word Count Bound (Slot answers are concise fragments)
-        words = low.split()
-        if len(words) > 6:
-            return False
-
-        # 4. Slot Pattern Matches for Active Intents
-        if any(intent in {"trade_query", "trade_data"} for intent in clarification_intents):
-            has_flow = any(re.search(rf"\b{f}\b", low) for f in ["import", "export", "imported", "exported", "imports", "exports", "flow"])
-            partner_countries = [c for c in _TRADE_COUNTRIES if c != "cambodia"]
-            has_country = any(re.search(rf"\b{re.escape(c)}\b", low) for c in partner_countries)
-            has_period = bool(
-                re.search(
-                    r"\b(19|20)\d{2}\b|\bq[1-4]\b|\bquarter\s+[1-4]\b|\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\b|\b(last|this|next)\s+(month|quarter|year)\b",
-                    low
-                )
-            )
-            has_product = bool(extract_entity(low))
-            
-            if has_flow or has_country or has_period or has_product:
-                return True
-
-        return False
+        return Heuristics.is_slot_fragment_reply(user_text, clarification_intents)
 
     async def _generate_trade_clarification_message(
         self,
@@ -1957,307 +1650,18 @@ class ServiceCoordinator:
         missing_slots: List[str],
         product_name: str
     ) -> str:
-        """Generates a friendly, conversational LLM message requesting missing mandatory trade parameters for trade queries."""
-        missing_desc = ", ".join(missing_slots)
-        fallback_msg = (
-            f"To assist you with trade statistics for **{product_name}**, please specify the missing details: "
-            + ", ".join(f"**{p}**" for p in missing_slots) + "."
+        return await TradeQueryHandler.generate_trade_clarification_message(
+            self,
+            query,
+            missing_slots,
+            product_name,
         )
 
-        if self.llm_service and self.llm_service.is_available():
-            prompt = _prompt_manager.render(
-                "generate_trade_clarification",
-                query=query,
-                product_name=product_name,
-                missing_desc=missing_desc,
-            )
-            try:
-                provider = self.llm_service.router.providers.get("gemini")
-                if provider and provider.is_available():
-                    response = await asyncio.to_thread(
-                        provider.client.models.generate_content,
-                        model=provider.model_name,
-                        contents=prompt,
-                    )
-                    content = (response.text or "").strip()
-                    if content:
-                        return content
-            except Exception as e:
-                logger.warning(f"LLM trade clarification generation failed: {e}")
-
-        return fallback_msg
-
     async def _handle_trade_query(self, context: WorkflowContext):
-        try:
-            if not self.trade_data_client:
-                context.add_error("Trade data service not configured")
-                context.status = WorkflowStatus.FAILED
-                return
-            
-            service_query = self._get_service_query(context)
-
-            # Check for mandatory trade parameters across query and session history on trade query turns
-            session_context = context.session_context
-            texts_to_scan = [service_query]
-            if session_context:
-                if getattr(session_context, 'last_normalized_query', None):
-                    texts_to_scan.append(session_context.last_normalized_query)
-                if hasattr(session_context, "turns") and session_context.turns:
-                    for turn in reversed(session_context.turns):
-                        texts_to_scan.append(turn.get("user") or turn.get("user_input", ""))
-
-            # Strip negated terms ("not Vietnam", "not import") before slot extraction
-            def strip_negated_terms(text: str) -> str:
-                if not text: return text
-                cleaned = re.sub(r"(?i)\b(?:not|no|instead of|other than)\s+[a-z0-9\s-]+\b(?=,|$|\band\b|\bor\b|\bbut\b)", "", text)
-                cleaned = re.sub(r"(?i)\b[a-z0-9\s-]+\s+instead\b", "", cleaned)
-                return cleaned.strip()
-
-            combined_text = " ".join(strip_negated_terms(t) for t in texts_to_scan if t).lower()
-
-            # Slot 1: Product / Commodity entity
-            product_entity = extract_entity(combined_text) or (getattr(session_context, 'last_entity', None) if session_context else None)
-            
-            # Slot 2: Flow (import/export)
-            has_flow = any(f in combined_text for f in ["import", "export", "imported", "exported", "imports", "exports"])
-            
-            # Slot 3: Time Period (year, quarter, month, date range)
-            has_time_period = bool(
-                re.search(
-                    r"\b(19|20)\d{2}\b|\bq[1-4]\b|\bquarter\s+[1-4]\b|\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\b|\b(last|this|next)\s+(month|quarter|year)\b",
-                    combined_text
-                )
-            )
-
-            # Slot 4: Partner Country (excluding cambodia)
-            partner_countries = [c for c in _TRADE_COUNTRIES if c != "cambodia"]
-            has_partner_country = any(re.search(rf"\b{re.escape(c)}\b", combined_text) for c in partner_countries)
-
-            # Check escape hatch signals ("whatever", "idk", "latest", "any") or max retries cap
-            ask_back_count = getattr(session_context, 'ask_back_count', 0) if session_context else 0
-            is_escape_hatch = any(term in service_query.lower() for term in ["whatever", "idk", "don't know", "dont know", "any", "latest", "default"]) or ask_back_count >= MAX_PRODUCT_ASK_BACK_RETRIES
-
-            missing_slots = []
-            if not product_entity:
-                missing_slots.append("product")
-            if not has_flow:
-                missing_slots.append("flow")
-            if not has_time_period:
-                missing_slots.append("trade_period")
-            if not has_partner_country:
-                missing_slots.append("partner_country")
-
-            EXPECTED_TERMS_MAP = {
-                "product": ["commodity name", "HS code", "e.g. rice, coffee, motor vehicle"],
-                "flow": ["import", "export"],
-                "trade_period": ["month", "quarter", "year", "date range", "e.g. Q1 2026, 2025, last month"],
-                "partner_country": ["trading partner country", "e.g. Thailand, China, Vietnam, USA"]
-            }
-
-            if missing_slots and not is_escape_hatch:
-                product_name = product_entity or "the product"
-                friendly_message = await self._generate_trade_clarification_message(
-                    query=service_query,
-                    missing_slots=missing_slots,
-                    product_name=product_name
-                )
-                logger.info(f"[{context.request_id}] Trade query missing mandatory parameters: {missing_slots}. Prompting user with LLM message.")
-                
-                if session_context:
-                    session_context.pending_clarification = True
-                    session_context.clarification_intents = ["trade_query"]
-                    session_context.clarification_entity = missing_slots
-                    session_context.pending_rewritten_query = context.question
-                    session_context.ask_back_count += 1
-                    session_context._trigger_change()
-
-                context.set_result("trade_query", {
-                    "answer": friendly_message,
-                    "clarification_required": True,
-                    "missing_fields": missing_slots,
-                    "metadata": {
-                        "pending_clarification": True,
-                        "clarification_entity": missing_slots,
-                        "clarification_expected_terms": {s: EXPECTED_TERMS_MAP[s] for s in missing_slots if s in EXPECTED_TERMS_MAP},
-                        "original_query": context.question,
-                        "guard_triggered": "trade_mandatory_params"
-                    }
-                })
-                context.status = WorkflowStatus.CLARIFICATION_REQUIRED
-                return
-
-            # Clear pending clarification and reset ask_back_count on resolution / escape hatch execution
-            if session_context:
-                session_context.pending_clarification = False
-                session_context.clarification_intents = []
-                session_context.ask_back_count = 0
-                session_context._trigger_change()
-
-            timeout_sec = min(self.timeout_config.get_intent_timeout(context.intent), self.timeout_config.get_service_timeout("trade_data"))
-            
-            async def run_call():
-                return await asyncio.wait_for(
-                    self.trade_data_client.query(context.question), timeout=timeout_sec
-                )
-                
-            result = await self._execute_service_call(
-                context=context,
-                service_name="trade_data",
-                client_call_fn=run_call,
-                request_payload={"question": context.question}
-            )
-
-            # Transparent escape hatch header if defaults were substituted
-            if is_escape_hatch and missing_slots and result and isinstance(result, dict):
-                disclosed_defaults = []
-                if "flow" in missing_slots: disclosed_defaults.append("**Import**")
-                if "trade_period" in missing_slots: disclosed_defaults.append("**2024 (latest year)**")
-                if "partner_country" in missing_slots: disclosed_defaults.append("**All Countries**")
-                if disclosed_defaults:
-                    notice = f"_Showing trade statistics using assumed defaults: {', '.join(disclosed_defaults)}._\n\n"
-                    orig_ans = result.get("final_answer") or result.get("answer") or ""
-                    result["final_answer"] = notice + orig_ans
-                    result["answer"] = notice + orig_ans
-
-            context.set_result("trade_query", result)
-            context.status = WorkflowStatus.COMPLETED
-        except Exception as e:
-            context.add_error(f"Trade data service error: {str(e)}")
-            context.status = WorkflowStatus.FAILED
+        await TradeQueryHandler.handle(self, context)
 
     async def _handle_hs_code_lookup(self, context: WorkflowContext):
-        logger.info(f"[{context.request_id}] Routing to retrieval service for HS Lookup")
-        try:
-            if not self.retrieval_client:
-                context.add_error("Retrieval service not configured")
-                context.status = WorkflowStatus.FAILED
-                return
-
-            service_query = self._get_service_query(context)
-            from ..utils import clean_hs_query_for_retrieval
-            clean_query = clean_hs_query_for_retrieval(service_query)
-            if self._looks_like_short_product_lookup(clean_query):
-                service_query = f"what is hs code of {clean_query}"
-                clean_query = clean_hs_query_for_retrieval(service_query)
-                context.question = service_query
-            logger.info(f"[{context.request_id}] Cleaned retrieval query: '{service_query}' -> '{clean_query}'")
-
-            timeout_sec = min(
-                self.timeout_config.get_intent_timeout(context.intent),
-                self.timeout_config.get_service_timeout("retrieval")
-            )
-
-            cache = get_cache_service()
-            cached_result = cache.get_cached_response(clean_query, intent="hs_code_lookup")
-            if cached_result:
-                context.set_result("retrieval", cached_result)
-                context.status = WorkflowStatus.COMPLETED
-                return
-
-            async def run_call():
-                return await asyncio.wait_for(
-                    self.retrieval_client.hs_code_lookup(
-                        query=clean_query,
-                        top_k=5,
-                        generate_answer=True,
-                        hs_mode="best",
-                        session_id=context.session_id
-                    ),
-                    timeout=timeout_sec
-                )
-
-            result = await self._execute_service_call(
-                context=context,
-                service_name="retrieval",
-                client_call_fn=run_call,
-                request_payload={
-                    "query": clean_query,
-                    "top_k": 5,
-                    "generate_answer": True,
-                    "hs_mode": "best",
-                    "session_id": context.session_id
-                }
-            )
-
-            cache.cache_response(
-                question=clean_query,
-                response=result,
-                intent="hs_code_lookup",
-                ttl_seconds=24 * 3600,
-                source="retrieval"
-            )
-            context.set_result("retrieval", result)
-            context.status = WorkflowStatus.COMPLETED
-
-            # ---- Product-spec clarification post-processing ----------------------
-            # If retrieval flagged the result as generic (is_generic=True), save the
-            # product entity and expected response vocabulary onto the session so the
-            # next user turn can be merged automatically (Step 2c).
-            # Only proceed if we have an active session to write to.
-            if context.session_context:
-                session = context.session_context
-                is_generic = bool(result.get("is_generic"))
-                current_round = getattr(session, "product_ask_back_count", 0)
-
-                if is_generic and current_round < MAX_PRODUCT_ASK_BACK_RETRIES:
-                    # Fix 1b/1c: Invalidate stale hs_code and last_entity on confirmed topic change
-                    # Only run invalidation when NOT mid-spec-merge (Fix 1c for Guard 4 edge case)
-                    spec_merge_done = context.metadata.get("_spec_merge_done", False)
-                    if not getattr(session, "product_clarification_needed", False) and not spec_merge_done:
-                        prev_entity = session.last_entity or ""
-                        new_entity = context.original_input or ""
-                        prev_tokens = set(re.findall(r"[a-z0-9]+", prev_entity.lower()))
-                        new_tokens = set(re.findall(r"[a-z0-9]+", new_entity.lower()))
-                        if prev_tokens and not (prev_tokens & new_tokens):
-                            session.hs_code = None
-                            session.last_entity = new_entity
-                            logger.info(
-                                f"[{context.request_id}] [FIX-1b] Topic change detected "
-                                f"('{prev_entity}' → '{new_entity}') — cleared stale hs_code + last_entity."
-                            )
-
-                    # Entity: use original_input (pre-rewrite) on first round;
-                    # use accumulated merged query on subsequent rounds.
-                    if current_round == 0:
-                        entity = extract_entity(context.original_input) or context.original_input
-                    else:
-                        entity = context.original_input
-
-                    # Build expected-term vocabulary from actual clarifying questions.
-                    clarifying_questions = result.get("clarifying_questions") or []
-                    category = detect_simple_product_category(entity or "")
-                    expected_terms = self._build_spec_expected_terms(clarifying_questions, category)
-
-                    session.product_clarification_needed = True
-                    session.clarification_entity = entity
-                    session.clarification_last_query = context.original_input
-                    session.clarification_expected_terms = expected_terms
-                    session._trigger_change()
-                    logger.info(
-                        f"[{context.request_id}] [SPEC-MERGE] Result is generic — "
-                        f"saved entity='{entity}', category='{category}', "
-                        f"expected_terms={expected_terms[:8]}"
-                    )
-                else:
-                    # Successful specific classification, cap reached, or not generic:
-                    # clear any pending clarification state so the next turn starts fresh.
-                    if getattr(session, "product_clarification_needed", False) or current_round > 0:
-                        self._clear_product_clarification(session)
-                        logger.info(
-                            f"[{context.request_id}] [SPEC-MERGE] Specific result or cap reached "
-                            "— cleared product clarification state."
-                        )
-
-                    # Fix 1a: Persist resolved hs_code on successful specific lookup
-                    resolved_code = result.get("hs_code") or result.get("selected_code")
-                    if not is_generic and resolved_code:
-                        session.hs_code = resolved_code
-                        session.last_entity = session.last_entity or context.original_input
-                        session._trigger_change()
-
-        except Exception as e:
-            context.add_error(f"HS code lookup service error: {str(e)}")
-            context.status = WorkflowStatus.FAILED
+        await HsCodeLookupHandler.handle(self, context)
     
     def _is_rag_no_info_response(self, answer_text: str, result_dict: dict) -> bool:
         """Determines if the RAG response indicates no information was found in official documents."""
@@ -2287,72 +1691,10 @@ class ServiceCoordinator:
         return any(pat in low for pat in no_info_patterns)
 
     async def _generate_parametric_definition_answer(self, query: str) -> str:
-        """Generates a direct LLM parametric answer for general terminology/definition queries when RAG has no document info."""
-        if self.llm_service and self.llm_service.is_available():
-            prompt = _prompt_manager.render(
-                "generate_parametric_definition",
-                query=query,
-            )
-            try:
-                provider = self.llm_service.router.providers.get("gemini")
-                if provider and provider.is_available():
-                    response = await asyncio.to_thread(
-                        provider.client.models.generate_content,
-                        model=provider.model_name,
-                        contents=prompt,
-                    )
-                    content = (response.text or "").strip()
-                    if content:
-                        return content
-            except Exception as e:
-                logger.warning(f"LLM parametric definition generation failed: {e}")
-        return f"I could not find an official document reference for '{query}'. Please specify if you are looking for customs procedures, tariff classifications, or duty calculations."
+        return await DefinitionHandler.generate_parametric_definition_answer(self, query)
 
     async def _handle_definition(self, context: WorkflowContext):
-        try:
-            if not self.general_client:
-                context.add_error("General service not configured")
-                context.status = WorkflowStatus.FAILED
-                return
-            
-            timeout_sec = min(self.timeout_config.get_intent_timeout(context.intent), self.timeout_config.get_service_timeout("general"))
-            cache = get_cache_service()
-            intent_key = "general"
-            service_query = self._get_service_query(context)
-            cached_result = cache.get_cached_response(service_query, intent=intent_key)
-            if cached_result:
-                context.set_result("retrieval", cached_result)
-                context.status = WorkflowStatus.COMPLETED
-                return
-            
-            async def run_call():
-                return await asyncio.wait_for(
-                    self.general_client.definition(query=service_query, top_k=5, generate_answer=True, session_id=context.session_id), timeout=timeout_sec
-                )
-
-            result = await self._execute_service_call(
-                context=context,
-                service_name="general_definition",
-                client_call_fn=run_call,
-                request_payload={"query": service_query, "top_k": 5, "generate_answer": True, "session_id": context.session_id}
-            )
-
-            # Fallback check: If RAG returned no document info, use direct LLM parametric knowledge
-            if result and isinstance(result, dict):
-                ans_text = result.get("final_answer") or result.get("answer") or ""
-                if self._is_rag_no_info_response(ans_text, result):
-                    logger.info(f"[{context.request_id}] RAG returned no document info for query '{service_query}'. Invoking LLM parametric fallback.")
-                    parametric_ans = await self._generate_parametric_definition_answer(service_query)
-                    result["answer"] = parametric_ans
-                    result["final_answer"] = parametric_ans
-                    result["source"] = "llm_parametric_knowledge"
-
-            cache.cache_response(question=service_query, response=result, intent=intent_key, ttl_seconds=48*3600, source="general")
-            context.set_result("retrieval", result)
-            context.status = WorkflowStatus.COMPLETED
-        except Exception as e:
-            context.add_error(f"General service error: {str(e)}")
-            context.status = WorkflowStatus.FAILED
+        await DefinitionHandler.handle(self, context)
     
     async def _handle_default(self, context: WorkflowContext):
         try:
@@ -2399,29 +1741,7 @@ class ServiceCoordinator:
             context.status = WorkflowStatus.FAILED
             
     async def _handle_small_talk(self, context: WorkflowContext):
-        logger.info(f"[{context.request_id}] Routing to small talk handler")
-        try:
-            # Audit and warn if customs keywords are confidently classified as small_talk (Gap 3 Resolved)
-            low = (context.question or "").lower()
-            customs_keywords = ["duty", "tariff", "hs code", "atiga", "rcep", "import", "export", "calculate", "tax"]
-            matched_kws = [kw for kw in customs_keywords if re.search(rf"\b{re.escape(kw)}\b", low)]
-            if matched_kws:
-                logger.warning(
-                    f"[{context.request_id}] [MONITOR] Query with customs keywords {matched_kws} "
-                    f"was routed to small_talk: '{context.question}'"
-                )
-
-            # Check if already cached in metadata (e.g. from _try_merge_product_spec)
-            small_talk_response = context.metadata.get("small_talk_response")
-            if not small_talk_response:
-                small_talk_response = await generate_small_talk_response(context.question, self.llm_service)
-            
-            context.set_result("small_talk", {"answer": small_talk_response})
-            context.status = WorkflowStatus.COMPLETED
-        except Exception as e:
-            logger.error(f"[{context.request_id}] Small talk handler failed: {e}")
-            context.add_error(f"Small talk service error: {str(e)}")
-            context.status = WorkflowStatus.FAILED
+        await SmallTalkHandler.handle(self, context)
 
     def _build_ask_back_response(self, context: WorkflowContext, question: str, clarification_question: str, candidate_intents: list, trigger_reason: str = "") -> Dict[str, Any]:
         return {
@@ -2455,7 +1775,15 @@ class ServiceCoordinator:
         
         # ===== DIRECT EXTRACT FOR RETRIEVAL/HS_CODE_LOOKUP RESULT =====
         if context.retrieval_result:
-            response["answer"] = context.retrieval_result.get("final_answer", "No response generated by retrieval service.")
+            questions = context.retrieval_result.get("clarifying_questions") or []
+            if questions:
+                for q in questions:
+                    if q not in context.clarifications:
+                        context.add_clarification(q)
+            
+            raw_answer = context.retrieval_result.get("final_answer", "No response generated by retrieval service.")
+            cleaned_answer = strip_clarification_questions_from_prose(raw_answer, questions)
+            response["answer"] = cleaned_answer
             
             # Forward standard citations directly from payload documents without manual text rebuilding
             documents = context.retrieval_result.get("documents", [])
@@ -2472,71 +1800,176 @@ class ServiceCoordinator:
                 response["metadata"].update(context.metadata)
         
         if context.calculation_result:
-            response["answer"] = (
-                context.calculation_result.get("answer") or
-                context.calculation_result.get("final_answer") or
-                context.calculation_result.get("formatted_answer")
-            )
-            if not response["answer"]:
-                total = context.calculation_result.get("total", 0)
-                currency = context.calculation_result.get("currency", "KHR")
+            calc_res = context.calculation_result
+            provider_name = str(getattr(self.llm_service, "provider", "") or "").lower() if self.llm_service else ""
+            
+            # Ollama safety rule: Direct route to DeterministicCalculationFormatter to prevent math hallucinations
+            if provider_name == "ollama":
+                from ..ai.core.calculation_formatter import DeterministicCalculationFormatter
+                response["answer"] = DeterministicCalculationFormatter.format(calc_res, context.question)
+            else:
+                response["answer"] = (
+                    calc_res.get("human_readable") or
+                    calc_res.get("answer") or
+                    calc_res.get("final_answer") or
+                    calc_res.get("formatted_answer") or
+                    calc_res.get("message")
+                )
+                # Run NumericIntegrityValidator on LLM formatted text if valid result
+                if response["answer"] and calc_res.get("success") is not False and calc_res.get("total") is not None:
+                    from ..ai.core.calculation_formatter import NumericIntegrityValidator, DeterministicCalculationFormatter
+                    validator = NumericIntegrityValidator()
+                    is_valid, val_errors = validator.validate(response["answer"], calc_res)
+                    if not is_valid:
+                        logger.warning(f"[{context.request_id}] LLM calculation output failed numeric integrity validation: {val_errors}. Demoting to DeterministicCalculationFormatter.")
+                        response["answer"] = DeterministicCalculationFormatter.format(calc_res, context.question)
+
+            if not response["answer"] and calc_res.get("total") is not None and calc_res.get("success") is not False:
+                total = calc_res.get("total", 0)
+                currency = calc_res.get("currency", "KHR")
                 response["answer"] = f"Total Import/Export Taxes and Duties: {total:,.0f} {currency}"
-            response["metadata"].update(context.calculation_result.get("metadata", {}))
-            if context.calculation_result.get("references"):
-                response["citations"] = context.calculation_result.get("references", [])
+            if isinstance(calc_res.get("metadata"), dict):
+                response["metadata"].update(calc_res.get("metadata", {}))
+            if calc_res.get("references"):
+                response["citations"] = calc_res.get("references", [])
         
         if context.trade_query_result:
-            # Trade service response keys: message, suggestion, summary, table, visualization
-            # Map "message" → "answer" (primary display text)
-            response["answer"] = (
-                context.trade_query_result.get("message") or
-                context.trade_query_result.get("answer") or
-                context.trade_query_result.get("final_answer") or
+            trade_res = context.trade_query_result
+
+            # 1. Message: natural-language answer text (populated in both message and answer)
+            message_text = (
+                trade_res.get("message") or
+                trade_res.get("answer") or
+                trade_res.get("final_answer") or
                 "No response generated by trade service."
             )
-            # Forward table and visualization unchanged
-            if "table" in context.trade_query_result:
-                response["table"] = context.trade_query_result["table"]
-            if "visualization" in context.trade_query_result:
-                response["visualization"] = context.trade_query_result["visualization"]
-            # Forward suggestions (trade service key: "suggestion")
-            if "suggestion" in context.trade_query_result:
-                response["suggestions"] = context.trade_query_result["suggestion"]
-            elif "suggestions" in context.trade_query_result:
-                response["suggestions"] = context.trade_query_result["suggestions"]
-            # Forward summary metrics (trade service key: "summary")
-            if "summary" in context.trade_query_result:
-                response["summary_metrics"] = context.trade_query_result["summary"]
+
+            # If trade status is no_data or 0 records match query criteria, generate a friendly, graceful LLM response in Orchestrator
+            is_no_data = (
+                trade_res.get("status") == "no_data"
+                or trade_res.get("count") == 0
+                or (isinstance(trade_res.get("records"), list) and len(trade_res["records"]) == 0 and isinstance(trade_res.get("data"), list) and len(trade_res["data"]) == 0)
+                or message_text.startswith("No trade data found for")
+                or "no trade data" in message_text.lower()
+            )
+
+            if is_no_data:
+                try:
+                    prompt_template = _prompt_manager.get_system_prompt("gemini_format_no_data")
+                    if prompt_template and self.llm_service and self.llm_service.is_available():
+                        prompt = prompt_template.format(question=context.question)
+                        provider = self.llm_service.router.providers.get("gemini")
+                        if provider and provider.is_available():
+                            llm_resp = await asyncio.to_thread(
+                                provider.client.models.generate_content,
+                                model=provider.model_name,
+                                contents=prompt,
+                            )
+                            content = (llm_resp.text or "").strip()
+                            if content:
+                                message_text = content
+                except Exception as e:
+                    logger.warning(f"[{context.request_id}] Orchestrator no_data LLM response generation failed: {e}")
+
+                if message_text.startswith("No trade data found for") or "no trade data" in message_text.lower():
+                    message_text = "I couldn't find any trade statistics matching your specific query. Try adjusting your search filters, such as selecting a different year, partner country, or commodity."
+
+            response["message"] = message_text
+            response["answer"] = message_text
+
+            # 2. Status override if provided in trade response
+            if trade_res.get("status"):
+                response["status"] = trade_res["status"]
+
+            # 3. Table: include ONLY if non-empty rows exist; drop raw 'records' array
+            tbl = trade_res.get("table")
+            if isinstance(tbl, dict) and tbl.get("rows") and len(tbl["rows"]) > 0:
+                response["table"] = {
+                    "columns": tbl.get("columns", []),
+                    "rows": tbl["rows"],
+                }
+
+            # 4. Visualization: include ONLY if non-empty labels and datasets exist
+            viz = trade_res.get("visualization")
+            if isinstance(viz, dict) and viz.get("type") and viz.get("labels") and len(viz.get("labels", [])) > 0:
+                response["visualization"] = viz
+
+            # 5. Suggestion: include ONLY if non-empty list exists
+            sug = trade_res.get("suggestion") or trade_res.get("suggestions")
+            if isinstance(sug, list) and len(sug) > 0:
+                response["suggestion"] = sug
+
+            # 6. Summary: include data_quality if truncation_note, has_more, is_partial_period, or period_was_defaulted is present
+            summary_raw = trade_res.get("summary")
+            query_params = trade_res.get("query_params") or {}
+            extra_params = query_params.get("extra") if isinstance(query_params, dict) else {}
+
+            if isinstance(summary_raw, dict):
+                dq = summary_raw.get("data_quality") if isinstance(summary_raw.get("data_quality"), dict) else {}
+                
+                period_defaulted = bool(
+                    (isinstance(extra_params, dict) and extra_params.get("period_was_defaulted")) or
+                    dq.get("period_was_defaulted")
+                )
+                has_truncation = bool(dq.get("truncation_note") or dq.get("has_more"))
+                has_partial = bool(dq.get("is_partial_period") or dq.get("partial_year_note"))
+                has_mismatch = bool(dq.get("period_mismatch") or dq.get("period_mismatch_note") or dq.get("period_coverage_note"))
+
+                if has_truncation or has_partial or has_mismatch or period_defaulted:
+                    clean_dq = {}
+                    if dq.get("truncation_note"):
+                        clean_dq["truncation_note"] = dq["truncation_note"]
+                    if dq.get("has_more") is not None:
+                        clean_dq["has_more"] = dq["has_more"]
+                    if dq.get("is_partial_period") is not None:
+                        clean_dq["is_partial_period"] = dq["is_partial_period"]
+                    if dq.get("partial_year_note"):
+                        clean_dq["partial_year_note"] = dq["partial_year_note"]
+                    if dq.get("period_coverage_note"):
+                        clean_dq["period_coverage_note"] = dq["period_coverage_note"]
+                    if dq.get("period_mismatch_note"):
+                        clean_dq["period_mismatch_note"] = dq["period_mismatch_note"]
+                    
+                    if period_defaulted:
+                        defaulted_period = (isinstance(query_params, dict) and query_params.get("period")) or str(datetime.now().year)
+                        clean_dq["period_note"] = f"No year specified — showing {defaulted_period} (latest available) data."
+
+                    response["summary"] = {"data_quality": clean_dq}
+                    response["summary_metrics"] = {"data_quality": clean_dq}
+
             # Forward citations if present
-            if "citations" in context.trade_query_result:
-                response["citations"] = context.trade_query_result["citations"]
-            # Merge any metadata from trade service response
-            if "metadata" in context.trade_query_result and isinstance(context.trade_query_result["metadata"], dict):
-                response["metadata"].update(context.trade_query_result["metadata"])
+            if "citations" in trade_res and isinstance(trade_res["citations"], list) and len(trade_res["citations"]) > 0:
+                response["citations"] = trade_res["citations"]
         
         if context.clarifications: response["clarifications"] = context.clarifications
         if context.errors: response["errors"] = context.errors
 
         # Generate suggestions dynamically if not already populated (e.g. by trade service)
-        if not response.get("suggestions"):
-            response["suggestions"] = []
+        if not response.get("suggestion"):
+            response["suggestion"] = []
             core_intents = {"hs_code_lookup", "calculation", "trade_query", "general"}
             current_intent_val = context.intent.value if context.intent else None
             
             should_generate = (
                 current_intent_val in core_intents
-                and context.status == WorkflowStatus.COMPLETED
+                and context.status in {WorkflowStatus.COMPLETED, WorkflowStatus.CLARIFICATION_REQUIRED}
             )
             
             if should_generate and response.get("answer"):
                 try:
                     service_query = self._get_service_query(context)
+                    lang = context.metadata.get("language") or getattr(context, "language", "en")
+                    result_payload = context.calculation_result or context.retrieval_result or context.trade_query_result
                     suggestions = self.suggestion_service.get_suggestions(
                         current_intent=current_intent_val,
                         rewritten_query=service_query,
-                        session_context=context.session_context
+                        session_context=context.session_context,
+                        language=lang,
+                        result_payload=result_payload,
+                        nlu_entity=context.metadata.get("nlu_entity"),
+                        has_nlu_entity=context.metadata.get("has_nlu_entity", False),
                     )
-                    response["suggestions"] = suggestions
+                    response["suggestion"] = suggestions
                 except Exception as e:
                     logger.error(f"[{context.request_id}] Failed to generate suggestions: {e}", exc_info=True)
 
@@ -2544,6 +1977,67 @@ class ServiceCoordinator:
         # pipeline metadata) is available for every intent type, not just retrieval.
         if context.metadata:
             response["metadata"].update(context.metadata)
+
+        # ===== UNIVERSAL FALLBACK FOR EMPTY / FAILED / ERROR RESPONSES ACROSS ALL SERVICES =====
+        raw_answer = response.get("answer")
+        raw_ans_str = str(raw_answer or "").strip().lower()
+        is_error_or_empty = (
+            not raw_answer
+            or raw_ans_str in ("", "none", "no answer found", "null")
+            or context.status == WorkflowStatus.FAILED
+            or "validation error:" in raw_ans_str
+            or "duty rates not found" in raw_ans_str
+            or "error processing" in raw_ans_str
+            or "failed to resolve" in raw_ans_str
+        )
+
+        if is_error_or_empty:
+            error_detail = raw_answer or (context.errors[0] if context.errors else "No data or duty rates found.")
+            friendly_response = None
+            try:
+                if self.llm_service and self.llm_service.is_available():
+                    provider = self.llm_service.router.providers.get("gemini") or self.llm_service.router.providers.get("openrouter")
+                    if provider and provider.is_available():
+                        from prompts.dynamic_prompt_manager import DynamicPromptManager
+                        prompt_mgr = DynamicPromptManager()
+                        prompt = prompt_mgr.render(
+                            "universal_error_fallback",
+                            question=context.question,
+                            error_detail=error_detail
+                        )
+                        llm_resp = await asyncio.to_thread(
+                            provider.client.models.generate_content,
+                            model=provider.model_name,
+                            contents=prompt,
+                        )
+                        friendly_response = (llm_resp.text or "").strip()
+            except Exception as e:
+                logger.warning(f"[{context.request_id}] Universal LLM error fallback response generation failed: {e}")
+
+            if friendly_response:
+                response["answer"] = friendly_response
+                response["message"] = friendly_response
+            else:
+                if "Duty rates not found" in str(error_detail) or "HS code" in str(error_detail):
+                    fallback_msg = (
+                        "I couldn't find specific duty rates for that product or HS code in our current database. "
+                        "Please verify the HS code or describe the item in more detail (e.g., 'smartphones', 'laptops', 'motor cars') to attempt an automatic rate lookup."
+                    )
+                else:
+                    fallback_msg = (
+                        "I'm sorry, I couldn't complete your request at this time. "
+                        "Please verify your query parameters (such as product name, HS code, or invoice value) and try again."
+                    )
+                response["answer"] = fallback_msg
+                response["message"] = fallback_msg
+
+            if context.intent == WorkflowIntent.CALCULATION:
+                response["status"] = "clarification_required"
+                if context.session_context:
+                    context.session_context.set_pending_clarification(
+                        candidate_intents=["calculation"],
+                        rewritten_query=context.question
+                    )
 
         return response
 

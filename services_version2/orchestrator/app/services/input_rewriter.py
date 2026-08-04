@@ -39,9 +39,9 @@ TRACKED_FIELDS = [
 # intent means "always treat as resolved" — just build best-effort from
 # whatever context exists.
 REQUIRED_FIELDS_BY_INTENT: Dict[str, List[str]] = {
-    "hs_code_lookup": ["product_category", "commercial_description"],
-    "calculation": ["product_category", "cif_value", "origin_country", "commercial_description"],
-    "trade_query": ["import_export_mode", "product_category", "year", "month"],
+    "hs_code_lookup": ["product_category"],
+    "calculation": ["product_category", "cif_value"],
+    "trade_query": [],  # Trade parameters are dynamic (country, time period, mode, commodity, or overall trade stats)
 }
 
 

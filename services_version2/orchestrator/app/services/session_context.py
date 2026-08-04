@@ -74,6 +74,10 @@ class SessionContext:
     last_raw_query: Optional[str] = None
     last_normalized_query: Optional[str] = None
 
+    # Multi-turn language state machine
+    target_language: str = "en"
+    is_language_pinned: bool = False
+
     # Track total turns count for exact database summary index referencing
     total_turns_count: int = 0
 
@@ -174,6 +178,8 @@ class SessionContext:
             "last_entity": self.last_entity,
             "last_raw_query": self.last_raw_query,
             "last_normalized_query": self.last_normalized_query,
+            "target_language": self.target_language,
+            "is_language_pinned": self.is_language_pinned,
             "total_turns_count": self.total_turns_count,
         }
 
@@ -236,6 +242,8 @@ class SessionContext:
             last_entity=data.get("last_entity"),
             last_raw_query=data.get("last_raw_query"),
             last_normalized_query=data.get("last_normalized_query"),
+            target_language=data.get("target_language", "en"),
+            is_language_pinned=data.get("is_language_pinned", False),
             total_turns_count=data.get("total_turns_count", 0),
         )
 

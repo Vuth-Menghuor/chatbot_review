@@ -191,6 +191,21 @@ md.renderer.rules.paragraph_open = (tokens: Token[], idx: number) =>
     : '<p class="md-paragraph">';
 md.renderer.rules.heading_open = (tokens: Token[], idx: number) => {
   const level = tokens[idx]!.tag;
+  const inline = tokens[idx + 1];
+  const headingText = inline?.type === 'inline' ? inline.content : '';
+  const calculatorHeading =
+    headingText === 'Import Tax Calculation' ||
+    headingText === 'Product Information' ||
+    headingText === 'Input Parameters' ||
+    headingText === 'Summary' ||
+    headingText === 'Assumptions & Notes' ||
+    headingText === 'References & Citations' ||
+    headingText === 'Data Sources' ||
+    /^Step \d+:/.test(headingText);
+  if (calculatorHeading) {
+    return `<${level} class="calculator-section-heading">`;
+  }
+
   const sizes: Record<string, string> = {
     h1: 'text-2xl font-bold mt-8 mb-4 border-b border-neutral-200 dark:border-neutral-800 pb-2 text-neutral-900 dark:text-neutral-100',
     h2: 'text-xl font-bold mt-8 mb-4 text-neutral-900 dark:text-neutral-100',

@@ -1,0 +1,11 @@
+{
+  "request_id": "fixture-general-clarification",
+  "session_id": "fixture-session-general",
+  "service": "general",
+  "intent": "general",
+  "answer": "I need a little more information to route your request.",
+  "clarifying_questions": [
+    "Are you asking about import, export, tax calculation, or trade statistics?",
+    "Which product or HS code should I use?"
+  ]
+}

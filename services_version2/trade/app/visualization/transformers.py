@@ -20,30 +20,142 @@ def _normalize_flow_to_ex_im(flow: str) -> str:
 
 
 def transform_to_table(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Convert raw DAL rows into the standardized table schema."""
+    """Convert raw DAL rows into the standardized table schema with flattened metric fields."""
     if not rows:
         return {"columns": [], "rows": []}
 
-    # Derive column headers from the keys of the first row
+    # Derive column headers and locate the metric key
     first_row = rows[0]
+    metric_key = None
+    metric_col_name = None
+    for k in first_row.keys():
+        col = COLUMN_MAP.get(k, k.lower())
+        if col.lower() in ("trade_value", "value_usd", "value_khr", "net_weight", "quantity", "growth_rate_pct"):
+            metric_key = k
+            metric_col_name = col
+            break
+
     columns = []
     seen_cols = set()
     for k in first_row.keys():
         col = COLUMN_MAP.get(k, k.lower())
-        if col not in seen_cols:
-            columns.append(col)
-            seen_cols.add(col)
+        if col.lower() in ("frequency", "freq"):
+            continue
+        if k == metric_key:
+            for new_c in ["value", "unit", "scale", "display", "raw_value", "unit_type"]:
+                if new_c not in seen_cols:
+                    columns.append(new_c)
+                    seen_cols.add(new_c)
+        else:
+            if col not in seen_cols:
+                columns.append(col)
+                seen_cols.add(col)
 
     transformed_rows = []
     for row in rows:
         t_row = {}
         seen_row = set()
         for k, v in row.items():
-            t_key = COLUMN_MAP.get(k, k.lower())
-            if t_key not in seen_row:
-                t_row[t_key] = v
-                seen_row.add(t_key)
-            # If duplicate key maps to same canonical name, keep first value
+            col = COLUMN_MAP.get(k, k.lower())
+            if col.lower() in ("frequency", "freq"):
+                continue
+            if k == metric_key:
+                raw_value = None
+                value = None
+                scale = ""
+                unit = ""
+                display = ""
+                unit_type = ""
+                
+                if v is not None:
+                    try:
+                        f_val = float(v)
+                        raw_value = f_val
+                        abs_val = abs(f_val)
+                        
+                        # Determine scale and value
+                        if metric_col_name.lower() == "growth_rate_pct":
+                            scale = ""
+                            value = round(f_val, 2)
+                        else:
+                            if abs_val >= 1000000000:
+                                scale = "billion"
+                                value = round(f_val / 1000000000, 2)
+                            elif abs_val >= 1000000:
+                                scale = "million"
+                                value = round(f_val / 1000000, 2)
+                            else:
+                                scale = ""
+                                value = round(f_val, 2)
+                                
+                        # Determine unit
+                        if metric_col_name.lower() in ("trade_value", "value_usd"):
+                            unit = "USD"
+                        elif metric_col_name.lower() == "value_khr":
+                            unit = "KHR"
+                        elif metric_col_name.lower() in ("net_weight", "quantity"):
+                            unit = str(row.get("unit_code", "KG")).upper()
+                            if metric_col_name.lower() == "net_weight":
+                                unit = "KG"
+                        elif metric_col_name.lower() == "growth_rate_pct":
+                            unit = "%"
+                            
+                        # Determine unit_type
+                        if unit in ("USD", "KHR"):
+                            unit_type = "currency"
+                        elif unit in ("KG", "TON"):
+                            unit_type = "weight"
+                        elif unit == "%":
+                            unit_type = "percent"
+                        else:
+                            unit_type = ""
+                            
+                        # Determine display
+                        if unit == "USD":
+                            if scale == "billion":
+                                display = f"${value:.2f} billion"
+                            elif scale == "million":
+                                display = f"${value:.2f} million"
+                            else:
+                                display = f"${value:,.2f}"
+                        elif unit == "KHR":
+                            if scale == "billion":
+                                display = f"៛{value:.2f} billion"
+                            elif scale == "million":
+                                display = f"៛{value:.2f} million"
+                            else:
+                                display = f"៛{value:,.2f}"
+                        elif unit in ("KG", "TON"):
+                            if scale == "billion":
+                                display = f"{value:.2f} billion {unit.lower()}"
+                            elif scale == "million":
+                                display = f"{value:.2f} million {unit.lower()}"
+                            else:
+                                display = f"{value:,.2f} {unit.lower()}"
+                        elif unit == "%":
+                            display = f"{value:+.2f}%"
+                        else:
+                            if scale == "billion":
+                                display = f"{value:.2f} billion"
+                            elif scale == "million":
+                                display = f"{value:.2f} million"
+                            else:
+                                display = f"{value:,.2f}"
+                                
+                    except (ValueError, TypeError):
+                        pass
+                
+                t_row["value"] = value
+                t_row["unit"] = unit
+                t_row["scale"] = scale
+                t_row["display"] = display
+                t_row["raw_value"] = raw_value
+                t_row["unit_type"] = unit_type
+            else:
+                if col not in seen_row:
+                    t_row[col] = v
+                    seen_row.add(col)
+                    
         transformed_rows.append(t_row)
 
     return {

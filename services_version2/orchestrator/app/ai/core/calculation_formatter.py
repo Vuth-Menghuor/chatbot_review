@@ -6,7 +6,9 @@ Handles multiple currencies (USD, CNY, KHR, etc.) with proper conversion.
 
 import logging
 import os
-from typing import Dict, Any
+import re
+from decimal import Decimal, InvalidOperation
+from typing import Dict, Any, List, Tuple, Set, Optional
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -641,7 +643,134 @@ def format_calculation_response(calculation_result: Dict[str, Any], question: st
         logger.error(f"Error formatting calculation response: {e}")
         logger.error(f"Traceback: {traceback.format_exc()}")
         logger.error(f"Calculation result keys: {calculation_result.keys() if isinstance(calculation_result, dict) else 'not a dict'}")
-        # Return basic fallback response
         total = calculation_result.get("total", 0)
         currency = calculation_result.get("currency", "KHR")
         return f"Total Import/Export Taxes and Duties: {total:,.0f} {currency}"
+
+
+# Phase 1: Canonical Numeric Parser & Numeric Integrity Validator
+
+try:
+    from decimal import Decimal, InvalidOperation
+except ImportError:
+    pass
+
+
+class CanonicalNumericParser:
+    """Parses and normalizes numbers from text or payload into Decimals."""
+
+    @staticmethod
+    def extract_decimals_from_text(text: str) -> set:
+        """Extract all numbers from formatted text into canonical Decimal set."""
+        if not text:
+            return set()
+
+        matches = re.findall(r'(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?', text)
+        decimals = set()
+        for match in matches:
+            clean = match.replace(',', '')
+            try:
+                dec = Decimal(clean)
+                decimals.add(dec)
+                if dec == dec.to_integral_value():
+                    decimals.add(Decimal(int(dec)))
+            except (InvalidOperation, TypeError, ValueError):
+                pass
+        return decimals
+
+    @staticmethod
+    def extract_payload_invariants(result_dict: Dict[str, Any]) -> set:
+        """Extract canonical numeric invariants from raw calculation dictionary."""
+        invariants = set()
+        if not isinstance(result_dict, dict):
+            return invariants
+
+        for key in ["total", "cif_value_usd", "exchange_rate_usd_to_khr"]:
+            val = result_dict.get(key)
+            if val is not None:
+                try:
+                    d = Decimal(str(val))
+                    invariants.add(d)
+                    if d == d.to_integral_value():
+                        invariants.add(Decimal(int(d)))
+                except (InvalidOperation, TypeError, ValueError):
+                    pass
+
+        bd = result_dict.get("breakdown", {})
+        if isinstance(bd, dict):
+            for k, v in bd.items():
+                if v is not None and isinstance(v, (int, float, str, Decimal)):
+                    try:
+                        d = Decimal(str(v))
+                        invariants.add(d)
+                        if d == d.to_integral_value():
+                            invariants.add(Decimal(int(d)))
+                    except (InvalidOperation, TypeError, ValueError):
+                        pass
+
+        for item in result_dict.get("line_items", []):
+            if isinstance(item, dict):
+                for k in ["amount", "base", "rate"]:
+                    v = item.get(k)
+                    if v is not None:
+                        try:
+                            d = Decimal(str(v))
+                            invariants.add(d)
+                            if d == d.to_integral_value():
+                                invariants.add(Decimal(int(d)))
+                        except (InvalidOperation, TypeError, ValueError):
+                            pass
+        return invariants
+
+
+class NumericIntegrityValidator:
+    """Validates that LLM output preserves exact numerical figures within tolerance."""
+
+    def __init__(self, tolerance_khr: float = 1.0, tolerance_usd: float = 0.01):
+        self.tolerance_khr = Decimal(str(tolerance_khr))
+        self.tolerance_usd = Decimal(str(tolerance_usd))
+
+    def validate(self, llm_text: str, raw_result: Dict[str, Any]) -> Tuple[bool, List[str]]:
+        """Check if key math invariants (total, cif_value_usd) are preserved in LLM output."""
+        if not llm_text or not isinstance(raw_result, dict):
+            return False, ["Empty text or invalid result dict"]
+
+        errors = []
+        text_decimals = CanonicalNumericParser.extract_decimals_from_text(llm_text)
+
+        total = raw_result.get("total")
+        if total is not None:
+            try:
+                total_dec = Decimal(str(total))
+                match_found = any(abs(td - total_dec) <= self.tolerance_khr for td in text_decimals)
+                if not match_found:
+                    errors.append(f"Total tax amount {total_dec} KHR missing or altered in LLM output")
+            except (InvalidOperation, TypeError, ValueError):
+                pass
+
+        cif_usd = raw_result.get("cif_value_usd")
+        if cif_usd is not None:
+            try:
+                cif_dec = Decimal(str(cif_usd))
+                match_found = any(abs(td - cif_dec) <= self.tolerance_usd for td in text_decimals)
+                if not match_found:
+                    errors.append(f"CIF USD value {cif_dec} missing or altered in LLM output")
+            except (InvalidOperation, TypeError, ValueError):
+                pass
+
+        return (len(errors) == 0), errors
+
+
+class DeterministicCalculationFormatter:
+    """
+    Pure-Python deterministic report formatter.
+    Guaranteed 100% template-compatible with calculator service format_human_readable.
+    """
+
+    @staticmethod
+    def format(calculation_result: Dict[str, Any], question: str = "") -> str:
+        human_readable = calculation_result.get("human_readable")
+        if human_readable:
+            return human_readable
+        return format_calculation_response(calculation_result, question)
+

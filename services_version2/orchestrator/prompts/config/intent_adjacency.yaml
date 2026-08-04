@@ -5,43 +5,88 @@
 # as keys here. Low-confidence / catch-all intents (e.g. "general") are NOT included —
 # those route directly to generic_fallbacks in suggestion_service.py, since a stale
 # or missing {entity} on an ambiguous turn would produce a broken/misleading suggestion.
+#
+# Template writing guidelines:
+#   - Write as a real user would type, not as a formal document query.
+#   - Keep suggestions short (under 10 words where possible).
+#   - Avoid starting with the entity itself — start with an action word or question word.
+#   - Do NOT duplicate the intent already answered (e.g. if intent=hs_code_lookup,
+#     don't suggest another hs_code_lookup question).
+
 intent_adjacency:
   hs_code_lookup:
-    - text: "What is the import procedure for {entity}?"
-      intent: import_procedure
-    - text: "How is import tax calculated for {entity}?"
-      intent: calculation
-    - text: "Show me trade data statistics for {entity}."
-      intent: trade_query
+    en:
+      - text: "How do I import {entity}?"
+        intent: general
+      - text: "What's the import duty on {entity}?"
+        intent: calculation
+      - text: "Any trade data for {entity}?"
+        intent: trade_query
+    km:
+      - text: "តើត្រូវនាំចូល {entity} យ៉ាងដូចម្តេច?"
+        intent: general
+      - text: "តើពន្ធនាំចូលលើ {entity} មានចំនួនប៉ុន្មាន?"
+        intent: calculation
+      - text: "តើមានទិន្នន័យពាណិជ្ជកម្មសម្រាប់ {entity} ដែរឬទេ?"
+        intent: trade_query
 
   calculation:
-    - text: "What is the HS code for {entity}?"
-      intent: hs_code_lookup
-    - text: "What is the import procedure for {entity}?"
-      intent: import_procedure
-    - text: "Show me trade data statistics for {entity}."
-      intent: trade_query
+    en:
+      - text: "How do I import {entity}?"
+        intent: general
+      - text: "What documents are needed to import {entity}?"
+        intent: import_procedure
+      - text: "Any trade data for {entity}?"
+        intent: trade_query
+    km:
+      - text: "តើត្រូវនាំចូល {entity} យ៉ាងដូចម្តេច?"
+        intent: general
+      - text: "តើឯកសារអ្វីខ្លះត្រូវការដើម្បីនាំចូល {entity}?"
+        intent: import_procedure
+      - text: "តើមានទិន្នន័យពាណិជ្ជកម្មសម្រាប់ {entity} ដែរឬទេ?"
+        intent: trade_query
 
   trade_query:
-    - text: "What is the HS code for {entity}?"
-      intent: hs_code_lookup
-    - text: "How is import tax calculated for {entity}?"
-      intent: calculation
-    - text: "What is the import procedure for {entity}?"
-      intent: import_procedure
+    en:
+      - text: "What's the HS code for {entity}?"
+        intent: hs_code_lookup
+      - text: "What's the import duty on {entity}?"
+        intent: calculation
+      - text: "How do I import {entity}?"
+        intent: general
+    km:
+      - text: "តើលេខកូដ HS សម្រាប់ {entity} គឺអ្វី?"
+        intent: hs_code_lookup
+      - text: "តើពន្ធនាំចូលលើ {entity} មានចំនួនប៉ុន្មាន?"
+        intent: calculation
+      - text: "តើត្រូវនាំចូល {entity} យ៉ាងដូចម្តេច?"
+        intent: general
 
   import_procedure:
-    - text: "What is the HS code for {entity}?"
-      intent: hs_code_lookup
-    - text: "How is import tax calculated for {entity}?"
-      intent: calculation
-    - text: "Show me trade data statistics for {entity}."
-      intent: trade_query
+    en:
+      - text: "What's the HS code for {entity}?"
+        intent: hs_code_lookup
+      - text: "What's the import duty on {entity}?"
+        intent: calculation
+      - text: "Any trade data for {entity}?"
+        intent: trade_query
+    km:
+      - text: "តើលេខកូដ HS សម្រាប់ {entity} គឺអ្វី?"
+        intent: hs_code_lookup
+      - text: "តើពន្ធនាំចូលលើ {entity} មានចំនួនប៉ុន្មាន?"
+        intent: calculation
+      - text: "តើមានទិន្នន័យពាណិជ្ជកម្មសម្រាប់ {entity} ដែរឬទេ?"
+        intent: trade_query
 
 # Fallback generic questions when no entity is resolvable, OR when the current
 # turn's intent is not one of the keys above (e.g. "general", low-confidence turns).
 # NOTE: These must NOT contain {entity} placeholders as they are static topic-level queries.
 generic_fallbacks:
-  - "How do I classify import goods?"
-  - "How is customs import duty calculated?"
-  - "What are the general import procedures?"
+  en:
+    - "How do I classify my goods?"
+    - "How is customs duty calculated?"
+    - "What documents do I need to import?"
+  km:
+    - "តើត្រូវធ្វើចំណាត់ថ្នាក់ទំនិញយ៉ាងដូចម្តេច?"
+    - "តើពន្ធគយត្រូវគណនាយ៉ាងដូចម្តេច?"
+    - "តើត្រូវមានឯកសារអ្វីខ្លះសម្រាប់ការនាំចូល?"

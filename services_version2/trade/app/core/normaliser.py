@@ -108,7 +108,7 @@ def compute_growth_rates(
                 # Baseline record: no prior period → growth is undefined, never 0.0
                 r["growth_rate_pct"] = None if i == 0 else _growth(
                     float(r.get(value_key) or 0),
-                    float(g_records[i - 1].get(value_key) or 0),
+                    float(g_records[0].get(value_key) or 0),
                 )
                 result_records.append(r)
     else:
@@ -117,7 +117,7 @@ def compute_growth_rates(
         for i, r in enumerate(records_copy):
             r["growth_rate_pct"] = None if i == 0 else _growth(
                 float(r.get(value_key) or 0),
-                float(records_copy[i - 1].get(value_key) or 0),
+                float(records_copy[0].get(value_key) or 0),
             )
         result_records = records_copy
 
@@ -411,6 +411,11 @@ def normalise(
             else:
                 flow_str = str(flow_val).upper()
 
+            if flow_str in ("EXPORT", "EX"):
+                flow_str = "EX"
+            elif flow_str in ("IMPORT", "IM"):
+                flow_str = "IM"
+
             val = 0.0
             for k in r.keys():
                 if k.upper() in ("VALUE_USD", "TRADE_VALUE", "VALUE"):
@@ -440,8 +445,8 @@ def normalise(
                 exports_weight += weight
 
         # Count the number of EX and IM rows present
-        ex_count = sum(1 for r in records if str(r.get("FLOW", r.get("flow", ""))).upper() == "EX")
-        im_count = sum(1 for r in records if str(r.get("FLOW", r.get("flow", ""))).upper() == "IM")
+        ex_count = sum(1 for r in records if str(r.get("FLOW", r.get("flow", ""))).upper() in ("EX", "EXPORT"))
+        im_count = sum(1 for r in records if str(r.get("FLOW", r.get("flow", ""))).upper() in ("IM", "IMPORT"))
         has_both_flows = (ex_count > 0 and im_count > 0)
 
         # Check if weight was explicitly requested

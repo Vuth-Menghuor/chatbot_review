@@ -47,7 +47,7 @@
       </div>
     </div>
 
-    <!-- Custom (split light / dark preview) -->
+    <!-- System (split light / dark preview) -->
     <div v-else class="relative aspect-5/4 w-full overflow-hidden">
       <div class="absolute inset-0 flex">
         <div class="flex w-1/2 flex-col bg-linear-to-b from-sky-300 to-emerald-100 p-1.5 sm:p-2">

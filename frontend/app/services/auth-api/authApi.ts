@@ -6,7 +6,11 @@ export const REFRESH_TOKEN_KEY = 'gdce:refresh-token';
 export interface AuthUser {
   id: string;
   full_name: string;
+  nickname?: string | null;
   email: string;
+  phone?: string | null;
+  address?: string | null;
+  avatar_url?: string | null;
   role: string;
   is_active: boolean;
 }
@@ -27,6 +31,15 @@ export interface TokenResponse {
   refresh_token: string;
   token_type: string;
   user: AuthUser;
+}
+
+export interface UpdateProfilePayload {
+  full_name?: string;
+  nickname?: string | null;
+  email?: string;
+  phone?: string | null;
+  address?: string | null;
+  avatar_url?: string | null;
 }
 
 export function getStoredAccessToken(): string | null {
@@ -128,6 +141,17 @@ export async function logoutRequest(
 
 export async function fetchMeRequest(baseUrl: string, accessToken: string): Promise<AuthUser> {
   return authFetchJson<AuthUser>(baseUrl, '/api/v1/auth/me', { accessToken });
+}
+
+export async function updateMeRequest(
+  baseUrl: string,
+  accessToken: string,
+  payload: UpdateProfilePayload,
+): Promise<{ data: AuthUser; accessToken: string; refreshToken: string | null }> {
+  return authFetchAuthed<AuthUser>(baseUrl, '/api/v1/auth/me', accessToken, {
+    method: 'PATCH',
+    body: payload,
+  });
 }
 
 export async function tryRefreshAccessToken(baseUrl: string): Promise<string | null> {

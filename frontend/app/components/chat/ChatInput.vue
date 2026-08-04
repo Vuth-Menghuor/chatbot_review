@@ -70,7 +70,7 @@
   </div>
 </template>
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue';
+import { ref, computed, nextTick, onMounted, watch } from 'vue';
 import { PlusIcon } from 'lucide-vue-next';
 import BaseIconButton from '~/components/base/BaseIconButton.vue';
 import { usePreferencesStore } from '~/stores/preferences.store';
@@ -100,6 +100,7 @@ const canSend = computed(() => model.value.trim().length > 0 || attachedFiles.va
 
 const fileInputRef = ref<InstanceType<typeof import('vuetify/components').VFileInput> | null>(null);
 const textareaRef = ref<InstanceType<typeof import('vuetify/components').VTextarea> | null>(null);
+const MAX_TEXTAREA_HEIGHT = 220;
 
 const onFileChange = (files: File | File[] | File[] | null) => {
   if (!files) return;
@@ -168,6 +169,26 @@ const submit = () => {
 };
 const removeFile = (index: number) => attachedFiles.value.splice(index, 1);
 
+const resizeTextarea = async () => {
+  await nextTick();
+  requestAnimationFrame(() => {
+    const textarea = textareaRef.value?.$el?.querySelector('textarea') as HTMLTextAreaElement | null;
+    if (!textarea) return;
+
+    textarea.style.height = 'auto';
+    const nextHeight = Math.min(textarea.scrollHeight, MAX_TEXTAREA_HEIGHT);
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = textarea.scrollHeight > MAX_TEXTAREA_HEIGHT ? 'auto' : 'hidden';
+
+    const fieldInput = textarea.closest('.v-field__input') as HTMLElement | null;
+    if (fieldInput) {
+      fieldInput.style.height = `${nextHeight + 4}px`;
+      fieldInput.style.maxHeight = `${MAX_TEXTAREA_HEIGHT + 4}px`;
+      fieldInput.style.overflowY = 'visible';
+    }
+  });
+};
+
 const focusTextarea = async () => {
   await nextTick();
   const textarea = textareaRef.value?.$el?.querySelector('textarea') as HTMLTextAreaElement | null;
@@ -181,7 +202,16 @@ const focusTextarea = async () => {
 const setDraft = async (text: string) => {
   model.value = text;
   await focusTextarea();
+  await resizeTextarea();
 };
+
+watch(model, () => {
+  void resizeTextarea();
+});
+
+onMounted(() => {
+  void resizeTextarea();
+});
 
 defineExpose({ setDraft });
 </script>
@@ -189,16 +219,20 @@ defineExpose({ setDraft });
 <style scoped>
 :deep(.chat-input-textarea .v-field__input:not(.v-textarea__sizer)) {
   min-height: 32px !important;
+  max-height: 224px !important;
   padding: 4px 0 0 !important;
+  overflow-y: visible !important;
 }
 
 :deep(.chat-input-textarea .v-textarea__sizer) {
-  min-height: 0 !important;
+  min-height: 32px !important;
   padding: 4px 0 0 !important;
 }
 
 :deep(.chat-input-textarea textarea) {
   line-height: 1.45 !important;
+  max-height: 220px !important;
+  overflow-y: hidden !important;
 }
 
 :deep(.chat-input-textarea textarea::placeholder) {

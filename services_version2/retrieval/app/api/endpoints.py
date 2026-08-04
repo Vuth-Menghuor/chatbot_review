@@ -32,6 +32,7 @@ class RankedHSResponse(BaseModel):
     is_generic: bool = False
     clarifying_note: Optional[str] = None
     clarifying_questions: Optional[List[str]] = None
+    reference_url: Optional[str] = None
 
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,7 @@ async def build_ranked_hs_answer(
     generate_answer: bool,
     gemini_client=None,
     constraints: Optional[Dict[str, Any]] = None,
+    config=None,
 ) -> Dict[str, Any]:
     """
     Returns:
@@ -143,7 +145,7 @@ async def build_ranked_hs_answer(
             return False
         return True
 
-    def _format_message(parsed: dict) -> str:
+    def _format_message(parsed: dict, reference_url: str) -> str:
         lines = [parsed.get("message", "").strip()] if parsed.get("message") else []
         for i, c in enumerate(parsed.get("codes", []), 1):
             lines.append(f"{i}. {c.get('hs_code', 'N/A')} - {c.get('description', '').strip()}")
@@ -152,6 +154,8 @@ async def build_ranked_hs_answer(
             lines.append(parsed["clarifying_note"].strip())
         for q in (parsed.get("questions") or []):
             lines.append(f"- {q}")
+        lines.append("")
+        lines.append(f" Verify on the official GDCE tariff lookup: {reference_url}")
         return "\n".join(lines).strip()
 
     if gemini_client is not None:
@@ -184,11 +188,12 @@ async def build_ranked_hs_answer(
             is_generic = bool(parsed.get("is_generic"))
             questions = parsed.get("questions") or []
             return {
-                "final_answer": _format_message(parsed),
+                "final_answer": _format_message(parsed, reference_url=getattr(config, "gdce_tariff_search_url", None)),
                 "answer_source": "gemini_llm",
                 "is_generic": is_generic,
                 "clarifying_note": parsed.get("clarifying_note") if is_generic else None,
                 "clarifying_questions": questions if is_generic and questions else None,
+                "reference_url": getattr(config, "gdce_tariff_search_url", None),
             }
 
         logger.warning("Gemini structured ranking failed after retries; falling back to extractive ranking.")
@@ -634,7 +639,8 @@ async def hs_code_candidates_endpoint(
                 limit=5,
             )
             answer_payload = await build_ranked_hs_answer(
-                query=llm_prompt, transformed_docs=llm_docs, generate_answer=True, gemini_client=gemini_client
+                query=llm_prompt, transformed_docs=llm_docs, generate_answer=True,
+                gemini_client=gemini_client, config=service.config,
             )
         else:
             answer_payload = {"final_answer": None, "answer_source": None}
@@ -656,6 +662,7 @@ async def hs_code_candidates_endpoint(
             "collection_used": "gdce_hs_code", "language": None,
             "required_parameters": ["query"], "missing_parameters": None,
             "metadata": metadata, "error": None,
+            "reference_url": service.config.gdce_tariff_search_url, 
         })
     except Exception as e:
         logger.error(f"HS Code Candidates error: {e}")
@@ -715,7 +722,8 @@ async def hs_code_ranked_endpoint(
         augmented_query = (f"HS prefix family: {hs_prefix}\n" if hs_prefix else "") + constraint_text + request.query
 
         answer_payload = await build_ranked_hs_answer(
-            query=augmented_query, transformed_docs=llm_docs, generate_answer=request.generate_answer, gemini_client=gemini_client
+            query=augmented_query, transformed_docs=llm_docs, generate_answer=request.generate_answer,
+            gemini_client=gemini_client, config=service.config,
         )
         return RankedHSResponse(
             status="success",
@@ -724,6 +732,7 @@ async def hs_code_ranked_endpoint(
             is_generic=answer_payload.get("is_generic", False),
             clarifying_note=answer_payload.get("clarifying_note"),
             clarifying_questions=answer_payload.get("clarifying_questions"),
+            reference_url=service.config.gdce_tariff_search_url,
         )
     except Exception as e:
         logger.error(f"HS Code Ranked error: {e}")

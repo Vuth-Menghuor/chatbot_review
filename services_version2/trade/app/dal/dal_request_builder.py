@@ -175,7 +175,7 @@ class DALRequestBuilder:
         raw_group = [str(g) for g in group_by] if isinstance(group_by, list) else []
 
         if not raw_dims and not raw_group:
-            inferred = ["FLOW", "PARTNER_COUNTRY"] if intent in ("trend", "summary", "trade_balance") else ["PARTNER_COUNTRY"]
+            inferred = ["FLOW", "PARTNER_COUNTRY"] if intent in ("trend", "summary", "trade_balance", "growth") else ["PARTNER_COUNTRY"]
             raw_dims = inferred
             raw_group = inferred
         elif not raw_dims:
@@ -188,9 +188,9 @@ class DALRequestBuilder:
         group_by_list = [g for g in raw_group if g.upper() not in time_keys]
 
         if not dimensions_list:
-            dimensions_list = ["FLOW"] if intent in ("trend", "summary", "trade_balance") else ["PARTNER_COUNTRY"]
+            dimensions_list = ["FLOW"] if intent in ("trend", "summary", "trade_balance", "growth") else ["PARTNER_COUNTRY"]
         if not group_by_list:
-            group_by_list = ["FLOW"] if intent in ("trend", "summary", "trade_balance") else ["PARTNER_COUNTRY"]
+            group_by_list = ["FLOW"] if intent in ("trend", "summary", "trade_balance", "growth") else ["PARTNER_COUNTRY"]
 
         return dimensions_list, group_by_list
 

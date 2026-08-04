@@ -14,6 +14,7 @@
     "dev:poll": "CHOKIDAR_USEPOLLING=true nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
+    "test": "node --import ./node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/loader.mjs --test \"tests/**/*.test.ts\"",
     "postinstall": "nuxt prepare",
     "typecheck": "vue-tsc --noEmit",
     "lint": "eslint . --ext .ts,.vue",

@@ -73,7 +73,7 @@ network), then start the three API Layer containers:
 docker network create chatbot-shared
 cp .env.example .env
 docker compose up --build -d
-docker compose logs -f api-layer
+docker compose logs -f api
 ```
 
 ### Full development stack with Orchestrator v2
@@ -97,19 +97,16 @@ backend/api-layer/scripts/start-development.ps1 -SkipBuild
 All services share `gdce-network`. The API Layer reaches
 `http://orchestrator-service:8001`; the orchestrator reaches
 `general-service:8005`, `retrieval-service:8003`, `calculator:8002`, and
-`trade-service:8004`. Run the reusable smoke test separately with:
-
-```powershell
-python backend/api-layer/scripts/check_integration.py
-```
+`trade-service:8004`.
 
 Development limitations: orchestrator chat history and feedback are in memory.
 The calculator can use JSON/Qdrant fallbacks but needs its own populated
 PostgreSQL duty-rate database for authoritative calculations. Trade queries need
 a valid `DAL_BASE_URL` and `DAL_API_KEY` in the trade service environment.
 
-Compose contains only `api-layer`, `api-postgres`, and `api-redis`. Migrations
-run automatically before the API starts.
+Compose runs migrations in the one-shot `api-migrate` service before the `api`
+container starts. Keep this separate from API startup so multiple API replicas
+do not run Alembic at the same time.
 
 ## Alembic
 
@@ -239,10 +236,3 @@ metadata; the API Layer does not download or persist that artifact.
 - Request logs exclude bodies, passwords, tokens, and sensitive headers.
 - Upstream URLs are never returned to the browser.
 - Set a strong `JWT_SECRET_KEY`, use TLS at ingress, rotate secrets, and restrict the shared Docker network in production.
-
-## Tests
-
-```bash
-pytest
-python -m compileall app alembic
-```

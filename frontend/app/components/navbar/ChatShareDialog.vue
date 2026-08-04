@@ -1,16 +1,12 @@
 <template>
   <BaseDialog
     v-model="model"
-    :title="linkCreated ? 'Chat shared' : 'Share chat'"
+    :title="dialogTitle"
     content-class="bg-white dark:bg-zinc-950"
     :on-close="onClose"
   >
     <p class="text-base mb-5" :class="linkCreated ? 'text-gray-500 dark:text-zinc-400 -mt-1' : ''">
-      {{
-        linkCreated
-          ? "Future messages aren't included."
-          : 'Only messages up to this point will be shared.'
-      }}
+      {{ helperText }}
     </p>
 
     <div
@@ -49,15 +45,27 @@
     </template>
 
     <template v-else>
-      <BaseCopy variant="box" :value="shareLink" />
+      <BaseCopy v-if="shareType === 'public'" variant="box" :value="shareLink" />
+      <div
+        v-else
+        class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+      >
+        Only you can access this chat.
+      </div>
     </template>
+
+    <p v-if="errorMessage" class="mt-3 text-sm text-red-600 dark:text-red-400">
+      {{ errorMessage }}
+    </p>
 
     <template #actions>
       <template v-if="!linkCreated">
         <BaseButton variant="text" custom-class="text-gray-500" @click="model = false">
           Cancel
         </BaseButton>
-        <BaseButton elevation="0" @click="createLink">Create share link</BaseButton>
+        <BaseButton elevation="0" :loading="isSaving" @click="updateSharing">
+          {{ primaryActionLabel }}
+        </BaseButton>
       </template>
       <template v-else>
         <BaseButton variant="text" custom-class="text-gray-500" @click="model = false">
@@ -69,13 +77,29 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import { CheckIcon } from 'lucide-vue-next';
 import { useNavbarChatShareDialog } from '~/composables/navbar/useChatShareDialog';
 import type { NavbarShareType } from '~/types/ui-menu';
 const model = defineModel<boolean>({ required: true });
 
-const { shareType, linkCreated, shareOptions, shareLink, createLink, onClose } =
-  useNavbarChatShareDialog();
+const props = defineProps<{
+  chatId?: string;
+}>();
+
+const {
+  shareType,
+  linkCreated,
+  isSaving,
+  errorMessage,
+  dialogTitle,
+  helperText,
+  primaryActionLabel,
+  shareOptions,
+  shareLink,
+  updateSharing,
+  onClose,
+} = useNavbarChatShareDialog({ chatId: computed(() => props.chatId) });
 
 function onSelectOption(id: NavbarShareType) {
   if (linkCreated.value) return;

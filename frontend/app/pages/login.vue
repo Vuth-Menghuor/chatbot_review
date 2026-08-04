@@ -3,14 +3,12 @@ import { computed, onMounted, ref } from 'vue';
 import { definePageMeta, navigateTo, useRoute } from '#imports';
 import { ChatApiRequestError } from '~/services/chat-api';
 import { useAuthStore } from '~/stores/auth.store';
-import { useUserStore } from '~/stores/user.store';
 import { useAppLocale } from '~/composables/common/useAppLocale';
 
 definePageMeta({ layout: 'auth' });
 
 const route = useRoute();
 const authStore = useAuthStore();
-const userStore = useUserStore();
 const { t } = useAppLocale();
 
 const email = ref('');
@@ -37,7 +35,6 @@ async function onSubmit() {
 
   try {
     await authStore.login({ email: trimmedEmail, password: password.value });
-    userStore.syncFromAuthUser();
 
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/';
     await navigateTo(redirect || '/');

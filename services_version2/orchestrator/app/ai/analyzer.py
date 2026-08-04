@@ -422,15 +422,8 @@ class FirstLayerPipeline:
         return None
 
     def _strip_noise_local(self, query: str) -> str:
-        """Strip common filler patterns locally without making an LLM roundtrip."""
-        cleaned = query
-        for pat in FILLER_PATTERNS:
-            cleaned = re.sub(pat, "", cleaned, flags=re.IGNORECASE)
-        # Cleanup spaces and trailing punctuation
-        cleaned = re.sub(r"\s+", " ", cleaned).strip()
-        if not cleaned:
-            return query
-        return cleaned
+        """Preserve query intact without destructive regex word deletion."""
+        return query.strip()
 
     async def _step_rewrite_query(
         self,
@@ -562,10 +555,10 @@ class LLMFirstLayerService:
         return get_llm_service(llm_config)
 
     def _normalize_key(self, query: str) -> str:
-        """Standardize the query key for cache lookup to prevent minor normalization mismatches."""
+        """Standardize the query key for cache lookup."""
         if not query:
             return ""
-        return re.sub(r"[^\w\s]", "", query.lower()).strip()
+        return query.lower().strip()
 
     def get_request_unified_result(self) -> Optional[Dict[str, Any]]:
         """Retrieve the request-scoped unified result, if any."""
@@ -618,36 +611,6 @@ class LLMFirstLayerService:
             )
             if res:
                 res["query"] = query
-                
-                # If the query was rewritten, re-classify the intent on the rewritten query to ensure accuracy
-                rewritten = res.get("rewritten_query")
-                if rewritten and self._normalize_key(rewritten) != self._normalize_key(query):
-                    try:
-                        re_intent, re_conf, re_reasoning = await asyncio.to_thread(
-                            llm_service.classify_intent, rewritten
-                        )
-                        intent_val = re_intent.value if hasattr(re_intent, "value") else re_intent
-                        original_intent = res.get("intent")
-                        
-                        # Option B Guard: Don't let isolated re-classification downgrade an actionable intent to a low-signal intent
-                        ACTIONABLE_INTENTS = {"hs_code_lookup", "calculation", "trade_query"}
-                        LOW_SIGNAL_INTENTS = {"small_talk", "general", "unclassified"}
-                        
-                        if original_intent in ACTIONABLE_INTENTS and intent_val in LOW_SIGNAL_INTENTS:
-                            logger.info(
-                                f"Re-classified intent '{intent_val}' on rewritten query '{rewritten}' "
-                                f"was ignored. Retaining original actionable intent '{original_intent}' to prevent context loss."
-                            )
-                        else:
-                            logger.info(
-                                f"Re-classified unified intent on rewritten query '{rewritten}' "
-                                f"from '{original_intent}' to '{intent_val}'"
-                            )
-                            res["intent"] = intent_val
-                            res["confidence"] = re_conf
-                    except Exception as e:
-                        logger.warning(f"Failed to re-classify intent on rewritten query: {e}")
-                
                 unified_result_var.set(res)
                 return res
         return {}
@@ -778,74 +741,60 @@ class LLMAskBackService:
         turn_number: int = 1,
     ) -> Any:
         """
-        Generates clarification questions when intent is ambiguous or correct intent but missing entity.
-        Distinguishes:
-        - "correct intent, missing entity" (capability questions like "can you help me with hs code"):
-          asks for product details/context.
-        - "ambiguous intent" (multiple plausible intents):
-          asks which of the candidate intents the user meant.
+        Generates dynamic clarification questions using LLM and dynamic prompts loaded via DynamicPromptManager.
+        Falls back to intent-level fallback questions if LLM generation is unavailable.
         """
-        low_query = (query or "").lower()
-        has_hs = any(w in low_query for w in ["hs", "tariff", "classify", "code"])
-        has_calc = any(w in low_query for w in ["calculate", "calculation", "duty", "tax", "fee"])
-        has_trade = any(w in low_query for w in ["trade", "stat", "volume", "import", "export", "data"])
-        
-        if intent_label == "hs_code_lookup" and has_hs:
-            from ..utils import extract_entity
-            entity = extract_entity(low_query)
-            is_capability_ask = any(cap in low_query for cap in ["can you", "could you", "help me", "how to"]) and not entity
-            if is_capability_ask:
-                question = "Of course! I can help you with HS code classification. What product are you trying to look up?"
-                candidates = ["hs_code_lookup"]
-        elif intent_label == "calculation" and has_calc:
-            question = "Sure! I can help you estimate customs duties and taxes. What product are you importing, and what is its CIF value or import details?"
-            candidates = ["calculation"]
-        elif intent_label == "trade_query" and has_trade:
-            from ..utils import extract_entity
-            has_product = bool(extract_entity(low_query))
-            has_time_period = bool(
-                re.search(
-                    r"\b(19|20)\d{2}\b|\bq[1-4]\b|\bquarter\s+[1-4]\b|\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\b|\b(last|this|next)\s+(month|quarter|year)\b",
-                    low_query
-                )
+        candidates = [intent_label]
+
+        # 1. Prepare session history context if available
+        history_str = ""
+        if session and hasattr(session, "turns") and session.turns:
+            history_str = "\n".join(
+                f"User: {t.get('user') or t.get('user_input', '')}\nAssistant: {t.get('bot') or t.get('bot_response', '')}"
+                for t in session.turns[-2:]
             )
-            
-            if not has_product and not has_time_period:
-                question = "Happy to help. Could you tell me (1) which product or commodity, and (2) what time period — e.g. 'rice imports for Q1 2026'?"
-            elif has_product and not has_time_period:
-                question = "Sure — trade data for what time period? For example: last month, Q1 2026, or 2025."
-            elif not has_product and has_time_period:
-                question = "Certainly! Which product or commodity trade data are you looking for?"
-            else:
-                question = "Certainly! I can help you with trade statistics. What trade details would you like to see?"
-            candidates = ["trade_query"]
-        else:
-            # Ambiguous intent: let the LLM generate a clarification question
-            question = f"I want to make sure I assist you correctly. Are you looking to find an HS code, calculate import duties/taxes, check trade statistics, or something else?"
-            candidates = [intent_label]
-            
-            # Optionally call LLM to generate a natural clarification question
-            llm_service = self.pipeline.intent_service._llm_provider
-            if llm_service and hasattr(llm_service, "router") and llm_service.is_available():
-                prompt = _prompt_manager.render(
-                    "ask_back_ambiguous_intent",
-                    query=query,
-                    intent_label=intent_label,
-                    confidence=f"{confidence:.2f}",
-                )
-                try:
-                    provider = llm_service.router.providers.get("gemini")
-                    if provider and provider.is_available():
-                        response = await asyncio.to_thread(
-                            provider.client.models.generate_content,
-                            model=provider.model_name,
-                            contents=prompt,
-                        )
-                        content = (response.text or "").strip()
-                        if content:
-                            question = content
-                except Exception as e:
-                    logger.warning(f"Failed to generate LLM clarification question: {e}")
+
+        # 2. Baseline fallback question (ensures question is always defined even if LLM call fails)
+        fallback_map = {
+            "hs_code_lookup": "Of course! I can help you with HS code classification. What product are you trying to look up?",
+            "calculation": "Sure! I can help you estimate customs duties and taxes. What product are you importing, and what is its CIF value or import details?",
+            "trade_query": "Happy to help with trade statistics. Could you please specify the product or commodity and time period (e.g. Q1 2026 or last year)?",
+        }
+        question = fallback_map.get(
+            intent_label,
+            f"I want to make sure I assist you correctly. Are you looking to find an HS code, calculate import duties/taxes, check trade statistics, or something else?"
+        )
+
+        # 3. Dynamic LLM generation using prompt managed via DynamicPromptManager
+        llm_service = None
+        if hasattr(self.pipeline, "intent_service") and self.pipeline.intent_service:
+            llm_service = getattr(self.pipeline.intent_service, "_llm_provider", None)
+
+        if not llm_service:
+            from ..ai import get_llm_service
+            llm_service = get_llm_service()
+
+        if llm_service and hasattr(llm_service, "router") and llm_service.is_available():
+            prompt = _prompt_manager.render(
+                "ask_back_ambiguous_intent",
+                query=query,
+                intent_label=intent_label,
+                confidence=f"{confidence:.2f}",
+                history=history_str if history_str else "None",
+            )
+            try:
+                provider = llm_service.router.providers.get("gemini")
+                if provider and provider.is_available():
+                    response = await asyncio.to_thread(
+                        provider.client.models.generate_content,
+                        model=provider.model_name,
+                        contents=prompt,
+                    )
+                    content = (response.text or "").strip()
+                    if content:
+                        question = content
+            except Exception as e:
+                logger.warning(f"Failed to generate dynamic LLM clarification question: {e}")
 
         class AskBackResult:
             def __init__(self, should_ask_back: bool, question: str, candidate_intents: list):
@@ -880,10 +829,12 @@ class LLMAskBackService:
             or bool(re.search(r"[$€£¥₩]\s*\d+|\d+\s*[$€£¥₩]|\b\d+\b", low_text))
         )
 
-        # Counter-signal: if query contains ANY calculation signal AND calculation is an eligible candidate,
-        # suppress has_other_hs unless the query explicitly asks for an HS code/tariff code ("hs code", "tariff code", "ahtn").
-        is_explicit_hs_code = any(re.search(rf"\b{re.escape(w)}\b", low_text) for w in ["hs code", "hs-code", "hscode", "tariff code", "ahtn"])
-        if has_calc_signal and "calculation" in candidate_intents and not is_explicit_hs_code:
+        # Counter-signal: if query contains ANY calculation signal, HS code number, or corrective reply phrase AND calculation is an eligible candidate,
+        # suppress has_other_hs so that supplying an HS code slot for calculation is not treated as a topic switch to hs_code_lookup.
+        has_hs_number = bool(re.search(r"\b\d{4}\.\d{2}(?:\.\d{2})?\b|\b\d{8}\b", low_text))
+        is_corrective_hs_reply = "correct" in low_text or "right" in low_text or "use" in low_text
+        is_explicit_hs_lookup_ask = any(phrase in low_text for phrase in ["what is the hs code", "find hs code", "lookup hs code", "search hs code"])
+        if (has_calc_signal or has_hs_number or is_corrective_hs_reply) and "calculation" in candidate_intents and not is_explicit_hs_lookup_ask:
             has_other_hs = False
 
         if has_other_hs and "hs_code_lookup" not in candidate_intents:

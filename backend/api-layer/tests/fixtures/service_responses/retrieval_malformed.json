@@ -1,0 +1,19 @@
+{
+  "request_id": "fixture-retrieval-malformed",
+  "session_id": "fixture-session-retrieval",
+  "service": "retrieval",
+  "intent": "retrieval",
+  "answer": {
+    "unexpected": "object answer"
+  },
+  "citations": [
+    null,
+    {
+      "metadata": "not-an-object"
+    }
+  ],
+  "documents": "not-a-list",
+  "missing": {
+    "permit_detail": "not available"
+  }
+}

@@ -12,6 +12,7 @@ Documentation for the **Chat-Bot-GDCE** rich multi-tool chatbot UI (Nuxt 4 + Vue
 | [Renderer registry](./04-renderer-registry.md) | How blocks map to components (no hardcoding) |
 | [LM Studio & backend setup](./05-lm-studio-backend.md) | Env vars, transports, mocks, async polling |
 | [Interactive ask-back UI](./06-interactive-ask-back.md) | Schema-driven forms that ask the user back |
+| [API Layer health & Bruno](./07-api-layer-health-and-bruno.md) | Health endpoints, readiness behavior, Bruno requests |
 
 ## Per-renderer prompts
 

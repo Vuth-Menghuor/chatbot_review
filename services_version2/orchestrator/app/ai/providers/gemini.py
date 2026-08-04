@@ -522,5 +522,60 @@ class GeminiFormatterProvider(BaseFormatterProvider):
         
         return f"{base_guidelines}\n\n{intent_prompt}"
 
+    async def unified_first_layer_call(
+        self,
+        query: str,
+        history: str = "",
+        rolling_summary: str = "",
+        context_str: str = ""
+    ) -> Dict[str, Any]:
+        """
+        Runs LLM validation, intent detection, and translation/rewriting in a single call
+        using DynamicPromptManager ("gemini_unified_first_layer").
+        Works across all languages (Khmer, English, Chinese, etc.).
+        """
+        if not self.is_available():
+            return {}
+
+        import datetime
+        now = datetime.datetime.now()
+        current_year = now.year
+
+        try:
+            prompt = self.prompt_manager.render(
+                "gemini_unified_first_layer",
+                current_datetime=now.strftime("%Y-%m-%d %H:%M:%S"),
+                current_year=str(current_year),
+                previous_year=str(current_year - 1),
+                two_years_ago=str(current_year - 2),
+                history=history or "None",
+                rolling_summary=rolling_summary or "None",
+                context=context_str or "None",
+                user_input=query,
+                question=query
+            )
+        except Exception as e:
+            logger.warning(f"Failed to render gemini_unified_first_layer prompt from DynamicPromptManager: {e}")
+            prompt = f"User Query: {query}\n{context_str}\n{history}"
+
+        try:
+            loop = asyncio.get_running_loop()
+            res = await loop.run_in_executor(
+                None,
+                lambda: self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                    config={"response_mime_type": "application/json"}
+                )
+            )
+            _log_gemini_usage(self.model_name, res)
+            text = (res.text or "").strip()
+            if text:
+                return json.loads(text)
+        except Exception as e:
+            logger.warning(f"Gemini unified_first_layer_call failed: {e}")
+
+        return {}
+
 
 

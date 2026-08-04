@@ -1,105 +1,188 @@
 # Session Context & Conversation Management Guide
 
-This guide explains in simple terms how the Cambodia Customs and Trade chatbot manages conversation memory, stores chat data, cleans up user inputs, and routes different types of queries.
+This document provides a comprehensive breakdown of **Session Context**, **Conversation Memory**, **Multi-Tier Storage Architecture**, **Gating Rules**, and **End-to-End Query Processing** within the **GDCE Chatbot Orchestrator Service**.
 
 ---
 
-## 1. Core Architecture: The Memory System
-To keep response times fast and LLM costs low, the chatbot uses a **two-tier memory architecture**:
+## 1. High-Level User Flow & Pipeline Journey
+
+The diagram below shows the streamlined 4-phase journey of a user message through the Orchestrator system:
 
 ```mermaid
-graph TD
-    A[User Request] --> B[Active Memory: Sliding Window max 8 turns]
-    B -- Eviction on Turn 9+ --> C[Background Summarizer]
-    C --> D[Rolling Summary string]
-    D --> B
-    B --> E[(Redis Cache: Fast access)]
-    B --> F[(Postgres DB: Permanent storage)]
-```
+flowchart TD
+    %% Custom Node Styling
+    classDef intake fill:#3498DB,stroke:#1F618D,stroke-width:2px,color:#fff;
+    classDef ai fill:#8E44AD,stroke:#5B2C6F,stroke-width:2px,color:#fff;
+    classDef gate fill:#F39C12,stroke:#B9770E,stroke-width:2px,color:#fff;
+    classDef service fill:#2ECC71,stroke:#1E8449,stroke-width:2px,color:#fff;
+    classDef memory fill:#16A085,stroke:#117A65,stroke-width:2px,color:#fff;
 
-* **Active Memory (Max 8 Turns)**: The chatbot only reads and tracks the last 8 turns of conversation in active memory. This prevents request payloads from growing too large.
-* **Rolling Summary (Turns 9+)**: When the conversation exceeds 8 turns, the oldest turns are evicted and compiled by Gemini in the background into a running **Rolling Summary** text string. This summary is injected into future requests so the bot never forgets the context.
-* **Context Slots**: Special fields tracked in the session state (e.g. `product_category`, `import_export_mode`, `currency`) that help resolve ambiguous queries.
+    subgraph PHASE1 ["1️⃣ INTAKE & PREPARATION"]
+        User([👤 User Request]) --> Security{Passes Security?}:::intake
+        Security -- No --> Blocked[🛑 Security Block]:::intake
+        Security -- Yes --> LoadSession[📖 Load Session Memory & Lock Session]:::intake
+        LoadSession --> TranslateIn[🌐 Translate Khmer ➔ English if needed]:::intake
+    end
 
----
+    subgraph PHASE2 ["2️⃣ CONTEXT & REWRITING"]
+        TranslateIn --> CheckSpec{Follow-up Spec?}:::ai
+        CheckSpec -- Yes --> MergeContext[🧩 Merge Spec Answer with Saved Context]:::ai
+        CheckSpec -- No --> SmallTalk{Small-Talk?}:::ai
+        MergeContext --> SmallTalk
+        
+        SmallTalk -- Yes --> FastReply[⚡ Polite Instant Reply]:::ai
+        SmallTalk -- No --> Rewrite[🤖 Smart Rewriter: Strip Filler & Flesh Out Query]:::ai
+    end
 
-## 2. Query Journey Flowchart
-Here is how the chatbot classifies and cleans different types of questions:
+    subgraph PHASE3 ["3️⃣ ROUTING & GATING"]
+        Rewrite --> Ambiguous{Clear or Ambiguous?}:::gate
+        Ambiguous -- Ambiguous < 0.60 --> AskBack[❓ Ask-Back Gate: Ask User to Clarify Intent]:::gate
+        
+        Ambiguous -- Clear Intent --> Route[🎯 Microservice Router & Hybrid Cache]:::service
+        Route --> Calc[🧮 Calculator Service<br/>Duties & Taxes]:::service
+        Route --> Trade[📊 Trade Data Service<br/>Import/Export Stats]:::service
+        Route --> Retrieval[🔍 Retrieval Service<br/>HS Tariff Codes]:::service
+        Route --> General[📄 General Policy Service<br/>Rules & Regulations]:::service
+    end
 
-```mermaid
-graph TD
-    %% Define Styles
-    classDef startEnd fill:#f9f,stroke:#333,stroke-width:2px;
-    classDef gate fill:#ffd27f,stroke:#333,stroke-width:1px;
-    classDef action fill:#bbf,stroke:#333,stroke-width:1px;
-    classDef cache fill:#bfb,stroke:#333,stroke-width:1px;
-
-    %% User Inputs at the Top
-    Q1["🗣️ TYPE 1: Lexical Noise <br> 'Um, actually, can you please tell me what is the import tax on rice?'"] --> Path1["⚡ FAST TRACK <br> (Strips filler words instantly with code)"]
-    
-    Q2["🗣️ TYPE 2: Semantic Noise <br> 'I was talking to my business partner and he said we want to import laptops...'"] --> Path2["🤖 CLEAN-UP TRACK <br> (Uses Gemini to remove background stories)"]
-    
-    Q3["🗣️ TYPE 3: Ambiguous Follow-up <br> 'And for laptops?' <br> (Previous turn was about import tax)"] --> Path3["🧠 MEMORY TRACK <br> (Uses chat history to reconstruct the question)"]
-    
-    Q4["🗣️ TYPE 4: Vague / Gibberish <br> 'import thing'"] --> Path4["🛑 GUARD TRACK <br> (Stops the bot because it is confused)"]
-
-    %% Processing Actions
-    Path1 --> Clean1["Cleaned Question: <br> 'what is the import tax on rice?'"]
-    Path2 --> Clean2["Cleaned Question: <br> 'what is the import tax on laptops?'"]
-    Path3 --> Clean3["Reconstructed Question: <br> 'what is the import tax on laptops?'"]
-    
-    %% Routing Destinations
-    Clean1 --> CalcService["🧮 Calculator Service <br> (Calculates taxes & duties)"]:::cache
-    Clean2 --> DocService["📄 Document Service <br> (Finds regulations & permits)"]:::cache
-    Clean3 --> CalcService
-    
-    %% Stop Response
-    Path4 --> AskBack["Clarification Response: <br> 'Did you mean to calculate duty or look up an HS code?'"]:::startEnd
-
-    %% Apply Styles
-    class Q1,Q2,Q3,Q4 action;
-    class Path1,Path2,Path3,Path4 gate;
-    class Clean1,Clean2,Clean3 action;
+    subgraph PHASE4 ["4️⃣ RESPONSE & MEMORY UPDATE"]
+        Calc & Trade & Retrieval & General & FastReply & AskBack --> Format[✨ Format Markdown Answer & Translate back to Khmer]:::memory
+        Format --> Stream[🚀 SSE Token Stream to UI]:::memory
+        Stream --> MemoryUpdate[💾 Update Memory Tiers<br/>• Active Window (Last 8 turns)<br/>• Rolling Summary (Evicted turn 9+)<br/>• Sync to Redis, Disk & Database]:::memory
+    end
 ```
 
 ---
 
-## 3. Step-by-Step Scenario Analysis
+## 2. System Architecture & Memory Model
 
-### ⚡ Scenario A: Lexical Noise (Fast Track)
-* **User Question**: *"Um, actually, can you please tell me what is the import tax on rice?"*
-* **Ambiguity Gating**: Evaluated as **Not Ambiguous** (it has intent indicators, a product category, and is a complete sentence).
-* **Noise Gating**: Matches lexical patterns (*"um"*, *"actually"*, *"could you please"*).
-* **Action**: Stripped locally using fast regex passes inside `pipeline.py` (takes **0ms additional latency**).
-* **Result Sent Downstream**: `"what is the import tax on rice?"` (routed to the Calculator).
+To maintain sub-300ms Time-To-First-Token and minimize LLM token costs, the Orchestrator employs a **two-tier memory model** combined with a **three-tier storage architecture**.
 
-### 🤖 Scenario B: Semantic Narrative Noise (Clean-up Track)
-* **User Question**: *"I was talking to my business partner yesterday, and he told me that we want to import laptops, what documents do we need?"*
-* **Ambiguity Gating**: Evaluated as **Not Ambiguous** (all query slots are complete).
-* **Noise Gating**: Matches narrative patterns (*"business partner"*, *"he told me"*).
-* **Action**: Triggered semantic noise. Falls through to the rewriter which returns the Gemini pre-warmed cache version (takes **0ms additional latency** in production).
-* **Result Sent Downstream**: `"what documents do we need to import laptops?"` (routed to the General policy RAG).
+```mermaid
+graph TD
+    User([👤 User Request]) --> Step1[1. Security Validation & Session Retrieval]
+    Step1 --> ActiveMem[Active Window Memory: Last 8 Turns]
+    
+    ActiveMem -- Turn 9+ Overflow Eviction --> Summarizer[Background Async Gemini Summarizer]
+    Summarizer --> RollingSummary[Rolling Summary String <= 1600 chars]
+    RollingSummary --> ActiveMem
+    
+    ActiveMem --> Tier1[(Tier 1: Instant Memory <br/> In-Memory + Redis Cache & Streams)]
+    ActiveMem --> Tier2[(Tier 2: Disk Backup <br/> Atomic Local JSON Files)]
+    ActiveMem --> Tier3[(Tier 3: Permanent Archive <br/> PostgreSQL Database)]
+```
 
-### 🧠 Scenario C: Ambiguous Follow-Up (Memory Track)
-* **User Turn 1**: *"What is the import duty for rice?"* (Calculator intent classified; `product_category: "rice"` saved in session slots).
-* **User Turn 2**: *"And for laptops?"*
-* **Ambiguity Gating**: Evaluated as **Ambiguous** (it starts with follow-up prefix *"And for"*, and is too short to be self-sufficient).
-* **Action**: Sent to the LLM query rewriter, which uses the previous turn and saved slots to rebuild the query.
-* **Result Sent Downstream**: `"What is the import duty for laptops?"` (routed to the Calculator).
+### Memory Tiers & Lifecycle
 
-### 🛑 Scenario D: Clarification Ask-Back (Guard Track)
-* **User Question**: *"import thing"* (on any turn, or gibberish).
-* **Ambiguity Gating**: Low intent confidence score ($< 0.60$).
-* **Action**: Triggered Ask-Back gate. Halts the routing pipeline immediately to prevent the chatbot from guessing or hallucinating.
-* **Result Response**: *"I still wasn't sure which option you meant. Are you asking about calculating import duty or looking up an HS code?"*
+* **Active Window Memory (Last 8 Turns)**: The `SessionContext` maintains an active window array of up to 8 conversation turns (`max_turns = 8`). This keeps prompt payloads compact and prevents token bloat.
+* **Eviction & Async Rolling Summary (Turn 9+)**: When conversation history exceeds 8 turns, the oldest turns are evicted from the active array. The `SessionManager` triggers an asynchronous background task (`async_summarize_evicted_turns`) using Gemini (`summarize_evicted_turns` prompt template) to update a running **Rolling Summary** text string (capped at 1,600 characters). If Gemini is unavailable, a deterministic fallback (`fallback_summary`) cleanly slices history on turn boundaries (`U:... B:...`).
+* **Context Slots & Extended State**: Tracks domain parameters across turns:
+  * `product_category`, `product_category_km`, `hs_code`, `cif_value`
+  * `origin_country`, `destination_country`, `currency`, `commercial_description`
+  * `year`, `month`, `trade_agreement`
+  * `last_intent`, `last_entity`, `last_raw_query`, `last_normalized_query`
 
 ---
 
-## 4. Gating & Trigger Rules Summary
+## 3. Three-Tier Storage Architecture
 
-| Gate / Check | Trigger Criteria | Action Taken | Latency Cost |
+To ensure zero memory loss across server restarts, high throughput, and long-term analytics, state is saved across three tiers:
+
+| Tier | Storage Layer | Mechanism & Implementation | Primary Purpose |
 | :--- | :--- | :--- | :--- |
-| **Ambiguity Gate** | Starts with relative prefixes (*"what about"*, *"and for"*, *"then"*) OR has relative pronouns (*"it"*, *"that"*) OR is too short ($\le 3$ words). | Rewrite query using Gemini + session history. | **0ms** (pre-warmed cache) |
-| **Semantic Noise** | Query is $\ge 10$ words AND contains narrative markers (*"colleague"*, *"told me"*, *"said"*). | Rewrite query using Gemini to extract core intent. | **0ms** (pre-warmed cache) |
-| **Lexical Noise** | Filler words constitute $>15\%$ of the query. | Clean filler words locally using regex. | **0ms** (local code check) |
-| **Ask-Back Gate** | Intent confidence score $< 0.60$ OR unresolved follow-up on Turn 2+. | Stop routing and prompt the user for clarification. | **0ms** (stops early) |
+| **Tier 1** | **Instant Active Memory** | In-Memory `SessionContext` dict + Redis Cache (`session:{id}:context`, 1h TTL) + Redis Streams (`session:{id}:transcript` via `XADD`). | Ultra-fast context lookup (< 1ms) and real-time event streaming. |
+| **Tier 2** | **Local Disk Backup** | Atomic JSON file persistence under `app/session_store/{session_id}.json`. Writes to `.tmp` file and atomically replaces. | Crash resilience and offline operation without external database dependencies. |
+| **Tier 3** | **Permanent DB Archive** | PostgreSQL database persistence (`ChatSession`, `ChatMessage`, `transcript_archive`) via `ChatbotDBService` and background `session_flusher.py`. | Permanent storage, historical auditing, user history queries, and analytics. |
+
+---
+
+## 4. Dual Clarification & State Machine Architecture
+
+The system features two independent, mutually exclusive state machines to handle conversation ambiguity:
+
+```mermaid
+graph TD
+    Query[User Query] --> AmbiguityCheck{Is the Query Ambiguous or Incomplete?}
+    
+    AmbiguityCheck -- Low Intent Confidence < 0.60 --> IntentAskBack[Intent Ambiguity Ask-Back Gate]
+    IntentAskBack --> AskUserIntent["❓ Prompt User to select intent <br/> (e.g., Calculate Tax vs Trade Data vs HS Lookup)"]
+    AskUserIntent --> SaveState1[Set pending_clarification = True]
+    
+    AmbiguityCheck -- Missing Product Details --> SpecClarify[Product-Spec Clarification State Machine]
+    SpecClarify --> AskUserSpec["❓ Prompt User for specific details <br/> (e.g., Engine CC, Electric/Petrol, CBU/CKD)"]
+    AskUserSpec --> SaveState2["Set product_clarification_needed = True <br/> Save clarification_entity & expected_terms"]
+    
+    AmbiguityCheck -- Clear & Complete --> Rewrite[Smart Query Rewriter]
+```
+
+### A. Intent Ambiguity Ask-Back Gate
+* **Trigger**: Low intent classification confidence ($< 0.60$) or multiple conflicting intents detected by `WorkflowExecutor`.
+* **Behavior**: Halts downstream microservice routing immediately and prompts the user to clarify their request intention.
+* **Tracked State**: `pending_clarification: bool`, `clarification_intents: List[str]`, `pending_rewritten_query: Optional[str]`, `ask_back_count: int`.
+
+### B. Product-Spec Clarification State Machine
+* **Trigger**: Required product technical specifications (e.g., engine CC, fuel type, vehicle assembly mode) are missing for accurate tariff lookup or calculation.
+* **Retry Limit**: Capped at `MAX_PRODUCT_ASK_BACK_RETRIES = 2`.
+* **Tracked State**: `product_clarification_needed: bool`, `clarification_entity: Optional[str]`, `clarification_last_query: Optional[str]`, `product_ask_back_count: int`, `clarification_expected_terms: List[str]`.
+* **Spec Merging Logic**: Evaluates user input against `clarification_expected_terms` or category discriminators (`_SPEC_DISCRIMINATORS` for vehicle, food, textile). If valid detail is provided, it merges short answers with saved product entities:
+  $$\text{"2000cc"} + \text{"Toyota Camry"} \longrightarrow \text{"2000cc Toyota Camry"}$$
+* **Topic-Switch Guard**: If the user ignores the spec question and asks an unrelated question (e.g., *"Where is the customs office?"*), the state machine recognizes the topic switch, cancels spec clarification, resets state, and routes the new topic immediately.
+
+---
+
+## 5. Detailed Processing Pipeline Summary
+
+1. **Intake & Preparation**: Passes security validation, acquires per-session lock, loads session context (Redis/Disk), and translates Khmer queries to English.
+2. **Context & Rewriting**: Checks for follow-up spec answers (merging with saved product context), checks for small-talk fast-paths, strips filler words, and rewrites incomplete queries using Gemini.
+3. **Routing & Gating**: Evaluates query clarity. Ambiguous queries ($< 0.60$ confidence) trigger an Ask-Back gate. Clear queries check the hybrid cache and route to specialized microservices (Calculator, Trade Data, Retrieval, General Policy).
+4. **Response & Memory Update**: Formats the response into markdown, translates back to Khmer if requested, streams real-time tokens via SSE, updates the 8-turn active window, triggers background Gemini rolling summary on evicted turns, and persists state across Redis, local disk, and PostgreSQL.
+
+---
+
+## 6. Step-by-Step Scenario Analysis
+
+### Scenario A: Lexical Noise (Fast Local Track)
+* **User Question**: *"Um, actually, can you please tell me what is the import tax on rice?"*
+* **Analysis**: Filler words (*"um"*, *"actually"*, *"can you please"*) constitute lexical noise.
+* **Action**: Stripped instantly using regex in local code (**0ms additional latency**).
+* **Rewritten Result**: `"what is the import tax on rice?"` $\rightarrow$ Routed to Calculator Microservice (Port 8002).
+
+### Scenario B: Semantic Narrative Noise (Clean-up Track)
+* **User Question**: *"I was talking to my business partner yesterday, and he told me that we want to import laptops, what documents do we need?"*
+* **Analysis**: Narrative story markers (*"talking to my business partner"*, *"he told me"*).
+* **Action**: Handled by `RewriterService` using Gemini context prompt or pre-warmed cache to extract core intent.
+* **Rewritten Result**: `"what documents do we need to import laptops?"` $\rightarrow$ Routed to General Policy Microservice (Port 8005).
+
+### Scenario C: Contextual Follow-Up Query (Memory Track)
+* **Turn 1 User**: *"What is the import duty for rice?"* (Calculator intent; `product_category: "rice"` saved in slots).
+* **Turn 2 User**: *"And for laptops?"*
+* **Analysis**: Starts with relative prefix (*"And for"*), missing core intent verb.
+* **Action**: `RewriterService` retrieves `last_intent` (`CALCULATION`) and session context to rewrite query.
+* **Rewritten Result**: `"What is the import duty for laptops?"` $\rightarrow$ Routed to Calculator Microservice (Port 8002).
+
+### Scenario D: Mid-Conversation Spec Clarification Merge
+* **Turn 1 User**: *"Import tax for Toyota Camry"*
+* **Bot Response**: *"Could you please specify the engine size (e.g. 2000cc, 2500cc, hybrid)?"* (`product_clarification_needed = True`, `clarification_entity = "Toyota Camry"`).
+* **Turn 2 User**: *"2000cc"*
+* **Analysis**: Input matches spec discriminator `2000cc`.
+* **Action**: Merges answer with saved entity $\rightarrow$ `"2000cc Toyota Camry"`. Resets spec clarification state and routes query.
+* **Result**: Tax calculation completed for a 2000cc Toyota Camry.
+
+### Scenario E: Low Intent Confidence (Ask-Back Guard Track)
+* **User Question**: *"import thing"*
+* **Analysis**: Intent confidence score $< 0.60$.
+* **Action**: Triggers Intent Ask-Back Gate (`pending_clarification = True`). Halts routing immediately.
+* **Bot Response**: *"I'm not sure which service you need. Would you like to calculate duty fees, look up an HS tariff code, or view import regulations?"*
+
+---
+
+## 7. Summary of Gating & Trigger Rules
+
+| Gate / Module | Trigger Criteria | Action Taken | Latency Impact |
+| :--- | :--- | :--- | :--- |
+| **Lexical Noise Cleaner** | Contains filler words (*"um"*, *"actually"*, *"please"*). | Regex string stripping in local code. | **0ms** (Instant local regex) |
+| **Smart Query Rewriter** | Relative prefix (*"what about"*, *"and for"*) OR pronoun (*"it"*, *"they"*) OR short query ($\le 3$ words). | Uses `RewriterService` with past context slots & rolling summary. | **~100-200ms** (LLM rewrite) |
+| **Intent Ask-Back Gate** | Intent confidence score $< 0.60$ OR multiple candidate intents. | Stops routing pipeline; prompts user to select target intent. | **0ms** (Halts execution early) |
+| **Product-Spec Clarification** | Missing required product parameters (engine CC, fuel type, assembly mode). | Asks clarifying spec question; saves entity and expected terms (`MAX_RETRIES = 2`). | **0ms** (Pauses until next user turn) |
+| **Async Rolling Summarizer** | Active turns array exceeds `max_turns = 8`. | Evicts oldest turns; generates Gemini background summary (max 1600 chars); updates DB. | **0ms** (Runs in background event loop) |
+| **Hybrid Response Cache** | Matching query & parameters in Redis/Memory Cache. | Returns pre-computed response deltas instantly; bypasses downstream microservices. | **< 5ms** (Instant cache hit) |

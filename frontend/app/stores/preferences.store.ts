@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import { readJson, storageKeys, writeJson } from '~/utils/storage';
 
 export type FontSizePreference = 'small' | 'medium' | 'large';
+export type FontStylePreference = 'system' | 'serif' | 'mono';
 
 export interface ChatPreferences {
   enterToSend: boolean;
@@ -12,11 +13,14 @@ export interface ChatPreferences {
 export interface UiPreferences {
   defaultSidebarRail: boolean;
   fontSize: FontSizePreference;
+  fontStyle: FontStylePreference;
 }
 
 export interface PrivacyPreferences {
   locationMetadata: boolean;
   helpImproveModel: boolean;
+  publicChatSharing: boolean;
+  showChatHistory: boolean;
 }
 
 export const DEFAULT_CHAT_PREFERENCES: ChatPreferences = {
@@ -27,11 +31,14 @@ export const DEFAULT_CHAT_PREFERENCES: ChatPreferences = {
 export const DEFAULT_UI_PREFERENCES: UiPreferences = {
   defaultSidebarRail: false,
   fontSize: 'medium',
+  fontStyle: 'system',
 };
 
 export const DEFAULT_PRIVACY_PREFERENCES: PrivacyPreferences = {
   locationMetadata: true,
   helpImproveModel: true,
+  publicChatSharing: false,
+  showChatHistory: true,
 };
 
 let initialized = false;
@@ -41,8 +48,11 @@ export const usePreferencesStore = defineStore('preferences', () => {
   const autoScrollMessages = ref(DEFAULT_CHAT_PREFERENCES.autoScrollMessages);
   const defaultSidebarRail = ref(DEFAULT_UI_PREFERENCES.defaultSidebarRail);
   const fontSize = ref<FontSizePreference>(DEFAULT_UI_PREFERENCES.fontSize);
+  const fontStyle = ref<FontStylePreference>(DEFAULT_UI_PREFERENCES.fontStyle);
   const locationMetadata = ref(DEFAULT_PRIVACY_PREFERENCES.locationMetadata);
   const helpImproveModel = ref(DEFAULT_PRIVACY_PREFERENCES.helpImproveModel);
+  const publicChatSharing = ref(DEFAULT_PRIVACY_PREFERENCES.publicChatSharing);
+  const showChatHistory = ref(DEFAULT_PRIVACY_PREFERENCES.showChatHistory);
 
   function persistChat() {
     writeJson(storageKeys.chatPreferences, {
@@ -55,6 +65,7 @@ export const usePreferencesStore = defineStore('preferences', () => {
     writeJson(storageKeys.uiPreferences, {
       defaultSidebarRail: defaultSidebarRail.value,
       fontSize: fontSize.value,
+      fontStyle: fontStyle.value,
     });
   }
 
@@ -62,6 +73,8 @@ export const usePreferencesStore = defineStore('preferences', () => {
     writeJson(storageKeys.privacyPreferences, {
       locationMetadata: locationMetadata.value,
       helpImproveModel: helpImproveModel.value,
+      publicChatSharing: publicChatSharing.value,
+      showChatHistory: showChatHistory.value,
     });
   }
 
@@ -79,10 +92,15 @@ export const usePreferencesStore = defineStore('preferences', () => {
     defaultSidebarRail.value =
       ui.defaultSidebarRail ?? DEFAULT_UI_PREFERENCES.defaultSidebarRail;
     fontSize.value = ui.fontSize ?? DEFAULT_UI_PREFERENCES.fontSize;
+    fontStyle.value = ui.fontStyle ?? DEFAULT_UI_PREFERENCES.fontStyle;
     locationMetadata.value =
       privacy.locationMetadata ?? DEFAULT_PRIVACY_PREFERENCES.locationMetadata;
     helpImproveModel.value =
       privacy.helpImproveModel ?? DEFAULT_PRIVACY_PREFERENCES.helpImproveModel;
+    publicChatSharing.value =
+      privacy.publicChatSharing ?? DEFAULT_PRIVACY_PREFERENCES.publicChatSharing;
+    showChatHistory.value =
+      privacy.showChatHistory ?? DEFAULT_PRIVACY_PREFERENCES.showChatHistory;
   }
 
   function setEnterToSend(value: boolean) {
@@ -105,6 +123,11 @@ export const usePreferencesStore = defineStore('preferences', () => {
     persistUi();
   }
 
+  function setFontStyle(value: FontStylePreference) {
+    fontStyle.value = value;
+    persistUi();
+  }
+
   function setLocationMetadata(value: boolean) {
     locationMetadata.value = value;
     persistPrivacy();
@@ -115,13 +138,26 @@ export const usePreferencesStore = defineStore('preferences', () => {
     persistPrivacy();
   }
 
+  function setPublicChatSharing(value: boolean) {
+    publicChatSharing.value = value;
+    persistPrivacy();
+  }
+
+  function setShowChatHistory(value: boolean) {
+    showChatHistory.value = value;
+    persistPrivacy();
+  }
+
   function resetPreferences() {
     enterToSend.value = DEFAULT_CHAT_PREFERENCES.enterToSend;
     autoScrollMessages.value = DEFAULT_CHAT_PREFERENCES.autoScrollMessages;
     defaultSidebarRail.value = DEFAULT_UI_PREFERENCES.defaultSidebarRail;
     fontSize.value = DEFAULT_UI_PREFERENCES.fontSize;
+    fontStyle.value = DEFAULT_UI_PREFERENCES.fontStyle;
     locationMetadata.value = DEFAULT_PRIVACY_PREFERENCES.locationMetadata;
     helpImproveModel.value = DEFAULT_PRIVACY_PREFERENCES.helpImproveModel;
+    publicChatSharing.value = DEFAULT_PRIVACY_PREFERENCES.publicChatSharing;
+    showChatHistory.value = DEFAULT_PRIVACY_PREFERENCES.showChatHistory;
 
     persistChat();
     persistUi();
@@ -133,15 +169,21 @@ export const usePreferencesStore = defineStore('preferences', () => {
     autoScrollMessages,
     defaultSidebarRail,
     fontSize,
+    fontStyle,
     locationMetadata,
     helpImproveModel,
+    publicChatSharing,
+    showChatHistory,
     init,
     setEnterToSend,
     setAutoScrollMessages,
     setDefaultSidebarRail,
     setFontSize,
+    setFontStyle,
     setLocationMetadata,
     setHelpImproveModel,
+    setPublicChatSharing,
+    setShowChatHistory,
     resetPreferences,
   };
 });

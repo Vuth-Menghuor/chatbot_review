@@ -6,6 +6,8 @@ services:
       - "6333:6333"
     volumes:
       - qdrant_data:/qdrant/storage
+    networks:
+      - gdce-network
     restart: unless-stopped
 
   redis-retrieval:
@@ -16,6 +18,8 @@ services:
     volumes:
       - redis_retrieval_data:/data
     command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+    networks:
+      - gdce-network
     restart: unless-stopped
 
   retrieval-service:
@@ -27,11 +31,16 @@ services:
       - "8003:8003"
     depends_on:
       - qdrant
+    networks:
+      - gdce-network
     restart: unless-stopped
 
 volumes:
   qdrant_data:
-    external: true
-    name: retrieval_version2_qdrant_data
+    driver: local
   redis_retrieval_data:
     driver: local
+
+networks:
+  gdce-network:
+    external: true

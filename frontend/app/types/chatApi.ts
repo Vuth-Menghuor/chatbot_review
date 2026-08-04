@@ -182,6 +182,34 @@ export interface NormalizedTableBlock {
   rows: Record<string, string | number | boolean | null>[];
 }
 
+export interface NormalizedSummaryBlock {
+  type: 'summary';
+  title: string;
+  data: Record<string, string | number | boolean | null>;
+}
+
+export interface NormalizedKeyValueBlock {
+  type: 'key_value';
+  title: string;
+  items: Array<{ key: string; value: string | number | boolean | null }>;
+}
+
+export interface NormalizedDetailsBlock {
+  type: 'details';
+  title: string;
+  items: Array<{ title: string; content: string }>;
+  data?: {
+    assumptions?: Array<{ label: string; value: string; note?: string }>;
+    ratesApplied?: Array<{ code: string; rate: string }>;
+  };
+}
+
+export interface NormalizedReferencesBlock {
+  type: 'references';
+  title?: string;
+  items: Array<Record<string, string | number | boolean | null>>;
+}
+
 export interface NormalizedClarificationBlock {
   type: 'clarification';
   title?: string;
@@ -229,7 +257,11 @@ export interface NormalizedResponseBody {
 
 export type NormalizedChatContentBlock =
   | NormalizedMarkdownBlock
+  | NormalizedSummaryBlock
+  | NormalizedKeyValueBlock
   | NormalizedTableBlock
+  | NormalizedDetailsBlock
+  | NormalizedReferencesBlock
   | NormalizedClarificationBlock
   | NormalizedErrorBlock
   | NormalizedChartBlock
@@ -237,8 +269,10 @@ export type NormalizedChatContentBlock =
   | NormalizedCoverageBlock;
 
 export interface NormalizedChatMessage {
-  role: 'assistant';
-  content: NormalizedChatContentBlock[];
+  role?: 'assistant';
+  text?: string;
+  blocks?: NormalizedChatContentBlock[];
+  content?: NormalizedChatContentBlock[];
 }
 
 export interface NormalizedChatDebug {
@@ -270,6 +304,7 @@ export interface NormalizedChatResponse {
   chat_id?: string;
   project_id?: string | null;
   status: Extract<MessageStatus, 'completed' | 'processing' | 'failed'>;
+  service?: string | null;
   intent: string;
   query?: string;
   language?: string;

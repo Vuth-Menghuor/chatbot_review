@@ -71,12 +71,13 @@ export function legacyChatResponseToMessageParts(
 export function isNormalizedChatResponse(value: unknown): value is NormalizedChatResponse {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const obj = value as Partial<NormalizedChatResponse>;
+  const content = normalizedMessageBlocks(obj);
   return (
     typeof obj.request_id === 'string' &&
     typeof obj.session_id === 'string' &&
     typeof obj.intent === 'string' &&
     Boolean(obj.message) &&
-    Array.isArray(obj.message?.content)
+    Boolean(content)
   );
 }
 
@@ -84,10 +85,11 @@ export function normalizedChatResponseToMessageParts(
   response: NormalizedChatResponse,
   fallbackId: string,
 ): NormalizedChatMessageParts {
-  const blocks = response.message.content.map((block, index) =>
+  const normalizedBlocks = normalizedMessageBlocks(response) ?? [];
+  const blocks = normalizedBlocks.map((block, index) =>
     normalizedBlockToMessageBlock(block, `${response.request_id || fallbackId}-${index}`),
   );
-  const content = blocksToMarkerText(blocks) || markdownTextFromBlocks(response.message.content);
+  const content = blocksToMarkerText(blocks) || response.message.text || markdownTextFromBlocks(normalizedBlocks);
 
   return {
     content,
@@ -101,11 +103,16 @@ export function normalizedChatResponseToMessageParts(
 }
 
 function normalizedBlockToMessageBlock(
-  block: NormalizedChatContentBlock,
+  block: unknown,
   id: string,
 ): MessageBlock {
+  if (!isRecord(block) || typeof block.type !== 'string') return fallbackBlockToMessageBlock(block, id);
   if (block.type === 'markdown') return markdownBlockToMessageBlock(block, id);
+  if (block.type === 'summary') return passthroughBlockToMessageBlock(block, id);
+  if (block.type === 'key_value') return passthroughBlockToMessageBlock(block, id);
   if (block.type === 'table') return tableBlockToMessageBlock(block, id);
+  if (block.type === 'details') return passthroughBlockToMessageBlock(block, id);
+  if (block.type === 'references') return passthroughBlockToMessageBlock(block, id);
   if (block.type === 'clarification') return clarificationBlockToMessageBlock(block, id);
   if (block.type === 'error') return errorBlockToMessageBlock(block, id);
   if (block.type === 'chart') return chartBlockToMessageBlock(block, id);
@@ -114,7 +121,17 @@ function normalizedBlockToMessageBlock(
   return {
     id,
     type: 'fallback',
-    content: JSON.stringify(block, null, 2),
+    content: stringifyFallbackBlock(block),
+    isComplete: true,
+  };
+}
+
+function passthroughBlockToMessageBlock(block: NormalizedChatContentBlock, id: string): MessageBlock {
+  return {
+    id,
+    type: block.type,
+    title: 'title' in block ? block.title : undefined,
+    content: block,
     isComplete: true,
   };
 }
@@ -123,19 +140,21 @@ function markdownBlockToMessageBlock(block: NormalizedMarkdownBlock, id: string)
   return {
     id,
     type: 'markdown',
-    content: block.text,
+    content: typeof block.text === 'string' ? block.text : '',
     isComplete: true,
   };
 }
 
 function tableBlockToMessageBlock(block: NormalizedTableBlock, id: string): MessageBlock {
+  const columns = Array.isArray(block.columns) ? block.columns : [];
+  const rows = Array.isArray(block.rows) ? block.rows : [];
   return {
     id,
     type: 'table',
     title: block.title,
     content: {
-      columns: block.columns.map((column) => ({ key: column.key, title: column.label })),
-      rows: block.rows,
+      columns: columns.map((column) => ({ key: column.key, title: column.label })),
+      rows,
     },
     isComplete: true,
   };
@@ -146,7 +165,8 @@ function clarificationBlockToMessageBlock(
   id: string,
 ): MessageBlock {
   const title = block.title || 'More information is needed';
-  const questions = block.questions.map((question) => `- ${question}`).join('\n');
+  const questionItems = Array.isArray(block.questions) ? block.questions : [];
+  const questions = questionItems.map((question) => `- ${question}`).join('\n');
   return {
     id,
     type: 'markdown',
@@ -162,24 +182,25 @@ function errorBlockToMessageBlock(block: NormalizedErrorBlock, id: string): Mess
     type: 'error',
     content: {
       title: 'Request failed',
-      message: block.message,
+      message: typeof block.message === 'string' ? block.message : 'Request failed',
     },
     isComplete: true,
   };
 }
 
 function chartBlockToMessageBlock(block: NormalizedChartBlock, id: string): MessageBlock {
+  const data = block.data && typeof block.data === 'object' && !Array.isArray(block.data) ? block.data : {};
   return {
     id,
     type: 'chart',
     title: block.title,
     content: {
-      ...block.data,
-      title: block.title ?? block.data.title,
-      chartType: block.data.chartType,
+      ...data,
+      title: block.title ?? data.title,
+      chartType: data.chartType,
       status: 'completed',
       state: 'output-available',
-      output: block.data,
+      output: data,
     },
     isComplete: true,
   };
@@ -190,7 +211,7 @@ function suggestionsBlockToMessageBlock(block: NormalizedSuggestionsBlock, id: s
     id,
     type: 'suggestions',
     title: block.title,
-    content: block.items,
+    content: Array.isArray(block.items) ? block.items : [],
     isComplete: true,
   };
 }
@@ -203,7 +224,7 @@ function coverageBlockToMessageBlock(block: NormalizedCoverageBlock, id: string)
     content: {
       title: block.title,
       tone: block.tone ?? 'info',
-      items: block.items,
+      items: Array.isArray(block.items) ? block.items : [],
       note: block.note,
     },
     isComplete: true,
@@ -225,16 +246,46 @@ function normalizedCitationsToSources(citations: NormalizedChatResponse['citatio
   }));
 }
 
-function markdownTextFromBlocks(blocks: NormalizedChatContentBlock[]): string {
+function markdownTextFromBlocks(blocks: unknown[]): string {
   return blocks
     .map((block) => {
+      if (!isRecord(block) || typeof block.type !== 'string') return '';
       if (block.type === 'markdown') return block.text;
       if (block.type === 'error') return block.message;
-      if (block.type === 'clarification') return block.questions.join('\n');
+      if (block.type === 'clarification' && Array.isArray(block.questions)) return block.questions.join('\n');
       return '';
     })
     .filter(Boolean)
     .join('\n\n');
+}
+
+function normalizedMessageBlocks(response: Partial<NormalizedChatResponse>): unknown[] | null {
+  const message = response.message;
+  if (!message || typeof message !== 'object' || Array.isArray(message)) return null;
+  const value = Array.isArray(message.content) ? message.content : message.blocks;
+  return Array.isArray(value) ? value : null;
+}
+
+function fallbackBlockToMessageBlock(block: unknown, id: string): MessageBlock {
+  return {
+    id,
+    type: 'fallback',
+    content: stringifyFallbackBlock(block),
+    isComplete: true,
+  };
+}
+
+function stringifyFallbackBlock(block: unknown): string {
+  if (typeof block === 'string') return block;
+  try {
+    return JSON.stringify(block, null, 2);
+  } catch {
+    return String(block);
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function safeDomain(url: string): string | undefined {

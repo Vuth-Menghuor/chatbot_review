@@ -17,5 +17,5 @@ services:
       NUXT_PUBLIC_GDCE_DEV_EMAIL: ${NUXT_PUBLIC_GDCE_DEV_EMAIL:-frontend-dev@example.com}
       NUXT_PUBLIC_GDCE_DEV_PASSWORD: ${NUXT_PUBLIC_GDCE_DEV_PASSWORD:-password123}
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+      - '${FRONTEND_PORT:-3000}:3000'
     restart: unless-stopped

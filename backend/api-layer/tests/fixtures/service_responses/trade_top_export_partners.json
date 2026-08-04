@@ -1,0 +1,36 @@
+{
+  "request_id": "fixture-trade-partners",
+  "session_id": "fixture-session-trade",
+  "service": "trade",
+  "intent": "trade",
+  "answer": "Cambodia's top export partners in 2024 are available.",
+  "trade_result": {
+    "summary": {
+      "period": 2024,
+      "flow": "Export"
+    },
+    "top_export_partners": [
+      {
+        "rank": 1,
+        "partner_country": "Vietnam",
+        "value_usd": 1200000,
+        "share_percent": 24.5,
+        "period": 2024
+      },
+      {
+        "rank": 2,
+        "partner_country": "Thailand",
+        "value_usd": 900000,
+        "share_percent": 18,
+        "period": 2024
+      }
+    ],
+    "references": [
+      {
+        "source_id": "trade-volume",
+        "title": "Trade Volume Dataset",
+        "url": "https://example.test/trade-volume"
+      }
+    ]
+  }
+}

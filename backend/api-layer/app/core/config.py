@@ -1,7 +1,7 @@
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -9,7 +9,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
 
     app_name: str = "Chatbot API Layer"
-    environment: str = "development"
+    environment: Literal["development", "testing", "staging", "production"] = "development"
+    debug: bool = False
+    enable_docs: bool = True
     database_url: str = "postgresql+asyncpg://api_user:api_password@api-postgres:5432/api_layer_db"
     redis_url: str = "redis://api-redis:6379/0"
     main_chatbot_service_url: str = "http://orchestrator-service-orches:8001"
@@ -39,6 +41,13 @@ class Settings(BaseSettings):
     allowed_image_types: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["image/jpeg", "image/jpg", "image/png", "image/webp"]
     )
+
+    @field_validator("debug", "enable_docs", mode="before")
+    @classmethod
+    def parse_bool_flags(cls, value):
+        if isinstance(value, str) and value.strip().lower() in {"release", "prod", "production"}:
+            return False
+        return value
 
     @field_validator("allowed_image_types", mode="before")
     @classmethod
@@ -70,6 +79,33 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
         return value
+
+    @model_validator(mode="after")
+    def validate_production_settings(self):
+        if self.environment != "production":
+            return self
+
+        errors: list[str] = []
+        if self.debug:
+            errors.append("DEBUG cannot be enabled in production")
+        if self.enable_docs:
+            errors.append("ENABLE_DOCS cannot be enabled in production")
+        if self.jwt_secret_key == "change-me" or len(self.jwt_secret_key) < 32:
+            errors.append("JWT_SECRET_KEY must be at least 32 characters and not use the default value")
+        if "*" in self.frontend_origins:
+            errors.append("FRONTEND_ORIGINS cannot contain '*' in production")
+        if "api_password" in self.database_url or "your-db-password" in self.database_url:
+            errors.append("DATABASE_URL cannot use default development credentials in production")
+        if self.redis_url == "redis://api-redis:6379/0":
+            errors.append("REDIS_URL must be explicitly configured for production")
+        if self.minio_secret_key in {"minioadmin", "your-minio-secret-key"}:
+            errors.append("MINIO_SECRET_KEY cannot use a default/example value in production")
+        if self.rabbitmq_password in {"guest", "your-rabbitmq-password"}:
+            errors.append("RABBITMQ_PASSWORD cannot use a default/example value in production")
+
+        if errors:
+            raise ValueError("; ".join(errors))
+        return self
 
     @property
     def main_service_url(self) -> str:

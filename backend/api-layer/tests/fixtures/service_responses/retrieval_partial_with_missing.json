@@ -1,0 +1,17 @@
+{
+  "request_id": "fixture-retrieval-partial",
+  "session_id": "fixture-session-retrieval",
+  "service": "retrieval",
+  "intent": "retrieval",
+  "answer": "The available sources describe the import declaration and invoice requirements.",
+  "coverage": "partial",
+  "limitations": [
+    {
+      "code": "MISSING_PERMIT_DETAIL",
+      "message": "The available sources do not specify every permit required for the requested goods."
+    }
+  ],
+  "missing": [
+    "Specific permit list by HS code"
+  ]
+}

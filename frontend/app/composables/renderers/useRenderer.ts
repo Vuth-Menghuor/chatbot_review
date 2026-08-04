@@ -11,7 +11,11 @@ import { isUnifiedToolResponse, normalizeUnifiedToolResponse } from '~/utils/too
 import type { MessageBlock, UnifiedAsyncTaskState, UnifiedToolResponse } from '~/types/message';
 import MarkdownRenderer from '~/components/renderers/MarkdownRenderer.vue';
 import TypingIndicator from '~/components/common/TypingIndicator.vue';
+import SummaryRenderer from '~/components/renderers/SummaryRenderer.vue';
+import KeyValueRenderer from '~/components/renderers/KeyValueRenderer.vue';
 import TableRenderer from '~/components/renderers/TableRenderer.vue';
+import DetailsRenderer from '~/components/renderers/DetailsRenderer.vue';
+import ReferencesRenderer from '~/components/renderers/ReferencesRenderer.vue';
 import ChartTaskRenderer from '~/components/renderers/ChartTaskRenderer.vue';
 import WorkflowRenderer from '~/components/renderers/WorkflowRenderer.vue';
 import ImageRenderer from '~/components/renderers/ImageRenderer.vue';
@@ -30,7 +34,11 @@ const DEFAULT_TYPING_LABEL = 'Thinking...';
 export const rendererMap: Record<string, Component> = {
   markdown: MarkdownRenderer,
   reasoning: TypingIndicator,
+  summary: SummaryRenderer,
+  key_value: KeyValueRenderer,
   table: TableRenderer,
+  details: DetailsRenderer,
+  references: ReferencesRenderer,
   chart: ChartTaskRenderer,
   workflow: WorkflowRenderer,
   image: ImageRenderer,
@@ -49,7 +57,7 @@ export const rendererMap: Record<string, Component> = {
 // ─── Block Type Descriptions ─────────────────────────────────────────────────
 // Human-readable labels for each canonical block type.
 export const blockTypeLabels: Record<string, string> = {
-  markdown: 'Markdown', reasoning: 'Reasoning', table: 'Table', chart: 'Chart',
+  markdown: 'Markdown', reasoning: 'Reasoning', summary: 'Summary', key_value: 'Key Value', table: 'Table', details: 'Details', references: 'References', chart: 'Chart',
   workflow: 'Workflow', image: 'Image', prediction: 'Prediction', report: 'Report',
   suggestions: 'Suggestions', coverage: 'Coverage', code: 'Code', ocr: 'OCR', interaction: 'Interaction', tool_output: 'Tool Output',
   error: 'Error', fallback: 'Fallback',

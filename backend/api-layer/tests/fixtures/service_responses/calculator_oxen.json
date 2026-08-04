@@ -1,0 +1,45 @@
+{
+  "request_id": "fixture-calculator-oxen",
+  "session_id": "fixture-session-calculator",
+  "service": "calculator",
+  "intent": "calculator",
+  "answer": "Estimated total import tax for oxen is 572,300 KHR.",
+  "calculator_result": {
+    "summary": {
+      "total_tax": 572300,
+      "currency": "KHR"
+    },
+    "product": {
+      "hs_code": "0102.29.11",
+      "description": "Oxen",
+      "origin_country": "China"
+    },
+    "inputs": {
+      "cif_value": "800 USD",
+      "exchange_rate": "4,041 KHR/USD"
+    },
+    "tax_breakdown": [
+      {
+        "component": "Import Tax (COP)",
+        "tax_base": "3,232,800 KHR",
+        "rate": "7%",
+        "amount": 226300,
+        "currency": "KHR"
+      },
+      {
+        "component": "VAT",
+        "tax_base": "3,458,800 KHR",
+        "rate": "10%",
+        "amount": 346000,
+        "currency": "KHR"
+      }
+    ],
+    "references": [
+      {
+        "id": "tariff-2024",
+        "title": "Cambodia Customs Tariff",
+        "url": "https://example.test/customs-tariff"
+      }
+    ]
+  }
+}

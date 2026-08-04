@@ -10,7 +10,7 @@ from app.core.redis import redis_client
 from app.core.security import create_access_token, create_refresh_token, decode_token, hash_password, hash_secret, verify_password
 from app.dependencies.auth import get_current_user
 from app.models import RefreshToken, User
-from app.schemas.common import LoginRequest, LogoutRequest, RefreshRequest, TokenResponse, UserCreate, UserRead
+from app.schemas.common import LoginRequest, LogoutRequest, RefreshRequest, TokenResponse, UserCreate, UserRead, UserUpdate
 from app.services.audit_service import add_audit_log
 from app.services.rate_limit_service import enforce_rate_limit
 
@@ -97,4 +97,51 @@ async def logout(payload: LogoutRequest, request: Request, user: User = Depends(
 
 @router.get("/me", response_model=UserRead)
 async def me(user: User = Depends(get_current_user)):
+    return user
+
+
+@router.patch("/me", response_model=UserRead)
+async def update_me(
+    payload: UserUpdate,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        return user
+
+    if "full_name" in changes:
+        changes["full_name"] = changes["full_name"].strip()
+        if not changes["full_name"]:
+            raise HTTPException(status_code=422, detail="Full name cannot be empty")
+
+    if "email" in changes and changes["email"] is not None:
+        email = str(changes["email"]).lower()
+        existing = (
+            await db.execute(
+                select(User.id).where(User.email == email, User.id != user.id),
+            )
+        ).scalar_one_or_none()
+        if existing:
+            raise HTTPException(status_code=409, detail="Email is already registered")
+        changes["email"] = email
+
+    for field in ("nickname", "phone", "address", "avatar_url"):
+        if field in changes and isinstance(changes[field], str):
+            changes[field] = changes[field].strip() or None
+
+    for key, value in changes.items():
+        setattr(user, key, value)
+
+    add_audit_log(
+        db,
+        "user_profile_updated",
+        "user",
+        user.id,
+        {"fields": list(changes)},
+        ip_address=client_ip(request),
+    )
+    await db.commit()
+    await db.refresh(user)
     return user

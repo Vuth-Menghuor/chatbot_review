@@ -1,0 +1,9 @@
+{
+  "request_id": "fixture-retrieval-success",
+  "session_id": "fixture-session-retrieval",
+  "service": "retrieval",
+  "intent": "retrieval",
+  "answer": "Importers must submit an import declaration, invoice, packing list, and transport document.",
+  "coverage": "complete",
+  "confidence": "high"
+}

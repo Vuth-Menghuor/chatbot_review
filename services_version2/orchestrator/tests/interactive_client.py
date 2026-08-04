@@ -1,10 +1,22 @@
-import urllib.request
-import urllib.error
-import json
+import os
 import sys
 import uuid
+import json
+import urllib.request
+import urllib.error
 
-URL = "http://127.0.0.1:8001/chat"
+# Target URL configuration: defaults to localhost:8001 but can be overridden by env vars or CLI args
+HOST = os.getenv("ORCHESTRATOR_HOST", "127.0.0.1")
+PORT = os.getenv("ORCHESTRATOR_PORT", "8001")
+URL = f"http://{HOST}:{PORT}/chat"
+
+if len(sys.argv) > 1:
+    arg = sys.argv[1]
+    if arg.startswith("http://") or arg.startswith("https://"):
+        URL = arg
+    else:
+        URL = f"http://{arg}/chat"
+
 
 
 
@@ -70,11 +82,20 @@ def main():
                 continue
 
             # Print main answer
-            answer = response.get("answer", "No answer field returned.")
+            answer = response.get("answer") or response.get("message") or "No answer field returned."
             intent = response.get("intent", "unknown")
             status = response.get("status", "unknown")
             
+            # Print assistant response
             print(f"\nAssistant:\n{answer}\n")
+            
+            # Print clarifications if present in response
+            clarifications = response.get("clarifications", [])
+            if clarifications:
+                print(f"[Clarification Questions]")
+                for q in clarifications:
+                    print(f"  ❓ {q}")
+                print()
             print("-" * 80)
             
             # Print routing & rewrite metadata
@@ -85,6 +106,9 @@ def main():
             latency_s = response.get("latency_ms", meta.get("latency_ms", 0.0)) / 1000.0
 
             print(f"[Metadata] Intent: {intent.upper()} | Status: {status.upper()} | Latency: {latency_s:.3f}s")
+            if intent == "out_of_scope":
+                print("[Scope]    ⚠️  Query refused: outside system's operational domain.")
+
             if service_query and service_query != user_input:
                 print(f"[Rewrite]  Routed Query: \"{service_query}\"")
                 print(f"[Rewrite]  Strategy:     {query_strategy}")
@@ -106,7 +130,7 @@ def main():
                     print(f"  - {src_id}{score_str}")
 
             # Print suggestions if available
-            suggestions = response.get("suggestions", [])
+            suggestions = response.get("suggestion", [])
             if suggestions:
                 print(f"\n[Suggestions]")
                 for s in suggestions:

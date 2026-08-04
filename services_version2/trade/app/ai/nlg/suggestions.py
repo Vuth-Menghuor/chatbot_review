@@ -1,15 +1,17 @@
 from typing import Any, Dict, List
 
 
-def _clean_label(label: Any) -> str:
+def _clean_label(label: Any, query_safe: bool = False) -> str:
     """Cap and clean long dimension descriptions for suggestions."""
     if not label:
         return ""
     s = str(label).strip()
+    parts = [p.strip() for p in s.replace(";", ",").split(",")]
+    first_part = parts[0]
+    if query_safe:
+        return first_part
     if len(s) > 25:
         # Split on commas/semicolons to get first friendly part, or truncate
-        parts = [p.strip() for p in s.replace(";", ",").split(",")]
-        first_part = parts[0]
         if len(first_part) > 25:
             return first_part[:22] + "..."
         return first_part
@@ -110,7 +112,7 @@ def get_suggestions(facts: Dict[str, Any], query_params: Dict[str, Any]) -> List
     elif breakdown_records := (facts.get("mode_breakdown_records") or facts.get("group_breakdown_records")):
         grouped_by = facts.get("grouped_by", "group")
         top_labels = [
-            _capitalize_first(_clean_label(r['label'])) if isinstance(r['label'], str) else _clean_label(r['label'])
+            _capitalize_first(_clean_label(r['label'], query_safe=True)) if isinstance(r['label'], str) else _clean_label(r['label'], query_safe=True)
             for r in breakdown_records[:2]
         ]
 
@@ -123,11 +125,23 @@ def get_suggestions(facts: Dict[str, Any], query_params: Dict[str, Any]) -> List
             suggestions.append(
                 f"Show the monthly trend comparing {top_labels[0]} vs {top_labels[1]} {flow_plural}{product_phrase}{clean_suffix}"
             )
-        suggestions.append(f"What were the top products moved by {grouped_by}{in_period}?")
-        if partner_name:
-            suggestions.append(f"Compare {grouped_by} breakdown with {partner_name} against {target_country}")
+        if grouped_by == "country":
+            suggestions.append(f"What were the top products traded by partner country{in_period}?")
+        elif grouped_by == "transport mode":
+            suggestions.append(f"What were the top products moved by transport mode{in_period}?")
         else:
-            suggestions.append(f"Show the {grouped_by} breakdown by partner country{for_period}")
+            suggestions.append(f"What were the top products in each {grouped_by}{in_period}?")
+
+        if partner_name:
+            if grouped_by == "country":
+                suggestions.append(f"Compare breakdown by partner country with {partner_name} against {target_country}")
+            else:
+                suggestions.append(f"Compare {grouped_by} breakdown with {partner_name} against {target_country}")
+        else:
+            if grouped_by == "country":
+                suggestions.append(f"Show the breakdown of {flow_plural} by partner country{for_period}")
+            else:
+                suggestions.append(f"Show the {grouped_by} breakdown by partner country{for_period}")
 
     # 3. Context-aware intent follow-up queries
     elif intent == "summary":

@@ -16,7 +16,7 @@ Respond with ONLY a JSON object, no markdown fences, no other text, in exactly t
 {{
   "message": "<1-2 sentence natural summary of the classification, written the way a helpful assistant would>",
   "codes": [
-    {{"hs_code": "XXXX.XX.XX", "description": "short description"}}
+    {{"hs_code": "XXXX.XX.XX", "description": "concise, natural-language description of the product for this code, rewritten in plain English/Khmer — do not copy the raw database text verbatim"}}
   ],
   "is_generic": true or false,
   "clarifying_note": "<1 sentence noting this is a best guess and more detail would help, or null if is_generic is false>",

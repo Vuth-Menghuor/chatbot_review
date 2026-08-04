@@ -15,6 +15,15 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=8, max_length=128)
 
 
+class UserUpdate(BaseModel):
+    full_name: str | None = Field(default=None, min_length=1, max_length=255)
+    nickname: str | None = Field(default=None, max_length=255)
+    email: EmailStr | None = None
+    phone: str | None = Field(default=None, max_length=64)
+    address: str | None = Field(default=None, max_length=512)
+    avatar_url: str | None = None
+
+
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
@@ -31,7 +40,11 @@ class LogoutRequest(BaseModel):
 class UserRead(ORMModel):
     id: UUID
     full_name: str
+    nickname: str | None = None
     email: EmailStr
+    phone: str | None = None
+    address: str | None = None
+    avatar_url: str | None = None
     role: str
     is_active: bool
     created_at: datetime
@@ -119,6 +132,30 @@ class ChatThreadRead(ORMModel):
     is_archived: bool
     last_message_preview: str | None
     last_activity_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ChatShareCreate(BaseModel):
+    visibility: Literal["private", "public"] = "private"
+    client_snapshot: list[Any] = Field(default_factory=list)
+
+
+class ChatShareRead(ORMModel):
+    chat_id: UUID
+    token: str
+    visibility: Literal["private", "public"]
+    title: str | None
+    share_url_path: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class PublicChatShareRead(BaseModel):
+    chat_id: UUID
+    token: str
+    title: str | None
+    messages: list[Any] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 

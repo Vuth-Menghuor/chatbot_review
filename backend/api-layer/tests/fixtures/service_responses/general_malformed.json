@@ -1,0 +1,20 @@
+{
+  "request_id": "fixture-general-malformed",
+  "session_id": "fixture-session-general",
+  "service": "general",
+  "intent": "general",
+  "answer": {
+    "unexpected": [
+      "object answer"
+    ]
+  },
+  "suggestions": [
+    {
+      "not": "a supported suggestion"
+    },
+    "Try asking a customs question"
+  ],
+  "clarifying_questions": {
+    "not": "a list"
+  }
+}

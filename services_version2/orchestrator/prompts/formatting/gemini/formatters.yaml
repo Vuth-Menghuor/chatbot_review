@@ -118,3 +118,18 @@ prompts:
       4. Next steps or recommendations
 
       Be clear and well-organized.
+
+  - name: gemini_format_no_data
+    version: "1.0"
+    description: "Gemini conversational response generator when 0 trade database records match query parameters."
+    provider: gemini
+    system_prompt: |
+      You are a helpful and polite GDCE (General Department of Customs and Excise of Cambodia) AI Assistant.
+      
+      User Question: "{question}"
+
+      The system searched the trade database but 0 matching records were found.
+
+      Task: Write a natural, friendly, conversational response explaining that no trade data was found for this specific query.
+      Politely suggest what alternative parameters, years (e.g. 2024, 2025), or partner countries the user might search for instead.
+      Do NOT say 'No trade data found for:' or use robotic exception text. Keep it brief (2-3 sentences), warm, and helpful.

@@ -267,6 +267,19 @@ class DynamicPromptManager:
         prompt = self.get_system_prompt(prompt_name)
         if not prompt:
             return ""
+
+        import datetime
+        now = datetime.datetime.now()
+        time_defaults = {
+            "current_year": str(now.year),
+            "previous_year": str(now.year - 1),
+            "two_years_ago": str(now.year - 2),
+            "current_datetime": now.strftime("%A, %B %d, %Y at %H:%M"),
+        }
+        for k, v in time_defaults.items():
+            if k not in variables:
+                variables[k] = v
+
         try:
             return prompt.format(**variables)
         except KeyError as e:

@@ -39,43 +39,136 @@ def cleanup_query(user_input: str) -> str:
 def detect_simple_product_category(query: str) -> str:
     """
     Detect product category from query for discriminator validation.
-    Includes common vehicle brands, models, and product types.
+    Includes common vehicle brands, models, EVs, food, textile, and product types.
     
     Returns: "vehicle", "food", "textile", or "other"
     """
     q = query.lower()
     
-    # Vehicle keywords: generic types, brands, and popular models
+    # Vehicle keywords: generic types, brands (legacy & EV/Chinese), and popular models
     vehicle_keywords = [
         # Generic types
-        "car", "truck", "van", "bus", "train", "hearse", "vehicle", 
-        "motorcycle", "boat", "ship", "aircraft", "airplane", "jeep",
-        # Popular brands
-        "ford", "toyota", "honda", "nissan", "bmw", "mercedes", "audi",
-        "volkswagen", "hyundai", "kia", "mazda", "subaru", "suzuki",
-        "tesla", "chevrolet", "gmc", "dodge", "jeep", "lexus", "infiniti",
-        "acura", "cadillac", "ram", "chevrolet", "buick",
-        # Popular models
-        "raptor", "f-150", "f150", "silverado", "sierra", "tacoma",
-        "ranger", "colorado", "altima", "civic", "accord", "camry",
-        "corolla", "rav4", "cr-v", "crv", "pilot", "odyssey",
-        "pathfinder", "rogue", "murano", "qashqai", "juke",
-        "model s", "model 3", "model x", "model y", "cybertruck",
-        "mustang", "bronco", "ranger", "focus", "fusion",
-        "a4", "a6", "a8", "q5", "q7", "q8",
-        "3-series", "5-series", "7-series", "x3", "x5", "x7",
-        "c-class", "e-class", "s-class", "glc", "gle", "gls",
+        "car", "cars", "truck", "trucks", "van", "vans", "bus", "buses", "train", "hearse", "vehicle", "vehicles",
+        "auto", "automobile", "automotive", "motorcycle", "motorcycles", "motorbike", "motorbikes",
+        "scooter", "moped", "tractor", "tractors", "boat", "ship", "yacht", "aircraft", "airplane", "helicopter",
+        "jeep", "pickup", "sedan", "coupe", "hatchback", "suv", "wagon", "minivan", "trailer",
+        # Popular global & luxury brands
+        "ford", "toyota", "honda", "nissan", "bmw", "mercedes", "audi", "volkswagen", "vw",
+        "hyundai", "kia", "mazda", "subaru", "suzuki", "chevrolet", "chevy", "gmc", "dodge",
+        "lexus", "infiniti", "acura", "cadillac", "lincoln", "ram", "buick", "mitsubishi", "isuzu",
+        "porsche", "volvo", "land rover", "range rover", "jaguar", "mini", "fiat", "alfa romeo",
+        "ferrari", "lamborghini", "maserati", "bentley", "rolls-royce", "aston martin",
+        # EV & Asian / Chinese EV brands
+        "tesla", "byd", "rivian", "lucid", "nio", "xpeng", "zeekr", "chery", "geely",
+        "great wall", "haval", "tank", "gwm", "vinfast", "mg", "wuling", "denza", "yangwang",
+        "fangchengbao", "hongqi", "changan", "gac", "dongfeng", "baic", "faw", "jac", "sinotruk", "foton", "xiaomi",
+        # Motorcycle brands
+        "harley", "harley-davidson", "ducati", "yamaha", "kawasaki", "vespa", "triumph", "ktm", "royal enfield", "aprilia",
+        # Popular models & EV model names
+        "raptor", "f-150", "f150", "f250", "silverado", "sierra", "tacoma", "tundra", "ranger", "colorado",
+        "hilux", "d-max", "dmax", "navara", "triton", "bt-50", "altima", "civic", "accord", "camry",
+        "corolla", "rav4", "cr-v", "crv", "pilot", "odyssey", "highlander", "land cruiser", "prado", "fortuner",
+        "alphard", "vellfire", "sienna", "pathfinder", "rogue", "murano", "qashqai", "juke", "patrol",
+        "model s", "model 3", "model x", "model y", "cybertruck", "mustang", "bronco", "focus", "fusion",
+        "explorer", "expedition", "tahoe", "suburban", "escalade", "e-tron", "taycan", "macan", "cayenne", "panamera",
+        "seal", "atto 3", "atto3", "dolphin", "han", "tang", "song", "qin", "yuan", "su7",
+        "a3", "a4", "a5", "a6", "a7", "a8", "q3", "q5", "q7", "q8",
+        "3-series", "5-series", "7-series", "x1", "x3", "x5", "x7", "ix", "i4", "i7",
+        "c-class", "e-class", "s-class", "g-class", "g-wagon", "cla", "cls", "gla", "glb", "glc", "gle", "gls", "eqs", "eqe",
     ]
     if any(x in q for x in vehicle_keywords):
         return "vehicle"
     
-    if any(x in q for x in ["prepared", "preserved", "frozen", "fresh", "salted", "fish", "tuna", "salmon", "chicken", "meat", "rice", "food", "agricultural", "livestock"]):
+    # Food keywords: seafood, meats, produce, grains, dairy, beverages, processed foods
+    food_keywords = [
+        "prepared", "preserved", "frozen", "fresh", "salted", "dried", "smoked", "canned", "airtight", "chilled", "raw",
+        "fish", "tuna", "salmon", "mackerel", "sardine", "shrimp", "prawn", "crab", "lobster", "seafood", "shellfish", "squid", "octopus",
+        "chicken", "poultry", "meat", "meats", "beef", "pork", "mutton", "lamb", "bacon", "sausage", "ham", "turkey", "duck", "veal",
+        "rice", "wheat", "corn", "maize", "cereal", "flour", "grain", "grains", "soybean", "barley", "oats", "noodle", "noodles", "pasta",
+        "food", "agricultural", "fruit", "fruits", "apple", "banana", "grape", "orange", "mango", "durian", "vegetable", "vegetables", "potato", "onion", "garlic", "tomato",
+        "milk", "cheese", "butter", "yogurt", "dairy", "egg", "eggs", "sugar", "honey", "coffee", "tea", "cocoa", "chocolate", "juice", "beverage", "beverages", "wine", "beer", "spirit", "liquor", "oil", "palm oil", "sunflower oil", "olive oil", "livestock", "cattle", "swine", "cow", "pig", "sheep", "goat",
+    ]
+    if any(x in q for x in food_keywords):
         return "food"
     
-    if any(x in q for x in ["womens", "mens", "girls", "boys", "trousers", "dress", "textile", "fabric"]):
+    # Textile keywords: garments, apparel, fabrics, footwear, materials
+    textile_keywords = [
+        "womens", "women's", "mens", "men's", "girls", "boys", "children's", "unisex",
+        "trousers", "pants", "jeans", "shorts", "dress", "dresses", "skirt", "shirts", "shirt", "t-shirt", "tshirt", "blouse", "sweater", "jacket", "coat", "suit", "underwear", "socks", "hosiery",
+        "textile", "textiles", "fabric", "fabrics", "yarn", "thread", "cloth", "garment", "garments", "apparel", "clothing",
+        "knitted", "crocheted", "woven", "cotton", "wool", "silk", "linen", "polyester", "nylon", "synthetic", "rayon", "denim", "leather", "footwear", "shoes", "boots", "sneakers", "sandals",
+    ]
+    if any(x in q for x in textile_keywords):
         return "textile"
     
     return "other"
+
+
+async def detect_product_category_async(
+    query: str,
+    session_context: Optional[Any] = None,
+    llm_service: Optional[Any] = None
+) -> str:
+    """
+    Detects product category with local fast pass and Gemini LLM fallback.
+    1. Runs fast local keyword detection (0ms).
+    2. If local check returns "vehicle", "food", or "textile", returns immediately.
+    3. If local check returns "other":
+       a. Checks if session_context already has an extracted product_category slot.
+       b. Uses Gemini LLM to classify query into ("vehicle", "food", "textile", or "other").
+    """
+    # 1. Fast local keyword check
+    cat = detect_simple_product_category(query)
+    if cat != "other":
+        return cat
+
+    # 2. Check active session context slot if available
+    if session_context and getattr(session_context, "product_category", None):
+        saved_cat = str(session_context.product_category).lower()
+        if saved_cat in ("vehicle", "food", "textile"):
+            return saved_cat
+
+    # 3. Gemini LLM Fallback
+    import asyncio
+    if llm_service is None:
+        try:
+            from ..ai import get_llm_first_layer_service
+            llm_service = get_llm_first_layer_service()
+        except Exception:
+            pass
+
+    if llm_service and hasattr(llm_service, "_get_llm_service"):
+        try:
+            underlying_service = llm_service._get_llm_service()
+            gemini_provider = underlying_service.router.providers.get("gemini")
+            if gemini_provider and gemini_provider.is_available():
+                prompt = (
+                    "Classify the following query into exactly ONE product category.\n"
+                    "Allowed categories:\n"
+                    "- 'vehicle' (cars, trucks, vans, buses, motorcycles, boats, aircraft, EVs, vehicle parts)\n"
+                    "- 'food' (fresh/preserved meats, fish, produce, grains, processed food, beverages)\n"
+                    "- 'textile' (clothing, apparel, fabrics, yarns, footwear, garments)\n"
+                    "- 'other' (any other product or query)\n\n"
+                    f"Query: \"{query}\"\n\n"
+                    "Respond strictly with a JSON object: {\"category\": \"vehicle\"|\"food\"|\"textile\"|\"other\"}"
+                )
+                response = await asyncio.to_thread(
+                    gemini_provider.client.models.generate_content,
+                    model=gemini_provider.model_name,
+                    contents=prompt,
+                    config={"response_mime_type": "application/json"}
+                )
+                if response and response.text:
+                    import json
+                    data = json.loads(response.text.strip())
+                    res_cat = str(data.get("category", "other")).lower()
+                    if res_cat in ("vehicle", "food", "textile", "other"):
+                        return res_cat
+        except Exception as e:
+            logger.warning(f"LLM fallback in detect_product_category_async failed: {e}")
+
+    return "other"
+
 
 
 def has_critical_discriminators(query: str, product_category: str) -> Tuple[bool, Optional[str]]:

@@ -28,8 +28,9 @@
       </div>
 
       <div class="flex flex-col items-end gap-2">
-        <p v-if="savedMessage" class="settings-item-desc text-right">{{ savedMessage }}</p>
-        <BaseButton @click="onSave">{{ $t('profile.save') }}</BaseButton>
+        <p v-if="errorMessage" class="text-right text-sm font-medium text-red-500">{{ errorMessage }}</p>
+        <p v-else-if="savedMessage" class="settings-item-desc text-right">{{ savedMessage }}</p>
+        <BaseButton :loading="isSaving" :disabled="isSaving" @click="onSave">{{ $t('profile.save') }}</BaseButton>
       </div>
     </SettingsBlock>
   </section>
@@ -46,6 +47,7 @@ const { t } = useI18n();
 
 const {
   initials,
+  isSaving,
   onFileChange,
   save,
   tempAvatarUrl,
@@ -55,9 +57,16 @@ const {
 } = useProfileEdit();
 
 const savedMessage = ref('');
+const errorMessage = ref('');
 
-function onSave() {
-  save();
-  savedMessage.value = t('profile.saveSuccess');
+async function onSave() {
+  savedMessage.value = '';
+  errorMessage.value = '';
+  try {
+    await save();
+    savedMessage.value = t('profile.saveSuccess');
+  } catch (err) {
+    errorMessage.value = err instanceof Error ? err.message : t('profile.saveError');
+  }
 }
 </script>

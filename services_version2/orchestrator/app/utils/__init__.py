@@ -3,7 +3,8 @@ from .text_utils import (
     truncate_text,
     ResponseBuilder,
     LoggerSetup,
-    get_timestamp_iso
+    get_timestamp_iso,
+    strip_clarification_questions_from_prose
 )
 
 __all__ = [
@@ -12,5 +13,6 @@ __all__ = [
     "truncate_text",
     "ResponseBuilder",
     "LoggerSetup",
-    "get_timestamp_iso"
+    "get_timestamp_iso",
+    "strip_clarification_questions_from_prose"
 ]

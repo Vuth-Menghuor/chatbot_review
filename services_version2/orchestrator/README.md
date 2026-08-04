@@ -1,4 +1,4 @@
-﻿# GDCE Orchestrator Service
+# GDCE Orchestrator Service
 
 The **Orchestrator** is the central API gateway for the GDCE Customs Chatbot platform. It receives user queries, detects intent, rewrites context-aware follow-up questions, and routes requests to the appropriate downstream microservices.
 
@@ -68,9 +68,23 @@ bash scripts/test.sh
 
 ### 4. Run with Docker
 
+> [!IMPORTANT]
+> The Docker Compose configuration uses an external network named `gdce-network` for communication between all microservices. You must create this network before booting up the container.
+
 ```bash
+# 1. Create the external docker network
+docker network create gdce-network
+
+# 2. Boot up the containers
 docker-compose up --build
 ```
+
+### 5. Caching and Redis Setup
+
+By default, the Redis caching layer is disabled in the `.env` file (`CACHE_ENABLED=false`). To enable caching of downstream service calls (like customs calculations, trade statistics, and HS code lookups):
+
+1. Set `CACHE_ENABLED=true` in your `.env` file.
+2. Ensure the Redis container is running (it starts automatically with `docker-compose`).
 
 ---
 

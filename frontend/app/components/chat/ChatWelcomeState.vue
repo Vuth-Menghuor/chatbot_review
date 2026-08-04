@@ -44,7 +44,7 @@ const emit = defineEmits<{
   >
     <div class="mb-5 h-32 w-32 select-none bg-transparent md:h-36 md:w-36">
       <v-img
-        src="/logo/3d-ai-avatar.avif"
+        src="/logo/3d-ai-avatar-transparent.png"
         alt="Customs AI Avatar"
         contain
         draggable="false"

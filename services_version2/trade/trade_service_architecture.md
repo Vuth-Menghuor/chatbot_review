@@ -43,17 +43,19 @@ JSON Response → Orchestrator → Frontend
 
 | File | Role |
 |---|---|
-| `app.py` | FastAPI app factory — creates the app, mounts the router, initialises `TradeService` at startup via `set_service()` |
-| `main.py` | Uvicorn entrypoint; loads `.env`, calls `app.py` |
-| `api/endpoints.py` | Defines `POST /query` and `GET /health` routes; catches all exceptions and maps them to HTTP responses |
-| `api/schemas.py` | Pydantic `QueryRequest` (input) and `TradeQueryResponse` (output) models |
-| `api/validators.py` | `validate_question()` — length and character checks on raw question string |
-| `api/exceptions.py` | `map_core_exception_to_http()` — converts `ValidationError`, `DALError`, `NoResultsError` etc. to FastAPI `HTTPException` |
-| `config.py` / `config.yaml` | Service-level settings (DAL URL, API key, timeouts, default frequency) |
+| `app/main.py` | FastAPI app factory — creates the app, mounts the router, and initialises `TradeService` at startup via `set_service()` |
+| `main.py` | Uvicorn entrypoint; loads `.env` and boots `app/main.py` |
+| `app/api/v1/ai_routes.py` | Defines the `POST /query` route (Stage 0 Entry) |
+| `app/api/v1/health_routes.py` | Defines the `GET /health` route |
+| `app/api/routes.py` | Connects endpoints to the FastAPI application router |
+| `app/schemas/api_schemas.py` | Pydantic `QueryRequest` (input) and `TradeQueryResponse` (output) models |
+| `app/api/validators.py` | `validate_question()` — length and character checks on raw question string |
+| `app/api/exceptions.py` | Maps custom system exceptions (e.g. `DALServiceError`, `InvalidInputError`, `NotFoundError`) to FastAPI HTTP JSON responses |
+| `app/core/config.py` / `app/core/config.yaml` | Service-level settings (DAL URL, caching configuration, ports, timeouts, default frequency) |
 
 **Entry point call:**
 ```python
-# api/endpoints.py line 48
+# app/api/v1/ai_routes.py
 result = svc.query_from_question(question, request.extracted_params)
 ```
 
@@ -67,12 +69,12 @@ The API layer also handles the `no_data` graceful fallback — when `NoResultsEr
 
 | File | Role |
 |---|---|
-| `core/llm_extractor.py` | Main extraction logic + SYSTEM_INSTRUCTION prompt + post-processing |
-| `core/query_plan.py` → `RawQueryPlan` | Frozen dataclass that holds the Stage 1 output |
+| `app/ai/extractor.py` | Main extraction logic utilizing Google Gemini (uses prompt template `prompts/parameter_extraction.yaml`) + post-extraction parameter overrides and validations |
+| `app/schemas/query_plan.py` → `RawQueryPlan` | Frozen dataclass that holds the Stage 1 output |
 
 **What happens:**
 
-1. `extract_parameters_llm(question)` sends the question + `SYSTEM_INSTRUCTION` to Gemini.
+1. `extract_parameters_llm(question)` sends the question + prompt configuration to Gemini.
 2. The model returns a JSON blob with fields: `intent`, `year`, `trade_direction`, `partner_countries`, `hs_code`, `sitc_division`, `mode_of_transport`, `sort_order`, `limit`, etc.
 3. `parse_and_resolve_parameters()` converts raw LLM output into typed Python values:
    - `year` → `int`, with a **current-year guard** (suppresses 2026 if not explicit in question)
@@ -81,7 +83,7 @@ The API layer also handles the `no_data` graceful fallback — when `NoResultsEr
    - Perspective-based direction override: *"countries import from Cambodia"* → FLOW=EX
 4. The result is packed into a `RawQueryPlan` dataclass.
 
-**Retry loop (in `service.py`):**
+**Retry loop (in `app/services/trade_service.py`):**
 - Up to `MAX_EXTRACTION_RETRIES = 2` attempts
 - If Stage 4 validation fails, the error text is fed back to the LLM as `retry_context` so it can correct itself
 - Only applies when the service owns the extraction (not pre-extracted params from the orchestrator)
@@ -97,11 +99,13 @@ The API layer also handles the `no_data` graceful fallback — when `NoResultsEr
 
 | File | Role |
 |---|---|
-| `core/enrichment.py` → `enrich_query_plan()` | Stage 2 main function; produces `EnrichedQueryPlan` |
-| `core/semantic_registry.py` | Registry of all dimensions, measures, and their synonyms |
-| `core/countries.py` | `COUNTRY_TO_CODE_MAP` pattern registry + `VALID_COUNTRY_CODES` |
-| `core/product_resolver.py` | Maps product names (e.g. `"rice"`) to HS codes (e.g. `"1006"`) via regex |
-| `core/query_plan.py` → `EnrichedQueryPlan` | Stage 2 output dataclass |
+| `app/core/enrichment.py` → `enrich_query_plan()` | Stage 2 main entrypoint; delegates logic to `app/core/enrichment_semantic.py` |
+| `app/core/enrichment_semantic.py` | Main semantic mapping logic for countries, products, SITC codes, and transport modes |
+| `app/registry/semantic_registry.py` | Consolidated registry of all dimensions, measures, and their synonyms |
+| `app/registry/countries.py` | ISO-2 Country mapping regex pattern registry + regional expansions. Resolves South Korea vs. North Korea overlap correctly. |
+| `app/registry/product_resolver.py` | Maps product names (e.g. `"rice"`) to HS codes (e.g. `"1006"`) via regex |
+| `app/registry/transport_modes.py` | Standardizes transport mode names (Air, Sea, Land) and keys |
+| `app/schemas/query_plan.py` → `EnrichedQueryPlan` | Stage 2 output dataclass |
 
 **What happens:**
 
@@ -120,10 +124,10 @@ The API layer also handles the `no_data` graceful fallback — when `NoResultsEr
 
 | File | Role |
 |---|---|
-| `handlers/scopes.py` → `apply_intent_scoping()` | Stage 3 main function; produces `ScopedQueryPlan` |
-| `handlers/strategies.py` | Per-intent strategy definitions (dimensions, sort behaviour) |
-| `core/semantic_registry.py` → `INTENT_RULES` | Per-intent default rules (default dimensions, metrics, limits) |
-| `core/query_plan.py` → `ScopedQueryPlan` | Stage 3 output dataclass |
+| `app/handlers/scopes.py` → `apply_intent_scoping()` | Stage 3 main scoping function; produces `ScopedQueryPlan` |
+| `app/registry/strategies.py` | Per-intent strategy configurations (dimensions, sorting behaviors) |
+| `app/registry/semantic_registry.py` → `INTENT_RULES` | Per-intent default scoping rules (default metrics, default limits) |
+| `app/schemas/query_plan.py` → `ScopedQueryPlan` | Stage 3 output dataclass |
 
 **What each intent gets scoped to:**
 
@@ -151,8 +155,8 @@ The API layer also handles the `no_data` graceful fallback — when `NoResultsEr
 
 | File | Role |
 |---|---|
-| `core/enrichment.py` → `orchestrate_query_plan()` | Stage 4 main function; produces `FinalQueryPlan` |
-| `core/query_plan.py` → `FinalQueryPlan` | Stage 4 output dataclass |
+| `app/core/enrichment_orchestrate.py` → `orchestrate_query_plan()` | Stage 4 orchestration main function; produces `FinalQueryPlan` |
+| `app/schemas/query_plan.py` → `FinalQueryPlan` | Stage 4 output dataclass |
 
 **What happens:**
 
@@ -181,22 +185,27 @@ The API layer also handles the `no_data` graceful fallback — when `NoResultsEr
 
 | File | Role |
 |---|---|
-| `core/service.py` → `query_from_question()` | Orchestrates stage 5 |
-| `dal/dal_request_builder.py` → `build_request()` | Converts `FinalQueryPlan` → `DALRequest` |
-| `dal/url_builder.py` → `build()` | Serializes `DALRequest` → HTTP query URL |
-| `dal/dal_client.py` → `execute()` | Sends HTTP GET to `dal-app:8000`, retries on timeout/429 |
-| `dal/dal_models.py` | `DALRequest` Pydantic model |
-| `dal/exceptions.py` | `DALError` (wraps HTTP and network errors) |
+| `app/services/trade_service.py` → `query_from_question()` | Orchestrates Stage 5 execution (includes the retry/repair loops and caching) |
+| `app/services/cache_service.py` | Handles key generation and GET/SET interface with Redis cache |
+| `app/dal/dal_request_builder.py` → `build_request()` | Converts `FinalQueryPlan` → `DALRequest` |
+| `app/dal/url_builder.py` → `build()` | Serializes `DALRequest` → HTTP query URL |
+| `app/dal/dal_client.py` → `execute()` | Sends HTTP GET to the DAL backend API, retries on timeout or HTTP 429 rate limit |
+| `app/dal/dal_models.py` | `DALRequest` Pydantic model |
+| `app/dal/exceptions.py` | `DALError` (wraps HTTP and network errors) |
 
-**Post-processing steps (all in `service.py`):**
+**Post-processing steps and workarounds (all in `app/services/trade_service.py`):**
 
-1. **FLOW post-filter** — Range queries can't combine FLOW and start/end period in a single DAL call (DAL bug). Workaround: FLOW filter removed from the DAL request, applied in Python after the response arrives.
+1. **Client-Side Cache-Busting Workaround** — Generates a stable checksum from the query's temporal fields and appends it as an offset (+1 to +47) to the query's `limit` parameter. This forces a unique Redis cache key fingerprint on the DAL side for different years/periods (since DAL hashes the `limit` parameter in its Redis key but ignores period). The returned records are sliced back to the original limit.
 
-2. **Time sub-period post-filter** — Range queries over-fetch (e.g. all months), then Python filters to the requested quarter/semester/month.
+2. **DAL Subtraction Bug Workaround** — Prior to executing the query, any sub-period suffixes (e.g. `-MM`, `-Qn`, `-Sn` in YYYY-MM / YYYY-Qn / YYYY-Sn formats) are stripped from `start_period` and `end_period` to send only the bare `YYYY` year prefix to the database. This bypasses the unquoted `{VALUE}` SQL template subtraction bug on the production/remote DAL (which evaluates `2025-01` literally as `2025 - 1 = 2024`).
 
-3. **Period sanity check** — If DAL returns records for a different period than requested, `dal_params["period"]` is corrected and the source URL is rebuilt from the url_builder with corrected params.
+3. **Time sub-period post-filter** — Since range queries over-fetch (e.g., fetching the whole year of monthly/quarterly data), Python post-filters the returned records to keep only the months/quarters matching the original requested sub-period bounds.
 
-4. **URL rebuild** — `dal_source_url` is always rebuilt from the url_builder (using the corrected `dal_params`) to guarantee the logged URL matches what was actually served.
+4. **Non-Contiguous Period Filtering** — When specific non-contiguous years are queried (such as comparing `2024` with `2026`), any intermediate years (like `2025`) are post-filtered out from the normalized records, table, and charts to keep comparisons clean and relevant.
+
+5. **Period sanity check** — If DAL returns records for a different period than requested, `dal_params["period"]` is corrected and the source URL is rebuilt from the url_builder with corrected params.
+
+6. **URL rebuild** — `dal_source_url` is always rebuilt from the url_builder (using the corrected `dal_params`) to guarantee the logged URL matches what was actually served.
 
 **DAL URL format:**
 ```
@@ -220,11 +229,11 @@ http://dal-app:8000/v1/query/trade_volume
 
 | File | Role |
 |---|---|
-| `core/normaliser.py` → `normalise()` | Main normalisation dispatcher |
-| `core/normaliser.py` → `compute_growth_rates()` | Growth rate computation (sole authority) |
-| `visualization/chart_mapper.py` → `generate_visualizations()` | Builds `table` + `visualization` objects |
-| `visualization/transformers.py` | `transform_to_bar_chart()`, `transform_to_line_chart()`, `transform_to_pie_chart()` |
-| `visualization/registry.py` | Maps intent → chart type |
+| `app/core/normaliser.py` → `normalise()` | Main normalization dispatcher (converts raw database flows like `EXPORT`/`IMPORT` to standardized structures) |
+| `app/core/normaliser.py` → `compute_growth_rates()` | YoY growth rate computation |
+| `app/visualization/chart_mapper.py` → `generate_visualizations()` | Main entry point for table + visualization mapping. Includes flow normalization to map short flow codes (`EX`/`IM`) against full database strings (`EXPORT`/`IMPORT`) via `_normalize_flow_to_ex_im()`. |
+| `app/visualization/transformers.py` | Line/Bar/Pie transformers; uses `_normalize_flow_to_ex_im()` to align flows and prevent empty visual datasets |
+| `app/visualization/registry.py` | Maps intent $\rightarrow$ default chart type configuration |
 
 **Normalisation sub-steps:**
 
@@ -261,10 +270,10 @@ http://dal-app:8000/v1/query/trade_volume
 
 | File | Role |
 |---|---|
-| `core/nlg/__init__.py` → `generate_nlg_response()` | Stage 6 entry point; injects facts, calls generator, attaches suggestions |
-| `core/nlg/formatters.py` → `extract_facts()` | Extracts a flat `facts` dict from the payload + query_params |
-| `core/nlg/generator.py` → `generate_message()` | LLM-first message generation with deterministic fallback |
-| `core/nlg/suggestions.py` → `get_suggestions()` | Generates 3 follow-up question suggestions |
+| `app/ai/nlg/__init__.py` → `generate_nlg_response()` | Stage 6 entry point; injects facts, calls generator, attaches suggestions |
+| `app/ai/nlg/formatters.py` → `extract_facts()` | Extracts a flat `facts` dict from the payload + query_params |
+| `app/ai/nlg/generator.py` → `generate_message()` | Invocates Gemini LLM for copywriting using prompt template `prompts/nlg_copywriter.yaml`. **Note: Technical warning caveats (YTD warnings, row truncation notes) are no longer appended to the conversational text directly; they are cleanly stored inside the `summary.data_quality` JSON block for the frontend.** |
+| `app/ai/nlg/suggestions.py` → `get_suggestions()` | Generates 3 follow-up question suggestions. **Note: Translates raw country codes (e.g. JP, KR) to full display names (Japan, South Korea) in suggestion text.** |
 
 **NLG flow:**
 
@@ -293,7 +302,9 @@ generate_message()       ← generator.py
 | `summary` | `"Cambodia's [flow] [product] [transport] in [period] was [value]."` |
 | `ranking` | Entity-aware: uses `"transport modes"`, `"HS chapters"`, `"partners"` etc. based on group_by dim. Single-result → KPI sentence. Weight-sort → annotates `"(ranked by weight)"` and shows weight per item. |
 | `trend` | Multi-flow detection: splits EX vs IM into labelled lines if both present |
-| `comparison` | `"[Country A] ($X) vs [Country B] ($Y)..."` with a verdict if question asks "which is bigger" |
+| `comparison` | `"[Country A] ($X) vs [Country B] ($Y)..."` with a verdict if question asks "
+
+which is bigger" |
 | `breakdown` | `"The breakdown of [flow] by [dim] in [period] was led by [top item]..."` |
 | `growth` | `"[entity] [grew/declined] by [rate]% YoY..."` |
 | `trade_balance` | `"Cambodia had a trade [surplus/deficit] of $X with [country] in [period]."` |
@@ -378,22 +389,23 @@ NLG: "Cambodia's total trade with Viet Nam in 2025 was $X."
 
 ## Key Cross-Cutting Components
 
-### `core/semantic_registry.py`
+### `app/registry/semantic_registry.py`
 The **single source of truth** for all dimension codes, measure codes, intent rules, and their synonyms. Everything from `"export"→EX` to `"by country"→PARTNER_COUNTRY` is registered here. Scoping rules and URL builder both derive from this registry.
 
-### `core/countries.py`
-ISO-2 country code map with regex patterns (handles 200+ country name variants). Contains `REGIONAL_EXPANSIONS` that expand `"EU"` → 27 ISO-2 codes, `"ASEAN"` → 10 codes, etc.
+### `app/registry/countries.py`
+ISO-2 country code map with regex patterns (handles 200+ country name variants). Contains `REGIONAL_EXPANSIONS` that expand `"EU"` $\rightarrow$ 27 ISO-2 codes, `"ASEAN"` $\rightarrow$ 10 codes, etc. Also contains South Korea and North Korea regex fixes to prevent name resolution collisions.
 
-### `core/validation.py`
+### `app/core/validation.py`
 `validate_query_plan()` — validates the `FinalQueryPlan` before execution. Rejects invalid intent, missing required fields, invalid period format. When validation fails, the error is fed back to the LLM as `retry_context`.
 
-### `core/exceptions.py`
+### `app/core/exceptions.py`
+Custom core pipeline exceptions:
 - `ValidationError` — bad input/extraction
 - `NoResultsError` — query executed but returned 0 records (triggers graceful empty response)
 - `UnknownIntentError` — intent not in the known set
 
-### `core/nlg/formatters.py`
-`COUNTRY_NAMES` dict (ISO-2 → display name). `extract_facts()` — flattens the full payload into a simple dict for the NLG generator so both LLM and template paths share the same inputs.
+### `app/ai/nlg/formatters.py`
+Contains `COUNTRY_NAMES` dict (ISO-2 $\rightarrow$ display name). `extract_facts()` — flattens the full payload into a simple dict for the NLG generator so both LLM and template paths share the same inputs.
 
 ---
 
@@ -423,30 +435,35 @@ NLG LLM timeout
 
 | Layer | File | Purpose |
 |---|---|---|
-| Entry | `main.py` | Uvicorn boot |
-| Entry | `app.py` | FastAPI factory + service init |
-| API | `api/endpoints.py` | Route handlers |
-| API | `api/schemas.py` | Pydantic I/O models |
-| API | `api/validators.py` | Input validation |
-| API | `api/exceptions.py` | HTTP exception mapping |
-| Stage 1 | `core/llm_extractor.py` | LLM extraction + parsing |
-| Stage 2 | `core/enrichment.py` (`enrich_query_plan`) | Semantic enrichment |
-| Stage 2 | `core/semantic_registry.py` | Dimension/measure registry |
-| Stage 2 | `core/countries.py` | Country code resolution |
-| Stage 2 | `core/product_resolver.py` | HS/product name resolution |
-| Stage 3 | `handlers/scopes.py` | Intent scoping rules |
-| Stage 3 | `handlers/strategies.py` | Per-intent strategy configs |
-| Stage 4 | `core/enrichment.py` (`orchestrate_query_plan`) | Query orchestration |
-| Stage 4 | `core/query_plan.py` | Pipeline state dataclasses |
-| Stage 4 | `core/validation.py` | Plan validation + repair trigger |
-| Stage 5 | `core/service.py` | Full pipeline facade |
-| Stage 5 | `dal/dal_request_builder.py` | Plan → DAL request |
-| Stage 5 | `dal/url_builder.py` | DAL request → HTTP URL |
-| Stage 5 | `dal/dal_client.py` | HTTP execution + retry |
-| Stage 5b | `core/normaliser.py` | Response normalisation + growth |
-| Stage 5b | `visualization/chart_mapper.py` | Table + chart generation |
-| Stage 5b | `visualization/transformers.py` | Bar/line/pie chart builders |
-| Stage 6 | `core/nlg/__init__.py` | NLG entry point |
-| Stage 6 | `core/nlg/formatters.py` | Facts extraction |
-| Stage 6 | `core/nlg/generator.py` | LLM message + fallback templates |
-| Stage 6 | `core/nlg/suggestions.py` | Follow-up suggestions |
+| Entry | `main.py` | Uvicorn entrypoint boot script |
+| Entry | `app/main.py` | FastAPI app factory + setup |
+| API | `app/api/routes.py` | Router mounting |
+| API | `app/api/v1/ai_routes.py` | Route endpoints for AI queries (`POST /query`) |
+| API | `app/api/v1/health_routes.py` | Route endpoints for health status (`GET /health`) |
+| API | `app/schemas/api_schemas.py` | Pydantic I/O models |
+| API | `app/api/validators.py` | Input validation |
+| API | `app/api/exceptions.py` | HTTP exception mapping |
+| Stage 1 | `app/ai/extractor.py` | Parameter extraction logic using Gemini |
+| Stage 2 | `app/core/enrichment.py` | Semantic enrichment wrapper |
+| Stage 2 | `app/core/enrichment_semantic.py` | Main semantic mapping logic |
+| Stage 2 | `app/registry/semantic_registry.py` | Synonym dimension/measure registry |
+| Stage 2 | `app/registry/countries.py` | Country name-to-code registry |
+| Stage 2 | `app/registry/product_resolver.py` | Product-to-HS resolution patterns |
+| Stage 2 | `app/registry/transport_modes.py` | Transport mode mappings |
+| Stage 3 | `app/handlers/scopes.py` | Intent scoping rules |
+| Stage 3 | `app/registry/strategies.py` | Per-intent strategy configurations |
+| Stage 4 | `app/core/enrichment_orchestrate.py` | Period/orchestration resolution |
+| Stage 4 | `app/schemas/query_plan.py` | Pipeline state dataclasses |
+| Stage 4 | `app/core/validation.py` | Plan validation and repair hooks |
+| Stage 5 | `app/services/trade_service.py` | Full pipeline facade services (cache + retry loops) |
+| Stage 5 | `app/services/cache_service.py` | Redis caching operations |
+| Stage 5 | `app/dal/dal_request_builder.py` | Plan $\rightarrow$ DAL request mapper |
+| Stage 5 | `app/dal/url_builder.py` | Serializes request to HTTP URL |
+| Stage 5 | `app/dal/dal_client.py` | HTTP DAL client runner |
+| Stage 5b | `app/core/normaliser.py` | Normalisation rules & growth computations |
+| Stage 5b | `app/visualization/chart_mapper.py` | Main chart visualizer router |
+| Stage 5b | `app/visualization/transformers.py` | Line/Bar/Pie transform formatting |
+| Stage 6 | `app/ai/nlg/__init__.py` | NLG copywriting entrypoint |
+| Stage 6 | `app/ai/nlg/formatters.py` | Extract facts flat dictionary |
+| Stage 6 | `app/ai/nlg/generator.py` | Conversational response generator |
+| Stage 6 | `app/ai/nlg/suggestions.py` | Follow-up query suggestion builder |

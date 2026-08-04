@@ -13,7 +13,7 @@ services:
       timeout: 3s
       retries: 5
     networks:
-      - gdce-network
+      - dal_app-network
     restart: unless-stopped
 
   trade-service:
@@ -28,13 +28,12 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - gdce-network
+      - dal_app-network
     depends_on:
       trade-redis:
         condition: service_healthy
     restart: unless-stopped
 
 networks:
-  gdce-network:
+  dal_app-network:
     external: true
-    name: gdce-network

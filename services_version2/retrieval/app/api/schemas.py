@@ -66,6 +66,7 @@ class QueryResponse(BaseModel):
     is_generic: bool = Field(False, description="True if the query was broad enough that more detail would refine the result")
     clarifying_note: Optional[str] = Field(None, description="Note explaining this is a best-guess classification")
     clarifying_questions: Optional[List[str]] = Field(None, description="Suggested follow-up questions to narrow the classification")
+    reference_url: Optional[str] = None
 
     class Config:
         json_schema_extra = {

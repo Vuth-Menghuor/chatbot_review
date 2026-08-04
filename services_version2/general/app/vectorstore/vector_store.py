@@ -8,7 +8,6 @@ Qdrant instance (port 6333).
 """
 
 import logging
-import re
 from typing import Optional, Dict, Any, List
 from qdrant_client import QdrantClient
 
@@ -145,72 +144,6 @@ class VectorStoreClient:
             logger.error(f"Vector search error: {e}", exc_info=True)
             return []
 
-    async def keyword_search(
-        self,
-        query: str,
-        top_k: int = 10,
-        collection_name: Optional[str] = None,
-        max_points: int = 5000,
-    ) -> List[Dict[str, Any]]:
-        """Fallback payload keyword search when semantic embedding is unavailable."""
-        try:
-            if not self.client:
-                logger.error("Vector store client not initialized")
-                return []
-
-            target_collection = collection_name or self.collection_name
-            query_terms = keyword_terms(query)
-            if not query_terms:
-                return []
-
-            scored: list[dict[str, Any]] = []
-            offset = None
-            scanned = 0
-
-            while scanned < max_points:
-                points, offset = self.client.scroll(
-                    collection_name=target_collection,
-                    limit=min(256, max_points - scanned),
-                    offset=offset,
-                    with_payload=True,
-                    with_vectors=False,
-                )
-                if not points:
-                    break
-
-                scanned += len(points)
-                for point in points:
-                    payload = dict(point.payload or {})
-                    text = str(
-                        payload.get("text")
-                        or payload.get("content")
-                        or payload.get("description")
-                        or payload.get("title")
-                        or ""
-                    )
-                    haystack = text.lower()
-                    matches = sum(1 for term in query_terms if term in haystack)
-                    if matches == 0:
-                        continue
-
-                    scored.append({
-                        "id": point.id,
-                        "score": matches / max(len(query_terms), 1),
-                        "retrieval_source": "keyword_fallback",
-                        **payload,
-                    })
-
-                if offset is None:
-                    break
-
-            scored.sort(key=lambda item: (float(item.get("score", 0.0) or 0.0), len(str(item.get("text", "")))), reverse=True)
-            logger.info(f"Keyword fallback found {len(scored)} results from collection {target_collection}")
-            return scored[:top_k]
-
-        except Exception as e:
-            logger.error(f"Keyword fallback search error: {e}", exc_info=True)
-            return []
-
     async def health(self) -> Dict[str, Any]:
         """
         Check health of vector store.
@@ -245,13 +178,3 @@ class VectorStoreClient:
                 "status": "unhealthy",
                 "error": str(e)
             }
-
-
-def keyword_terms(query: str) -> list[str]:
-    stopwords = {
-        "the", "and", "for", "with", "into", "from", "that", "this", "what",
-        "which", "when", "where", "who", "how", "need", "does", "goods",
-        "good", "importing", "import", "export", "cambodia", "required",
-    }
-    terms = re.findall(r"[a-zA-Z][a-zA-Z0-9_-]{2,}", query.lower())
-    return [term for term in terms if term not in stopwords]

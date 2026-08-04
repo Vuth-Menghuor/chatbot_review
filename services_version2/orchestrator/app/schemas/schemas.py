@@ -145,13 +145,21 @@ class QueryResponse(BaseModel):
         None,
         description="Structured graphical response for charts (bar, line, pie)"
     )
-    suggestions: List[str] = Field(
-        default_factory=list,
-        description="Follow-up question suggestions (trade_query responses)"
+    message: Optional[str] = Field(
+        None,
+        description="Natural language answer text"
+    )
+    suggestion: Optional[List[str]] = Field(
+        None,
+        description="Follow-up chips array (frontend contract)"
+    )
+    summary: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Summary metadata (e.g. data_quality truncation note)"
     )
     summary_metrics: Optional[Dict[str, Any]] = Field(
         None,
-        description="Summary aggregate metrics for trade_query responses (e.g. total_trade_value, currency)"
+        description="Deprecated: legacy summary metrics"
     )
     
     class Config:
@@ -318,3 +326,21 @@ class ErrorResponse(BaseModel):
                 }
             }
         }
+
+
+class TradeQuerySlots(BaseModel):
+    """Structured slot parameters for trade queries."""
+    product: Optional[str] = Field(default=None, description="Commodity or product entity")
+    flow: Optional[str] = Field(default=None, description="Trade flow direction (IMPORT/EXPORT)")
+    time_period: Optional[str] = Field(default=None, description="Explicit year, quarter, or date range")
+    partner_country: Optional[str] = Field(default=None, description="Trading partner country")
+
+
+class IntentClassificationResult(BaseModel):
+    """Result of first-layer intent classification."""
+    intent: str = Field(..., description="Detected intent label")
+    confidence: float = Field(..., description="Classification confidence score")
+    is_safe: bool = Field(default=True, description="Safety check status")
+    is_on_topic: bool = Field(default=True, description="Domain scope check status")
+    slots: Optional[TradeQuerySlots] = Field(default=None, description="Trade query slots (null for non-trade intents)")
+

@@ -9,6 +9,31 @@ from dotenv import load_dotenv
 
 class Settings:
     """Env-driven settings."""
+    dal_base_url: str
+    dal_api_key: str
+    dal_dataset_code: str
+    host: str
+    port: int
+    rate_limit_requests: int
+    max_payload_size_mb: int
+    allowed_origins: list[str]
+    prompts_dir: Path
+    min_available_year: int
+    max_available_year: int
+    default_suggestion_period: str
+    default_suggestion_countries: list[str]
+    default_gemini_model: str
+    default_timeout_sec: float
+    dal_timeout: float
+    dal_max_retries: int
+    dal_backoff: float
+    min_validation_year: int
+    max_validation_year: int
+    min_question_length: int
+    max_extraction_retries: int
+    max_chart_items: int
+    cache_enabled: bool
+    redis_url: str
 
     def __init__(self, env_file: Optional[Path] = None):
         if env_file and env_file.exists():

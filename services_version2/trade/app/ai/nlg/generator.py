@@ -58,7 +58,7 @@ def generate_message(facts: Dict[str, Any]) -> str:
         ],
         "generationConfig": {
             "responseMimeType": "text/plain",
-            "maxOutputTokens": 256,
+            "maxOutputTokens": 1024,
             "temperature": 0.2
         }
     }
@@ -92,7 +92,7 @@ def generate_message(facts: Dict[str, Any]) -> str:
 
 def _append_data_quality_caveats(message: str, facts: Dict[str, Any]) -> str:
     """Ensure data quality and availability warnings are appended to the message.
-
+    
     NOTE: We now return the clean message directly to keep conversational text readable.
     Technical warnings (truncation, partial year) remain in summary.data_quality for UI badges.
     """

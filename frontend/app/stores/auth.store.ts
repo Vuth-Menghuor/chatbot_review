@@ -10,9 +10,11 @@ import {
   refreshTokenRequest,
   registerRequest,
   setStoredTokens,
+  updateMeRequest,
   type AuthUser,
   type LoginCredentials,
   type RegisterPayload,
+  type UpdateProfilePayload,
 } from '~/services/auth-api/authApi';
 
 export const useAuthStore = defineStore('auth', () => {
@@ -73,6 +75,17 @@ export const useAuthStore = defineStore('auth', () => {
       '/api/v1/auth/me',
       accessToken.value,
     );
+    accessToken.value = result.accessToken;
+    refreshToken.value = result.refreshToken;
+    user.value = result.data;
+    return result.data;
+  }
+
+  async function updateMe(payload: UpdateProfilePayload) {
+    const token = await getValidAccessToken();
+    if (!token) throw new Error('You must be logged in to update your profile.');
+
+    const result = await updateMeRequest(apiBaseUrl(), token, payload);
     accessToken.value = result.accessToken;
     refreshToken.value = result.refreshToken;
     user.value = result.data;
@@ -151,6 +164,7 @@ export const useAuthStore = defineStore('auth', () => {
     register,
     logout,
     fetchMe,
+    updateMe,
     refreshSession,
     getValidAccessToken,
     clearSession,

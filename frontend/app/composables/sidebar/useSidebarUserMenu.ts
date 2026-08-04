@@ -20,7 +20,6 @@ export function useSidebarUserMenu() {
   const userStore = useUserStore();
   const { t } = useAppLocale();
   const uiStore = useUiStore();
-  userStore.initFromLocalStorage();
 
   const avatarColor = '#e8725a';
   const showMenu = ref(false);

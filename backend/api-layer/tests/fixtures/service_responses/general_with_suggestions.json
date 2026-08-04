@@ -1,0 +1,12 @@
+{
+  "request_id": "fixture-general-suggestions",
+  "session_id": "fixture-session-general",
+  "service": "general",
+  "intent": "general",
+  "answer": "You can ask about import documents, tax calculation, or trade statistics.",
+  "suggestions": [
+    "What documents are needed for import?",
+    "Calculate import tax",
+    "Show Cambodia export partners"
+  ]
+}

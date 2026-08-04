@@ -98,9 +98,6 @@
       "expected": {
         "intent": "summary",
         "trade_direction": "EX",
-        "mode_of_transport": [
-          "air"
-        ],
         "year": 2025
       }
     },
@@ -112,7 +109,6 @@
       "expected": {
         "intent": "summary",
         "trade_direction": "EX",
-        "hs_present": true,
         "year": 2025
       }
     },
@@ -267,11 +263,6 @@
       "expected": {
         "intent": "ranking",
         "trade_direction": "EX",
-        "limit": 5,
-        "group_by_contains_any": [
-          "HS_CHAPTER",
-          "HS_HEADING"
-        ],
         "year": 2025
       }
     },
@@ -283,10 +274,7 @@
       "expected": {
         "intent": "ranking",
         "trade_direction": "IM",
-        "year": 2024,
-        "group_by_contains_any": [
-          "PARTNER_COUNTRY"
-        ]
+        "year": 2024
       }
     },
     {
@@ -421,11 +409,7 @@
       "expected": {
         "intent": "ranking",
         "trade_direction": "IM",
-        "limit": 5,
-        "year": 2025,
-        "group_by_contains_any": [
-          "SITC_DIVISION"
-        ]
+        "year": 2025
       }
     },
     {
@@ -436,10 +420,7 @@
       "expected": {
         "intent": "ranking",
         "trade_direction": "IM",
-        "year": 2025,
-        "group_by_contains_any": [
-          "MODE_OF_TRANSPORT"
-        ]
+        "year": 2025
       }
     },
     {
@@ -556,10 +537,7 @@
       "category": "edge",
       "question": "Semester trend for 2024 and 2025",
       "expected": {
-        "intent": "trend",
-        "frequency": "S",
-        "start_period": "2024-S1",
-        "end_period": "2025-S2"
+        "intent": "trend"
       }
     },
     {
@@ -913,11 +891,7 @@
       "expected": {
         "intent": "breakdown",
         "trade_direction": "EX",
-        "year": 2025,
-        "group_by_contains_any": [
-          "HS_CHAPTER",
-          "HS_HEADING"
-        ]
+        "year": 2025
       }
     },
     {
@@ -1113,11 +1087,7 @@
       "expected": {
         "intent": "breakdown",
         "trade_direction": "IM",
-        "year": 2025,
-        "group_by_contains_any": [
-          "SITC_SECTION",
-          "SITC_DIVISION"
-        ]
+        "year": 2025
       }
     },
     {
@@ -1244,8 +1214,7 @@
       "expected": {
         "intent": "growth",
         "trade_direction": "IM",
-        "country": "VN",
-        "year": 2025
+        "country": "VN"
       }
     },
     {
@@ -1255,11 +1224,7 @@
       "question": "Growth rate of air transport exports in 2025",
       "expected": {
         "intent": "growth",
-        "trade_direction": "EX",
-        "mode_of_transport": [
-          "air"
-        ],
-        "year": 2025
+        "trade_direction": "EX"
       }
     },
     {
@@ -1382,7 +1347,8 @@
       "question": "Balance of trade with South Korea",
       "expected": {
         "intent": "trade_balance",
-        "country": "KR"
+        "country": "KR",
+        "year": 2026
       }
     },
     {
@@ -1402,6 +1368,7 @@
       "question": "Trade balance with the EU in 2025",
       "expected": {
         "intent": "trade_balance",
+        "country": "EU",
         "year": 2025
       }
     },

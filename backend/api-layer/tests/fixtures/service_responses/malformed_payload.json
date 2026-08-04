@@ -1,0 +1,19 @@
+{
+  "request_id": "fixture-malformed",
+  "session_id": "fixture-session-malformed",
+  "status": "unexpected-status",
+  "answer": {
+    "not_supported": [
+      "this should not crash normalization"
+    ]
+  },
+  "message": {
+    "content": {
+      "not": "a string"
+    }
+  },
+  "table": {
+    "columns": "not-a-list",
+    "rows": "not-a-list"
+  }
+}

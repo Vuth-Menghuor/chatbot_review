@@ -31,6 +31,7 @@ class ValidationResult:
     reason: Optional[str] = None
     scope_keywords_matched: Optional[List[str]] = None
     provider: Optional[str] = None
+    slots: Optional[Dict[str, Any]] = None
 
     @property
     def is_in_scope(self) -> bool:
@@ -41,8 +42,8 @@ class ValidationResult:
         return self.reason or ""
 
     @classmethod
-    def in_scope(cls, reason: Optional[str] = None, keywords: Optional[List[str]] = None, provider: Optional[str] = None):
-        return cls(decision=ValidationDecision.IN_SCOPE, is_valid=True, reason=reason, scope_keywords_matched=keywords or [], provider=provider)
+    def in_scope(cls, reason: Optional[str] = None, keywords: Optional[List[str]] = None, provider: Optional[str] = None, slots: Optional[Dict[str, Any]] = None):
+        return cls(decision=ValidationDecision.IN_SCOPE, is_valid=True, reason=reason, scope_keywords_matched=keywords or [], provider=provider, slots=slots)
 
     @classmethod
     def out_of_scope(cls, reason: Optional[str] = None):
@@ -72,6 +73,32 @@ class ValidationResult:
         if self.decision == ValidationDecision.AMBIGUOUS:
             return False, "out_of_scope"
         return False, self.reason
+
+
+def check_security_injection(text: str) -> Optional[ValidationResult]:
+    """Shared fast security check for SQL injection, prompt injection, and command injection."""
+    t_lower = (text or "").lower()
+    sql_patterns = [
+        r"(\bor\b|\band\b).*['\"].*[=<>]",
+        r"(drop|delete|update|insert|exec|execute|script)\s",
+        r"(\-\-|\/\*|\*\/|;\s*(?:drop|delete|update|insert|exec|select|union|alter|create|truncate)\b)",
+        r"(union|select|from|where).*select",
+    ]
+    for pattern in sql_patterns:
+        if re.search(pattern, t_lower):
+            return ValidationResult.injection(f"Potential SQL injection detected: {pattern}")
+
+    if re.search(r"(ignore|forget|override|bypass|disregard).*instruction", t_lower):
+        return ValidationResult.injection("Potential prompt injection detected")
+    if re.search(r"\byou are now\b", t_lower):
+        return ValidationResult.injection("Potential prompt injection detected (you are now)")
+    if re.search(r"\bact as\b", t_lower):
+        return ValidationResult.injection("Potential prompt injection detected (act as)")
+    if "`" in text or "$(" in text:
+        return ValidationResult.injection("Suspicious command characters detected")
+
+    return None
+
 
 
 class LLMValidatorEngine:
@@ -566,13 +593,15 @@ class LLMValidatorEngine:
             keywords = self._coerce_field(
                 data, "keywords", list, nullable=False, method_name="check_query_validity_unified"
             )
+            slots = data.get("slots")
             return {
                 "is_safe": is_safe,
                 "is_on_topic": is_on_topic,
                 "category": category,
                 "confidence": confidence,
                 "reason": reason,
-                "keywords": keywords
+                "keywords": keywords,
+                "slots": slots if isinstance(slots, dict) else None,
             }
         except Exception as e:
             logging.getLogger(__name__).error(f"check_query_validity_unified failed: {type(e).__name__}: {e}")
@@ -582,8 +611,10 @@ class LLMValidatorEngine:
                 "category": "ambiguous",
                 "confidence": 0.0,
                 "reason": f"validation_error: {str(e)}",
-                "keywords": []
+                "keywords": [],
+                "slots": None
             }
+            
 
 
 
@@ -659,27 +690,9 @@ class RuleBasedValidatorProvider:
             return ValidationResult.format_error("too long")
 
         # 2. Security Check (Injection detection)
-        sql_patterns = [
-            r"(\bor\b|\band\b).*['\"].*[=<>]",
-            r"(drop|delete|update|insert|exec|execute|script)\s",
-            r"(\-\-|;|\/\*|\*\/)",
-            r"(union|select|from|where).*select",
-        ]
-        for pattern in sql_patterns:
-            if re.search(pattern, t_lower):
-                return ValidationResult.injection(f"Potential SQL injection detected: {pattern}")
-
-        if re.search(r"(ignore|forget|override|bypass|disregard).*instruction", t_lower):
-            return ValidationResult.injection("Potential prompt injection detected")
-
-        if re.search(r"\byou are now\b", t_lower):
-            return ValidationResult.injection("Potential prompt injection detected (you are now)")
-
-        if re.search(r"\bact as\b", t_lower):
-            return ValidationResult.injection("Potential prompt injection detected (act as)")
-
-        if "`" in t or "$(" in t:
-            return ValidationResult.injection("Suspicious command characters detected")
+        injection_result = check_security_injection(t)
+        if injection_result:
+            return injection_result
 
         # 3. Topic Blocklist — REMOVED.
         # All non-trade conversational topics (sports, cooking, movies, crypto, etc.)
@@ -713,16 +726,18 @@ class RuleBasedValidatorProvider:
             "hs_code_lookup": [
                 "hs code", "hs", "classify", "classification",
                 "tariff code", "commodity code", "product code", "ahtn",
-                "harmonized",
+                "harmonized", "លេខកូដ", "កូដ hs",
             ],
             "calculation": [
                 "calculate", "compute", "duty", "tax", "cif", "fob", "vat",
                 "tariff rate", "duty rate", "preferential rate",
+                "ពន្ធ", "គណនា", "គិត", "ប៉ុន្មាន", "តម្លៃ", "អត្រា", "គិតប៉ុន្មាន",
             ],
             "trade_query": [
                 "import", "export", "trade", "procedure", "process",
                 "requirement", "shipping", "shipment", "cargo", "freight",
                 "logistics", "clearance", "border",
+                "នាំចូល", "នាំចេញ", "ទំនិញ", "រថយន្ត", "ឡាន", "កុំព្យូទ័រ", "ទូរស័ព្ទ",
             ],
             # All definition / policy / FTA / procedural / customs queries → general service
             "general": [
@@ -755,6 +770,8 @@ class RuleBasedValidatorProvider:
                 "customs", "declaration", "invoice", "packing list",
                 "certificate", "cambodia", "ministry of commerce",
                 "camcontrol", "cdc", "moc", "mef",
+                # Khmer general markers
+                "សួស្តី", "ជំរាបសួរ", "របៀប", "ឯកសារ", "ប្រតិវេទន៍", "គយ",
             ],
         }
         matched_keywords = []
@@ -843,7 +860,7 @@ class RuleBasedValidatorProvider:
                 if not is_safe:
                     return ValidationResult.injection(reason or "Potential injection detected by LLM")
                 if is_on_topic:
-                    return ValidationResult.in_scope(reason=f"llm_validated:{category}", keywords=keywords)
+                    return ValidationResult.in_scope(reason=f"llm_validated:{category}", keywords=keywords, slots=res.get("slots"))
                 else:
                     return ValidationResult.out_of_scope(reason or "out_of_scope")
         except Exception as e:
@@ -950,31 +967,9 @@ class ValidatorService:
             return ValidationResult.format_error("too long")
 
         # Fast local safety injection checks
-        t_lower = t.lower()
-        sql_patterns = [
-            r"(\bor\b|\band\b).*['\"].*[=<>]",
-            r"(drop|delete|update|insert|exec|execute|script)\s",
-            r"(\-\-|;|\/\*|\*\/)",
-            r"(union|select|from|where).*select",
-        ]
-        for pattern in sql_patterns:
-            if re.search(pattern, t_lower):
-                return ValidationResult.injection(f"Potential SQL injection detected: {pattern}")
-
-        if re.search(r"(ignore|forget|override|bypass|disregard).*instruction", t_lower):
-            return ValidationResult.injection("Potential prompt injection detected")
-        if re.search(r"\byou are now\b", t_lower):
-            return ValidationResult.injection("Potential prompt injection detected (you are now)")
-        if re.search(r"\bact as\b", t_lower):
-            return ValidationResult.injection("Potential prompt injection detected (act as)")
-        if "`" in t or "$(" in t:
-            return ValidationResult.injection("Suspicious command characters detected")
-
-        # Fast rule-based whitelist check (greetings, capabilities, whitelisted intents)
-        # to avoid slow LLM calls for small talk and common phrases.
-        local_check = self._provider.validate(text)
-        if local_check.is_valid and local_check.decision == ValidationDecision.IN_SCOPE:
-            return local_check
+        injection_result = check_security_injection(t)
+        if injection_result:
+            return injection_result
 
         # 1. First Layer: Unified LLM Validation
         from unittest.mock import Mock, AsyncMock, MagicMock
@@ -1003,6 +998,12 @@ class ValidatorService:
             except Exception as e:
                 import logging
                 logging.getLogger(__name__).warning(f"Unified LLM validation failed: {e}")
+
+        # Fast rule-based whitelist check (greetings, capabilities, whitelisted intents)
+        # fallback when LLM is unavailable.
+        local_check = self._provider.validate(text)
+        if local_check.is_valid and local_check.decision == ValidationDecision.IN_SCOPE:
+            return local_check
 
         # Fallback to the old _llm_provider validation for tests/compatibility
         if self.config.enable_llm_fallback and hasattr(self, '_llm_provider') and self._llm_provider is not None:
@@ -1075,12 +1076,10 @@ __all__ = [
     "validate_calculation_input",
     "get_certificate_validator",
     "is_acfta",
+    "check_security_injection",
 ]
 
-# --------------------------------------------------------------------------
 # Prompt-Driven Legacy Shims Execution Bridge
-# --------------------------------------------------------------------------
-
 def _run_sync(coro):
     """Safely handles running async coroutines within synchronous helper methods."""
     try:

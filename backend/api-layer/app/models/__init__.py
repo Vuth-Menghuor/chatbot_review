@@ -1,4 +1,4 @@
-from app.models.entities import ApiKey, ApiRequestLog, AuditLog, ChatThread, FileJob, FileRecord, Project, RateLimitLog, RefreshToken, RequestLog, User
+from app.models.entities import ApiKey, ApiRequestLog, AuditLog, ChatShare, ChatThread, FileJob, FileRecord, Project, RateLimitLog, RefreshToken, RequestLog, User
 
 __all__ = [
     "User",
@@ -6,6 +6,7 @@ __all__ = [
     "ApiKey",
     "Project",
     "ChatThread",
+    "ChatShare",
     "ApiRequestLog",
     "RequestLog",
     "RateLimitLog",

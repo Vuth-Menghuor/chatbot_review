@@ -67,7 +67,7 @@ const chatListEntries = computed<MenuItem[]>(() =>
       </p>
     </div>
 
-    <ChatShareDialog v-model="shareOpen" />
+    <ChatShareDialog v-model="shareOpen" :chat-id="activeChat?.id" />
     <BaseConfirmDialog
       v-model="renameOpen"
       preset="rename"

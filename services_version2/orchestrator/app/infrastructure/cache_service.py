@@ -378,6 +378,12 @@ class CacheService:
         """
         if os.getenv("CACHE_ENABLED", "true").lower() == "false":
             return False
+
+        # Exclude clarification_required responses from caching to prevent stale ask-backs
+        resp_status = response.get("status") if isinstance(response, dict) else None
+        if resp_status in ("clarification_required", "CLARIFICATION_REQUIRED"):
+            logger.info("Excluding CLARIFICATION_REQUIRED response from cache persistence.")
+            return False
             
         key = self._generate_cache_key(question, intent)
         

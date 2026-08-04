@@ -1,6 +1,6 @@
 <template>
   <div>
-    <div v-if="!rail">
+    <div v-if="!rail && preferencesStore.showChatHistory">
       <div class="mb-2 flex items-center justify-between rounded px-3.5 pb-1 pt-3">
         <span
           class="text-sm font-bold uppercase tracking-normal font-sans text-medium-emphasis dark:text-zinc-400"
@@ -32,7 +32,7 @@
     </div>
 
     <BaseRailPanel
-      v-else
+      v-else-if="preferencesStore.showChatHistory"
       :icon="MessageCircleMoreIcon"
       :tooltip="$t('sidebar.recentChats')"
       :title="$t('sidebar.recents')"
@@ -64,6 +64,7 @@
 import { MessageCircleMoreIcon } from 'lucide-vue-next';
 import type { MenuItem, SubmenuItem } from '~/types/ui-menu';
 import { useChatActions } from '~/composables/useChat';
+import { usePreferencesStore } from '~/stores/preferences.store';
 
 interface Props {
   rail?: boolean;
@@ -77,6 +78,7 @@ const emit = defineEmits<{
 }>();
 
 const { generalChats, isLoadingChats } = useChatActions();
+const preferencesStore = usePreferencesStore();
 const skeletonRows = [1, 2, 3, 4, 5, 6];
 
 function onMenu(item: MenuItem | SubmenuItem) {

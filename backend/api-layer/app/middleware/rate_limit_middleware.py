@@ -10,7 +10,8 @@ from app.services.rate_limit_service import check_general_rate_limit
 
 class GeneralRateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if request.url.path.endswith("/health"):
+        # Health probes must stay available even when general API rate limits are saturated.
+        if request.url.path.endswith("/health") or request.url.path.startswith("/api/v1/health/"):
             return await call_next(request)
 
         try:

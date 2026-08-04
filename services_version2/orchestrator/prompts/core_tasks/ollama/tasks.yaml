@@ -13,6 +13,18 @@ prompts:
       - 'general': Everything else — definitions, explanations, policies, regulations, FTA/trade agreement details (ATIGA, RCEP, ACFTA, ASEAN, Form D/E), customs procedures, required documents, permits, licensing, step-by-step guidance, and any other knowledge/information query (e.g., 'What is ATIGA?', 'How to import goods to Cambodia?', 'What documents do I need?', 'What is CIF?', 'Explain rules of origin').
       - If the query is a greeting, farewell, joke, or casual small talk with no customs/trade content, still return 'general' with low confidence.
 
+      query_nature:
+      - 'procedural': Generic, educational, policy, or procedural questions (e.g. "How is customs duty calculated?", "explain how HS code 8703 duty works").
+      - 'specific': Queries requesting specific transactive actions or lookups with explicit parameters/subjects (e.g. "calculate import tax for Oxen CIF 8000$ from China", "what is the HS code for fresh apples").
+
+      Examples:
+      - Query: "How is customs duty calculated?"
+        Output: {"intent": "calculation", "secondary_intent": null, "confidence": 0.55, "query_nature": "procedural", "reasoning": "Generic conceptual calculation question."}
+      - Query: "តើត្រូវគណនាពន្ធគយយ៉ាងដូចម្តេច?"
+        Output: {"intent": "calculation", "secondary_intent": null, "confidence": 0.55, "query_nature": "procedural", "reasoning": "Khmer generic conceptual calculation question."}
+      - Query: "cif 5000 usd laptop from Vietnam"
+        Output: {"intent": "calculation", "secondary_intent": null, "confidence": 0.99, "query_nature": "specific", "reasoning": "Calculation query with CIF value and product."}
+
       Multi-intent queries:
       - If the query clearly requests two or more of these actions together (e.g., "HS code for rice and calculate duty on $2000 CIF"), set 'intent' to the PRIMARY action (the one the user needs answered first — usually hs_code_lookup before calculation), and populate 'secondary_intent' with the other one. If there is no secondary action, set 'secondary_intent' to null.
 
@@ -21,6 +33,7 @@ prompts:
         "intent": "<one of: hs_code_lookup, calculation, trade_query, general>",
         "secondary_intent": "<one of: hs_code_lookup, calculation, trade_query, general, or null>",
         "confidence": <float 0.0-1.0>,
+        "query_nature": "<one of: procedural, specific>",
         "reasoning": "<one short sentence>"
       }
 

@@ -20,6 +20,41 @@ class TableBlock(BaseModel):
     rows: list[dict[str, str | int | float | bool | None]] = Field(default_factory=list)
 
 
+class SummaryBlock(BaseModel):
+    type: Literal["summary"] = "summary"
+    title: str
+    data: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
+
+
+class KeyValueItem(BaseModel):
+    key: str
+    value: str | int | float | bool | None
+
+
+class KeyValueBlock(BaseModel):
+    type: Literal["key_value"] = "key_value"
+    title: str
+    items: list[KeyValueItem] = Field(default_factory=list)
+
+
+class DetailsItem(BaseModel):
+    title: str
+    content: str
+
+
+class DetailsBlock(BaseModel):
+    type: Literal["details"] = "details"
+    title: str
+    items: list[DetailsItem] = Field(default_factory=list)
+    data: dict[str, Any] = Field(default_factory=dict)
+
+
+class ReferencesBlock(BaseModel):
+    type: Literal["references"] = "references"
+    title: str | None = None
+    items: list[dict[str, str | int | float | bool | None]] = Field(default_factory=list)
+
+
 class ClarificationBlock(BaseModel):
     type: Literal["clarification"] = "clarification"
     title: str | None = None
@@ -52,7 +87,17 @@ class CoverageBlock(BaseModel):
 
 
 ChatContentBlock = (
-    MarkdownBlock | TableBlock | ClarificationBlock | ErrorBlock | ChartBlock | SuggestionsBlock | CoverageBlock
+    MarkdownBlock
+    | SummaryBlock
+    | KeyValueBlock
+    | TableBlock
+    | DetailsBlock
+    | ReferencesBlock
+    | ClarificationBlock
+    | ErrorBlock
+    | ChartBlock
+    | SuggestionsBlock
+    | CoverageBlock
 )
 
 
@@ -111,6 +156,7 @@ class NormalizedChatResponse(BaseModel):
     chat_id: str | None = None
     project_id: str | None = None
     status: Literal["completed", "processing", "failed"]
+    service: str | None = None
     intent: str
     query: str | None = None
     language: str | None = None

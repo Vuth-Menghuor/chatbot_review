@@ -71,6 +71,20 @@ const infoLinks = computed(() => [
 
 const preferenceItems = computed<SettingsSwitchListItem[]>(() => [
   {
+    key: 'publicChatSharing',
+    title: t('settings.privacy.items.publicChatSharing.title'),
+    description: t('settings.privacy.items.publicChatSharing.description'),
+    modelValue: preferencesStore.publicChatSharing,
+    onUpdate: preferencesStore.setPublicChatSharing,
+  },
+  {
+    key: 'showChatHistory',
+    title: t('settings.privacy.items.showChatHistory.title'),
+    description: t('settings.privacy.items.showChatHistory.description'),
+    modelValue: preferencesStore.showChatHistory,
+    onUpdate: preferencesStore.setShowChatHistory,
+  },
+  {
     key: 'locationMetadata',
     title: t('settings.privacy.items.locationMetadata.title'),
     description: t('settings.privacy.items.locationMetadata.description'),

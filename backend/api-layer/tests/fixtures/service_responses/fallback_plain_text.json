@@ -1,0 +1,10 @@
+{
+  "request_id": "fixture-fallback-general",
+  "session_id": "fixture-session-general",
+  "intent": "general",
+  "answer": "Use the import declaration form for customs clearance.",
+  "suggestions": [
+    "Show required import documents",
+    "Explain customs clearance steps"
+  ]
+}

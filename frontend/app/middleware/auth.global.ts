@@ -10,14 +10,17 @@ export default defineNuxtRouteMiddleware(async (to) => {
     await authStore.init();
   }
 
-  const isPublicRoute = PUBLIC_ROUTES.has(to.path);
+  const isGuestOnlyRoute = PUBLIC_ROUTES.has(to.path);
+  const isPublicRoute = isGuestOnlyRoute || to.path.startsWith('/share/');
 
-  if (isPublicRoute) {
+  if (isGuestOnlyRoute) {
     if (authStore.isAuthenticated) {
       return navigateTo('/');
     }
     return;
   }
+
+  if (isPublicRoute) return;
 
   if (!authStore.isAuthenticated) {
     return navigateTo({

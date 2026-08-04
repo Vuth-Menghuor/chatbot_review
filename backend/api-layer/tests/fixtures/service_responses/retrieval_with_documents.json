@@ -1,0 +1,33 @@
+{
+  "request_id": "fixture-retrieval-documents",
+  "session_id": "fixture-session-retrieval",
+  "service": "retrieval",
+  "intent": "retrieval",
+  "answer": "Possible HS code matches were retrieved from source documents.",
+  "documents": [
+    {
+      "id": "chunk-1",
+      "content": "Live bovine animals, oxen",
+      "score": 0.94,
+      "metadata": {
+        "hs_code": "0102.29.11",
+        "description": "Oxen",
+        "filename": "tariff.pdf",
+        "document_id": "tariff-doc",
+        "chunk_index": 3
+      }
+    },
+    {
+      "id": "chunk-2",
+      "content": "Other live bovine animals",
+      "score": 0.88,
+      "metadata": {
+        "hs_code": "0102.29.19",
+        "description": "Other bovine animals",
+        "filename": "tariff.pdf",
+        "document_id": "tariff-doc",
+        "chunk_index": 4
+      }
+    }
+  ]
+}

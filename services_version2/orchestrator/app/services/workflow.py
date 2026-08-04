@@ -137,6 +137,18 @@ class WorkflowContext:
             self.trade_query_result = result
         elif result_type == "small_talk":
             self.small_talk_result = result
+
+    def get_result(self, result_type: str) -> Optional[Dict[str, Any]]:
+        """Get result for a service call."""
+        if result_type == "retrieval":
+            return self.retrieval_result
+        elif result_type == "calculation":
+            return self.calculation_result
+        elif result_type == "trade_query":
+            return self.trade_query_result
+        elif result_type == "small_talk":
+            return self.small_talk_result
+        return None
     
     def finalize(self):
         """Mark workflow as completed and calculate latency."""

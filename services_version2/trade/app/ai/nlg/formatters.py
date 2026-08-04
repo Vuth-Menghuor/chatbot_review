@@ -1,4 +1,5 @@
 from typing import Any, Dict
+from decimal import Decimal, ROUND_HALF_UP
 
 from app.registry.countries import CODE_TO_COUNTRY_NAME as COUNTRY_NAMES
 from app.registry.transport_modes import TRANSPORT_MODE_LABELS
@@ -15,6 +16,43 @@ GROUPABLE_DIMENSIONS = {
 }
 
 
+def format_number_clean(val: float, is_currency: bool = True, unit: str = "", currency_symbol: str = "$") -> str:
+    """Format numbers cleanly:
+    - If val >= 1,000,000: scale to million/billion with 2 decimal places.
+    - If val < 1,000,000: output exact value with thousands separators and 2 decimal places.
+    Uses standard ROUND_HALF_UP rounding.
+    """
+    if val is None:
+        return ""
+    try:
+        val_dec = Decimal(str(val))
+    except (ValueError, TypeError):
+        return str(val)
+
+    prefix = currency_symbol if is_currency else ""
+    suffix = f" {unit}" if unit else ""
+
+    abs_val = abs(val_dec)
+    
+    if abs_val == Decimal("0"):
+        return f"{prefix}0.00{suffix}"
+
+    if abs_val >= Decimal("1000000000"):
+        scaled = abs_val / Decimal("1000000000")
+        rounded = scaled.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        sign = "-" if val_dec < 0 else ""
+        return f"{sign}{prefix}{rounded:.2f} billion{suffix}"
+    elif abs_val >= Decimal("1000000"):
+        scaled = abs_val / Decimal("1000000")
+        rounded = scaled.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        sign = "-" if val_dec < 0 else ""
+        return f"{sign}{prefix}{rounded:.2f} million{suffix}"
+    else:
+        rounded = abs_val.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        sign = "-" if val_dec < 0 else ""
+        return f"{sign}{prefix}{rounded:,.2f}{suffix}"
+
+
 def _resolve_group_label(dim: str, raw_value: Any) -> Any:
     """Resolve a raw dimension value (e.g. country code) to a display label."""
     if raw_value is None:
@@ -27,6 +65,18 @@ def _resolve_group_label(dim: str, raw_value: Any) -> Any:
     return raw_value
 
 
+def _normalize_flow_to_ex_im(flow: str) -> str:
+    """Standardize flow strings (e.g. 'EXPORT' or 'EX' -> 'EX', 'IMPORT' or 'IM' -> 'IM')."""
+    if not flow:
+        return ""
+    flow_clean = str(flow).strip().upper()
+    if flow_clean in ("EX", "EXPORT"):
+        return "EX"
+    if flow_clean in ("IM", "IMPORT"):
+        return "IM"
+    return flow_clean
+
+
 def extract_facts(payload: Dict[str, Any], query_params: Dict[str, Any]) -> Dict[str, Any]:
     """Extract and format raw query facts from payload and query parameters."""
     intent = query_params.get("intent", "summary")
@@ -37,10 +87,11 @@ def extract_facts(payload: Dict[str, Any], query_params: Dict[str, Any]) -> Dict
     requested_flow = query_params.get("trade_direction") or \
                      query_params.get("filters", {}).get("FLOW")
     if requested_flow:
+        req_flow_norm = _normalize_flow_to_ex_im(requested_flow)
         records = [
             r for r in records
             if not any(k.upper() == "FLOW" for k in r.keys()) or \
-               str(r.get(next(k for k in r.keys() if k.upper() == "FLOW"), "")).upper() == requested_flow.upper()
+               _normalize_flow_to_ex_im(r.get(next(k for k in r.keys() if k.upper() == "FLOW"), "")) == req_flow_norm
         ]
 
     # Calculate sum of returned records (subset total)
@@ -67,7 +118,8 @@ def extract_facts(payload: Dict[str, Any], query_params: Dict[str, Any]) -> Dict
 
     # Flow direction
     flow_raw = filters.get("FLOW") or query_params.get("trade_direction")
-    flow = "export" if flow_raw == "EX" else "import" if flow_raw == "IM" else None
+    flow_norm = _normalize_flow_to_ex_im(flow_raw)
+    flow = "export" if flow_norm == "EX" else "import" if flow_norm == "IM" else None
 
     # Partner country
     partner_raw = filters.get("PARTNER_COUNTRY") or query_params.get("partner_country")
@@ -128,9 +180,13 @@ def extract_facts(payload: Dict[str, Any], query_params: Dict[str, Any]) -> Dict
         "mode_of_transport": mode_of_transport,
         "period": time_context,
         "total_trade_value_usd": float(total_trade_value) if is_global_total else None,
+        "total_trade_value_usd_formatted": format_number_clean(total_trade_value, is_currency=True) if is_global_total else None,
         "total_weight_kg": float(total_weight) if is_global_total else None,
+        "total_weight_kg_formatted": format_number_clean(total_weight, is_currency=False, unit="kg") if is_global_total else None,
         "subset_trade_value_usd": float(subset_trade_value),
+        "subset_trade_value_usd_formatted": format_number_clean(subset_trade_value, is_currency=True),
         "subset_weight_kg": float(subset_weight),
+        "subset_weight_kg_formatted": format_number_clean(subset_weight, is_currency=False, unit="kg"),
         "sort_order": sort_order,
         "limit": query_params.get("limit"),
         "metrics": query_params.get("metrics") or ["VALUE_USD"],
@@ -168,7 +224,13 @@ def extract_facts(payload: Dict[str, Any], query_params: Dict[str, Any]) -> Dict
             entry["weight_kg"] += float(r.get("NET_WEIGHT", 0.0) or 0.0)
 
         breakdown_records = [
-            {"label": label, "trade_value_usd": vals["trade_value_usd"], "weight_kg": vals["weight_kg"]}
+            {
+                "label": label,
+                "trade_value_usd": vals["trade_value_usd"],
+                "trade_value_usd_formatted": format_number_clean(vals["trade_value_usd"], is_currency=True),
+                "weight_kg": vals["weight_kg"],
+                "weight_kg_formatted": format_number_clean(vals["weight_kg"], is_currency=False, unit="kg")
+            }
             for label, vals in breakdown.items()
         ]
         # Sort descending by value so the largest group leads the summary.
@@ -189,7 +251,14 @@ def extract_facts(payload: Dict[str, Any], query_params: Dict[str, Any]) -> Dict
             val = float(r.get("VALUE_USD", 0.0))
             weight = float(r.get("NET_WEIGHT", 0.0))
             period_val = r.get("PERIOD") or r.get("period")
-            country_comparison.append({"country": country_name, "trade_value_usd": val, "weight_kg": weight, "period": period_val})
+            country_comparison.append({
+                "country": country_name,
+                "trade_value_usd": val,
+                "trade_value_usd_formatted": format_number_clean(val, is_currency=True),
+                "weight_kg": weight,
+                "weight_kg_formatted": format_number_clean(weight, is_currency=False, unit="kg"),
+                "period": period_val
+            })
         facts["comparison_records"] = country_comparison
 
     # If ranking, list top records
@@ -216,7 +285,13 @@ def extract_facts(payload: Dict[str, Any], query_params: Dict[str, Any]) -> Dict
 
             val = float(r.get("VALUE_USD", r.get("trade_value", 0.0)) or 0.0)
             weight = float(r.get("NET_WEIGHT", r.get("net_weight", 0.0)) or 0.0)
-            top_records.append({"label": lbl_val, "trade_value_usd": val, "weight_kg": weight})
+            top_records.append({
+                "label": lbl_val,
+                "trade_value_usd": val,
+                "trade_value_usd_formatted": format_number_clean(val, is_currency=True),
+                "weight_kg": weight,
+                "weight_kg_formatted": format_number_clean(weight, is_currency=False, unit="kg")
+            })
         facts["ranking_records"] = top_records
         facts["ranked_dimension"] = ranked_dimension
 
@@ -233,8 +308,10 @@ def extract_facts(payload: Dict[str, Any], query_params: Dict[str, Any]) -> Dict
             rec = {
                 "period": p,
                 "trade_value_usd": val,
+                "trade_value_usd_formatted": format_number_clean(val, is_currency=True),
                 "growth_rate_pct": growth_rate,
-                "weight_kg": weight
+                "weight_kg": weight,
+                "weight_kg_formatted": format_number_clean(weight, is_currency=False, unit="kg")
             }
             for k, v in r.items():
                 if k.upper() not in ("PERIOD", "FREQ", "VALUE_USD", "NET_WEIGHT", "VALUE_KHR", "GROWTH_RATE_PCT"):
@@ -249,9 +326,21 @@ def extract_facts(payload: Dict[str, Any], query_params: Dict[str, Any]) -> Dict
         trend_records = []
         for r in records:
             p = r.get("PERIOD") or r.get("period")
+            flow = r.get("FLOW") or r.get("flow")
             val = float(r.get("VALUE_USD", r.get("trade_value", 0.0)) or 0.0)
             weight = float(r.get("NET_WEIGHT", r.get("net_weight", 0.0)) or 0.0)
-            trend_records.append({"period": p, "trade_value_usd": val, "weight_kg": weight})
+            
+            trend_rec = {
+                "period": p,
+                "trade_value_usd": val,
+                "trade_value_usd_formatted": format_number_clean(val, is_currency=True),
+                "weight_kg": weight,
+                "weight_kg_formatted": format_number_clean(weight, is_currency=False, unit="kg")
+            }
+            if flow:
+                flow_norm = _normalize_flow_to_ex_im(flow)
+                trend_rec["flow"] = "EXPORT" if flow_norm == "EX" else "IMPORT" if flow_norm == "IM" else flow
+            trend_records.append(trend_rec)
         # Sort chronologically
         trend_records.sort(key=lambda x: str(x["period"]))
         facts["trend_records"] = trend_records
@@ -264,10 +353,16 @@ def extract_facts(payload: Dict[str, Any], query_params: Dict[str, Any]) -> Dict
             p = r.get("PERIOD") or r.get("period")
             flow = r.get("FLOW") or r.get("flow")
             val = float(r.get("VALUE_USD", r.get("value_usd", r.get("trade_value", 0.0))) or 0.0)
-            tb_records.append({"period": p, "flow": flow, "value_usd": val})
+            tb_records.append({
+                "period": p,
+                "flow": flow,
+                "value_usd": val,
+                "value_usd_formatted": format_number_clean(val, is_currency=True)
+            })
 
             entry = period_data.setdefault(p, {"EX": 0.0, "IM": 0.0})
-            flow_type = "EX" if str(flow).upper() == "EX" else "IM"
+            flow_norm = _normalize_flow_to_ex_im(flow)
+            flow_type = "EX" if flow_norm == "EX" else "IM"
             entry[flow_type] += val
 
         facts["trade_balance_records"] = tb_records
@@ -280,22 +375,15 @@ def extract_facts(payload: Dict[str, Any], query_params: Dict[str, Any]) -> Dict
             bal = ex - im
             status = "surplus" if bal >= 0 else "deficit"
 
-            # Simple format inline
-            abs_bal = abs(bal)
-            if abs_bal >= 1e9:
-                bal_f = f"${abs_bal / 1e9:.2f} billion"
-            elif abs_bal >= 1e6:
-                bal_f = f"${abs_bal / 1e6:.2f} million"
-            else:
-                bal_f = f"${abs_bal:,.2f}"
-
             period_balances.append({
                 "period": p,
                 "exports_usd": ex,
+                "exports_usd_formatted": format_number_clean(ex, is_currency=True),
                 "imports_usd": im,
+                "imports_usd_formatted": format_number_clean(im, is_currency=True),
                 "balance_usd": bal,
                 "status": status,
-                "balance_formatted": bal_f
+                "balance_formatted": format_number_clean(bal, is_currency=True)
             })
         facts["period_balances"] = period_balances
 

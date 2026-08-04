@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import datetime
 import logging
 from typing import Any, Dict, Optional
 
+from app.core.config import get_settings
 from app.schemas.query_plan import FinalQueryPlan, ScopedQueryPlan
 
 logger = logging.getLogger(__name__)
@@ -42,9 +44,9 @@ def build_groupings(scoped_plan: ScopedQueryPlan) -> tuple[list[str], list[str]]
     group_by_list = [g for g in scoped_plan.group_by if g.upper() not in time_keys]
 
     if not dimensions_list:
-        dimensions_list = ["FLOW"] if scoped_plan.intent in ("trend", "summary", "trade_balance") else ["PARTNER_COUNTRY"]
+        dimensions_list = ["FLOW"] if scoped_plan.intent in ("trend", "summary", "trade_balance", "growth") else ["PARTNER_COUNTRY"]
     if not group_by_list:
-        group_by_list = ["FLOW"] if scoped_plan.intent in ("trend", "summary", "trade_balance") else ["PARTNER_COUNTRY"]
+        group_by_list = ["FLOW"] if scoped_plan.intent in ("trend", "summary", "trade_balance", "growth") else ["PARTNER_COUNTRY"]
 
     return dimensions_list, group_by_list
 
@@ -172,21 +174,19 @@ def orchestrate_query_plan(scoped_plan: ScopedQueryPlan) -> FinalQueryPlan:
                 period = year_text
                 resolved_freq = "A"
 
-    import datetime
     current_year = datetime.datetime.now().year
+    settings = get_settings()
 
     if not frequency:
         frequency = default_frequency or resolved_freq
 
-    # Fallback: if no time context at all, default to the current year.
-    # Even if the year is still in progress, the user is asking "now" — NLG will
-    # label it as YTD via the is_current_year_partial flag below.
+    # Fallback: if no time context at all, default to the latest available dataset year.
     if not period and not start_period and not end_period:
-        period = str(current_year)
+        period = str(settings.max_available_year)
         if not frequency:
             frequency = "A"
         scoped_plan_extra_defaulted = True
-        logger.info(f"[orchestrate_query_plan] No period specified. Defaulting to current year {period} (Annual).")
+        logger.info(f"[orchestrate_query_plan] No period specified. Defaulting to latest dataset year {period} (Annual).")
     else:
         scoped_plan_extra_defaulted = False
 

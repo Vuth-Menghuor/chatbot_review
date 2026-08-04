@@ -1,8 +1,12 @@
 export const CANONICAL_BLOCK_TYPES = [
   'markdown',
   'reasoning',
+  'summary',
+  'key_value',
   'code',
   'table',
+  'details',
+  'references',
   'image',
   'chart',
   'workflow',

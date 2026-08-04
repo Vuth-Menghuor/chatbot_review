@@ -1,10 +1,12 @@
 import type { ThemeDefinition } from 'vuetify';
 
-export const APP_THEME_NAMES = ['light', 'dark', 'custom'] as const;
+export const APP_THEME_NAMES = ['light', 'dark', 'system'] as const;
+export const VUETIFY_THEME_NAMES = ['light', 'dark'] as const;
 
 export type AppThemeName = (typeof APP_THEME_NAMES)[number];
+export type VuetifyAppThemeName = (typeof VUETIFY_THEME_NAMES)[number];
 
-export const DEFAULT_APP_THEME: AppThemeName = 'light';
+export const DEFAULT_APP_THEME: AppThemeName = 'system';
 
 export const vuetifyThemes = {
   light: {
@@ -33,21 +35,17 @@ export const vuetifyThemes = {
       surface: '#18181b',
     },
   },
-  custom: {
-    dark: false,
-    colors: {
-      primary: '#6d5dfc',
-      secondary: '#0f766e',
-      success: '#15803d',
-      warning: '#d97706',
-      error: '#dc2626',
-      info: '#2563eb',
-      background: '#f7f3ea',
-      surface: '#fffaf0',
-    },
-  },
-} satisfies Record<AppThemeName, ThemeDefinition>;
+} satisfies Record<VuetifyAppThemeName, ThemeDefinition>;
 
 export function isAppThemeName(value: unknown): value is AppThemeName {
   return typeof value === 'string' && APP_THEME_NAMES.includes(value as AppThemeName);
+}
+
+export function resolveSystemTheme(): VuetifyAppThemeName {
+  if (typeof window === 'undefined') return 'light';
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+export function resolveVuetifyThemeName(themeName: AppThemeName): VuetifyAppThemeName {
+  return themeName === 'system' ? resolveSystemTheme() : themeName;
 }

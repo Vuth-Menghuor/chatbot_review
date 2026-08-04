@@ -382,7 +382,8 @@
     "role": "Role",
     "visibilityHint": "Your display name and username are visible to other members in shared spaces.",
     "save": "Save changes",
-    "saveSuccess": "Profile updated"
+    "saveSuccess": "Profile updated",
+    "saveError": "Could not update profile. Please try again."
   },
   "logout": {
     "title": "Log out?",
@@ -461,6 +462,14 @@
           "description": "Allow the use of your chats and coding sessions to train and improve ChatGDCE AI models.",
           "learnMore": "Learn more.",
           "learnMoreUrl": "https://www.customs.gov.kh"
+        },
+        "publicChatSharing": {
+          "title": "Public chat sharing",
+          "description": "Allow shared chat links to be visible publicly. Turn this off to keep new shared chats private by default."
+        },
+        "showChatHistory": {
+          "title": "Show chat history",
+          "description": "Display recent chat history in the sidebar and history surfaces."
         }
       }
     },
@@ -520,6 +529,10 @@
         "email": "Email",
         "off": "Off"
       },
+      "feedback": {
+        "enabled": "Notification enabled",
+        "disabled": "Notification disabled"
+      },
       "items": {
         "responseCompleted": {
           "title": "Responses",
@@ -536,6 +549,10 @@
         "newMessages": {
           "title": "New messages",
           "description": "Get notified about new messages in your recent chats."
+        },
+        "sound": {
+          "title": "Notification sound",
+          "description": "Play a sound when message notifications appear."
         }
       },
       "responseCompleted": {
@@ -564,9 +581,9 @@
           "label": "Dark",
           "description": "Use dark theme."
         },
-        "custom": {
-          "label": "Custom",
-          "description": "Use GDCE custom colors."
+        "system": {
+          "label": "System",
+          "description": "Match your device theme."
         }
       }
     },
@@ -595,6 +612,13 @@
         "small": "Small",
         "medium": "Medium",
         "large": "Large"
+      },
+      "fontStyle": {
+        "title": "Font style",
+        "description": "Change the text style used in chat and app content.",
+        "system": "System",
+        "serif": "Serif",
+        "mono": "Mono"
       }
     }
   }

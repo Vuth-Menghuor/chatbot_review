@@ -7,8 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.dependencies.auth import get_current_user
 from app.models import ChatThread, User
-from app.schemas.common import ChatThreadCreate, ChatThreadRead, ChatThreadUpdate
+from app.schemas.common import ChatShareCreate, ChatShareRead, ChatThreadCreate, ChatThreadRead, ChatThreadUpdate
 from app.services.audit_service import add_audit_log
+from app.services.chat_share_service import create_or_update_share, revoke_share, serialize_share
 from app.services.main_chatbot_client import main_chatbot_client
 from app.services.ownership import owned_chat, owned_project
 
@@ -64,6 +65,23 @@ async def get_chat(chat_id: UUID, user: User = Depends(get_current_user), db: As
     return metadata
 
 
+@router.post("/{chat_id}/share", response_model=ChatShareRead)
+async def share_chat(chat_id: UUID, payload: ChatShareCreate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    chat = await owned_chat(db, chat_id, user.id)
+    share = await create_or_update_share(db, chat, user.id, payload.visibility, payload.client_snapshot)
+    await db.commit()
+    await db.refresh(share)
+    return serialize_share(share)
+
+
+@router.delete("/{chat_id}/share")
+async def revoke_chat_share(chat_id: UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    chat = await owned_chat(db, chat_id, user.id)
+    await revoke_share(db, chat, user.id)
+    await db.commit()
+    return {"message": "Chat sharing disabled"}
+
+
 @router.patch("/{chat_id}", response_model=ChatThreadRead)
 async def update_chat(chat_id: UUID, payload: ChatThreadUpdate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     item = await owned_chat(db, chat_id, user.id)
@@ -83,6 +101,7 @@ async def update_chat(chat_id: UUID, payload: ChatThreadUpdate, user: User = Dep
 @router.delete("/{chat_id}")
 async def delete_chat(chat_id: UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     item = await owned_chat(db, chat_id, user.id)
+    await revoke_share(db, item, user.id)
     item.status = "deleted"
     item.is_archived = True
     add_audit_log(db, "chat_deleted", "chat", user.id, {"chat_id": str(item.id)})

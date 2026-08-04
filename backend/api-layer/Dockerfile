@@ -11,4 +11,5 @@ RUN chown -R api:api /app
 USER api
 
 EXPOSE 8000
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+# The API container only starts the web process; migrations run in the api-migrate service.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

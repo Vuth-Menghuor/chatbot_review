@@ -162,13 +162,16 @@ async def process_query(
             if not is_safe and reason != "out_of_scope":
                 logger.warning(f"[{request_id}] [WARN] Security check failed: {reason}")
                 latency = (time.time() - start_time) * 1000
+                refusal_msg = "I cannot process that request. Please ask a legitimate customs question."
                 return QueryResponse(
                     request_id=request_id,
                     question=question,
-                    answer="I cannot process that request. Please ask a legitimate customs question.",
+                    answer=refusal_msg,
+                    message=refusal_msg,
                     intent="refusal",
                     status="refused",
                     citations=[],
+                    suggestion=[],
                     latency_ms=latency,
                     metadata={"security": reason}
                 )
@@ -199,18 +202,20 @@ async def process_query(
             
             latency_ms = (time.time() - start_time) * 1000
             cached_result.setdefault("metadata", {})["cache_hit"] = True
+            suggestions_list = cached_result.get("suggestions", []) or cached_result.get("suggestion", []) or []
             response = QueryResponse(
                 request_id=request_id,
                 session_id=effective_session_id,
                 question=question,
                 answer=cached_result.get("answer", "No answer found"),
+                message=cached_result.get("answer", "No answer found"),
                 intent=cached_result.get("intent", "unclassified"),
                 status=cached_result.get("status", "completed"),
                 latency_ms=latency_ms,
                 metadata=cached_result.get("metadata", {}),
                 table=cached_result.get("table"),
                 visualization=cached_result.get("visualization"),
-                suggestions=cached_result.get("suggestions", []),
+                suggestion=suggestions_list,
                 summary_metrics=cached_result.get("summary_metrics"),
             )
             if "citations" in cached_result:
@@ -246,18 +251,20 @@ async def process_query(
         latency_ms = (time.time() - start_time) * 1000
         
         # ===== BUILD RESPONSE =====
+        suggestions_list = result.get("suggestions", []) or result.get("suggestion", []) or []
         response = QueryResponse(
             request_id=request_id,
             session_id=effective_session_id,
             question=question,
             answer=result.get("answer", "No answer found"),
+            message=result.get("answer", "No answer found"),
             intent=result.get("intent", "unclassified"),
             status=result.get("status", "completed"),
             latency_ms=latency_ms,
             metadata=result.get("metadata", {}),
             table=result.get("table"),
             visualization=result.get("visualization"),
-            suggestions=result.get("suggestions", []),
+            suggestion=suggestions_list,
             summary_metrics=result.get("summary_metrics"),
         )
         
@@ -286,6 +293,7 @@ async def process_query(
                 "intent": result_intent,
                 "status": response.status,
                 "answer": response.answer,
+                "message": response.answer,
                 "metadata": result.get("metadata", {}),
                 "citations": [
                     c.dict() if hasattr(c, "dict") else c
@@ -293,7 +301,7 @@ async def process_query(
                 ],
                 "table": result.get("table"),
                 "visualization": result.get("visualization"),
-                "suggestions": result.get("suggestions", []),
+                "suggestion": response.suggestion,
                 "summary_metrics": result.get("summary_metrics"),
             }
             # intent=None → key = hash(question) — same as the lookup above
@@ -349,13 +357,16 @@ async def process_query(
         except Exception as db_err:
             logger.error(f"[{request_id}] Failed to record assistant error: {db_err}")
 
+        err_msg = f"I encountered an error while processing your request: {str(e)}"
         return QueryResponse(
             request_id=request_id,
             question=req.question,
-            answer=f"I encountered an error while processing your request: {str(e)}",
+            answer=err_msg,
+            message=err_msg,
             intent="error",
             status="failed",
             citations=[],
+            suggestion=[],
             latency_ms=latency_ms,
             metadata={"error": str(e)}
         )
@@ -579,12 +590,22 @@ async def stream_query(
 
             # ── 8. Done event ─────────────────────────────────────────────────
             done_payload = {
-                "status": "completed",
+                "status": context_result.get("status", "completed"),
                 "session_id": effective_session_id,
                 "intent": intent,
                 "sources": sources,
-                "suggestions": context_result.get("suggestions", []),
+                "message": full_response or base_answer,
+                "answer": full_response or base_answer,
             }
+            if context_result.get("table"):
+                done_payload["table"] = context_result["table"]
+            if context_result.get("visualization"):
+                done_payload["visualization"] = context_result["visualization"]
+            if context_result.get("suggestion"):
+                done_payload["suggestion"] = context_result["suggestion"]
+            if context_result.get("summary"):
+                done_payload["summary"] = context_result["summary"]
+
             yield f"event: done\ndata: {json.dumps(done_payload)}\n\n"
 
         finally:

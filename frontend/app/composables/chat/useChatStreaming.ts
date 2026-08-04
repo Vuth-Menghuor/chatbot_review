@@ -13,6 +13,7 @@ import {
 } from '~/services/chat-api';
 import { uploadImageFile } from '~/services/files-api';
 import { useAuthStore } from '~/stores/auth.store';
+import { useNotificationStore } from '~/stores/notification.store';
 import { getImageUploadLimits, validateImageFile } from '~/utils/file/imageUpload';
 import {
   pollAsyncToolTasksWhenEnabled,
@@ -20,6 +21,17 @@ import {
 } from '~/composables/chat/useAsyncToolTaskPoll';
 
 export function useChatStreaming(deps: StreamingDeps) {
+  const notificationStore = useNotificationStore();
+
+  function notifyResponseCompleted() {
+    notificationStore.showToast({
+      type: 'success',
+      title: 'Response completed',
+      message: 'ChatGDCE finished responding.',
+      notificationId: 'responseCompleted',
+    });
+  }
+
   function maybeStartAsyncTaskPoll(
     unified: UnifiedToolResponse,
     assistantMsgId: string,
@@ -137,6 +149,7 @@ export function useChatStreaming(deps: StreamingDeps) {
         coverage: parts.coverage,
         confidence: parts.confidence,
       });
+      notifyResponseCompleted();
       return;
     }
     const legacyParts = legacyChatResponseToMessageParts(normalizedDone, assistantMsgId);
@@ -149,6 +162,7 @@ export function useChatStreaming(deps: StreamingDeps) {
         coverage: legacyParts.coverage,
         confidence: legacyParts.confidence,
       });
+      notifyResponseCompleted();
       return;
     }
 
@@ -163,6 +177,7 @@ export function useChatStreaming(deps: StreamingDeps) {
       generationDurationMs: Date.now() - startedAt,
       status: 'completed',
     });
+    notifyResponseCompleted();
     maybeStartAsyncTaskPoll(unified, assistantMsgId, controller.signal);
   }
 

@@ -11,7 +11,7 @@
     @menu-select="onMenuSelect"
   />
 
-  <ChatShareDialog v-model="shareOpen" />
+  <ChatShareDialog v-model="shareOpen" :chat-id="chatId" />
   <BaseConfirmDialog
     v-model="renameOpen"
     preset="rename"
@@ -47,6 +47,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   pinned: false,
+  projectId: undefined,
   rail: false,
 });
 

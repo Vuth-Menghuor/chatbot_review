@@ -11,6 +11,48 @@
   font-display: swap;
 }
 
+html.font-style-system,
+html.font-style-system body,
+html.font-style-system #__nuxt,
+html.font-style-system .v-application,
+html.font-style-system .font-sans,
+html.font-style-system .font-mono,
+html.font-style-system button,
+html.font-style-system input,
+html.font-style-system textarea,
+html.font-style-system select,
+html.font-style-system * {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif !important;
+}
+
+html.font-style-serif,
+html.font-style-serif body,
+html.font-style-serif #__nuxt,
+html.font-style-serif .v-application,
+html.font-style-serif .font-sans,
+html.font-style-serif .font-mono,
+html.font-style-serif button,
+html.font-style-serif input,
+html.font-style-serif textarea,
+html.font-style-serif select,
+html.font-style-serif * {
+  font-family: Georgia, Cambria, 'Times New Roman', Times, serif !important;
+}
+
+html.font-style-mono,
+html.font-style-mono body,
+html.font-style-mono #__nuxt,
+html.font-style-mono .v-application,
+html.font-style-mono .font-sans,
+html.font-style-mono .font-mono,
+html.font-style-mono button,
+html.font-style-mono input,
+html.font-style-mono textarea,
+html.font-style-mono select,
+html.font-style-mono * {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace !important;
+}
+
 :root {
   --font-family-app: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-family-mono: var(--font-family-app);
@@ -73,6 +115,39 @@ html:lang(km) {
 
   html.font-size-large {
     font-size: 1.0625rem;
+  }
+
+  html.font-style-system {
+    --font-family-app: Inter, ui-sans-serif, system-ui, sans-serif;
+  }
+
+  html.font-style-serif {
+    --font-family-app: Georgia, Cambria, 'Times New Roman', Times, serif;
+  }
+
+  html.font-style-mono {
+    --font-family-app: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  }
+
+  html.font-style-system,
+  html.font-style-system body,
+  html.font-style-system .v-application,
+  html.font-style-system .font-sans {
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif !important;
+  }
+
+  html.font-style-serif,
+  html.font-style-serif body,
+  html.font-style-serif .v-application,
+  html.font-style-serif .font-sans {
+    font-family: Georgia, Cambria, 'Times New Roman', Times, serif !important;
+  }
+
+  html.font-style-mono,
+  html.font-style-mono body,
+  html.font-style-mono .v-application,
+  html.font-style-mono .font-sans {
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace !important;
   }
 
   html {

@@ -104,31 +104,35 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     async def on_startup():
-        """Application startup — pre-warm everything so first request is fast."""
+        """Start serving quickly; warm slow dependencies in the background."""
         import asyncio
+
         logger.info("Retrieval service starting up")
 
-        logger.info("Pre-loading embedding model and HS corpus in parallel...")
-        try:
-            embedding_task = asyncio.create_task(
-                embeddings.embed_query("initialization test")
-            )
-            corpus_task = asyncio.create_task(retrieval_service.prewarm())
-            test_embedding, _ = await asyncio.gather(
-                embedding_task, corpus_task, return_exceptions=True
-            )
-            if isinstance(test_embedding, Exception):
-                logger.warning(f"Embedding pre-load failed: {test_embedding}")
-            else:
-                logger.info(f"Embedding model ready (dim: {len(test_embedding)})")
-        except Exception as e:
-            logger.warning(f"Startup pre-warm error: {e}")
+        async def warm_dependencies():
+            logger.info("Pre-loading embedding model and HS corpus in background...")
+            try:
+                embedding_task = asyncio.create_task(
+                    embeddings.embed_query("initialization test")
+                )
+                corpus_task = asyncio.create_task(retrieval_service.prewarm())
+                test_embedding, _ = await asyncio.gather(
+                    embedding_task, corpus_task, return_exceptions=True
+                )
+                if isinstance(test_embedding, Exception):
+                    logger.warning(f"Embedding pre-load failed: {test_embedding}")
+                else:
+                    logger.info(f"Embedding model ready (dim: {len(test_embedding)})")
+            except Exception as e:
+                logger.warning(f"Startup pre-warm error: {e}")
 
-        vs_health = await vector_store.health()
-        logger.info(f"Vector store health: {vs_health}")
+            vs_health = await vector_store.health()
+            logger.info(f"Vector store health: {vs_health}")
 
-        emb_health = await embeddings.health()
-        logger.info(f"Embeddings health: {emb_health}")
+            emb_health = await embeddings.health()
+            logger.info(f"Embeddings health: {emb_health}")
+
+        asyncio.create_task(warm_dependencies())
         logger.info("Startup complete — service ready")
 
     @app.on_event("shutdown")

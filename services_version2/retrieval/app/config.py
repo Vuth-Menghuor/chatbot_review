@@ -15,7 +15,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
 class RetrievalConfig:
     """Centralized configuration for retrieval service."""
 
@@ -74,6 +73,9 @@ class RetrievalConfig:
 
         # Logging Configuration
         self.log_level = os.environ.get("LOG_LEVEL") or "INFO"
+        
+        # Reference links
+        self.gdce_tariff_search_url = os.environ.get("GDCE_TARIFF_SEARCH_URL") or "https://customs.gov.kh/en/publications/14037-customs-tariff-of-cambodia-km-2022"
 
         # Redis cache Configuration (HS corpus caching)
         self.redis_host = os.environ.get("REDIS_HOST") or "localhost"
@@ -99,6 +101,7 @@ class RetrievalConfig:
             "gemini_enabled": self.gemini_enabled,
             "gemini_configured": bool(self.gemini_api_key),
             "log_level": self.log_level,
+            "gdce_tariff_search_url": self.gdce_tariff_search_url,
         }
 
 

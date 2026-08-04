@@ -1,0 +1,9 @@
+{
+  "request_id": "fixture-general-success",
+  "session_id": "fixture-session-general",
+  "service": "general",
+  "intent": "general",
+  "answer": "The GDCE chatbot can help with customs procedures, document requirements, and service routing.",
+  "coverage": "complete",
+  "confidence": "medium"
+}

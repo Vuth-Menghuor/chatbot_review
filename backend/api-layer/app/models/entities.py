@@ -3,7 +3,7 @@ from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, JSON, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
 
@@ -17,8 +17,12 @@ class User(Base, TimestampMixin):
     __tablename__ = "users"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     full_name: Mapped[str] = mapped_column(String(255))
+    nickname: Mapped[str | None] = mapped_column(String(255))
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255))
+    phone: Mapped[str | None] = mapped_column(String(64))
+    address: Mapped[str | None] = mapped_column(String(512))
+    avatar_url: Mapped[str | None] = mapped_column(Text)
     role: Mapped[str] = mapped_column(String(50), default="user")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
@@ -69,6 +73,18 @@ class ChatThread(Base, TimestampMixin):
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
     last_message_preview: Mapped[str | None] = mapped_column(String(120))
     last_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ChatShare(Base, TimestampMixin):
+    __tablename__ = "chat_shares"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    chat_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("chat_threads.id", ondelete="CASCADE"), unique=True, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    token: Mapped[str] = mapped_column(String(96), unique=True, index=True)
+    visibility: Mapped[str] = mapped_column(String(20), default="private", index=True)
+    title: Mapped[str | None] = mapped_column(String(255))
+    message_snapshot: Mapped[list | None] = mapped_column(JSON)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ApiRequestLog(Base):

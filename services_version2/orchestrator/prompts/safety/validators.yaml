@@ -246,6 +246,11 @@ prompts:
       - 'reason': string or null
       - 'keywords': array of strings (commodity nouns or trade keywords, empty for
         small_talk)
+      - 'slots': object or null (When category is 'trade_query', extract structured trade slots:
+        product: specific commodity/product noun in lower case English e.g. 'rice', set to null if generic like 'trade data';
+        flow: 'IMPORT' or 'EXPORT' if explicitly mentioned, null if omitted;
+        time_period: explicit year, quarter, or date range string e.g. '2025', null if omitted;
+        partner_country: canonical country name in lower case English e.g. 'united states', 'vietnam', null if omitted)
     output_schema:
       type: object
       properties:
@@ -264,4 +269,21 @@ prompts:
           type: array
           items:
             type: string
+        slots:
+          type: object
+          nullable: true
+          properties:
+            product:
+              type: string
+              nullable: true
+            flow:
+              type: string
+              nullable: true
+            time_period:
+              type: string
+              nullable: true
+            partner_country:
+              type: string
+              nullable: true
       required: [is_safe, is_on_topic, category, confidence, reason, keywords]
+

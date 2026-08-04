@@ -1,5 +1,6 @@
 import {
   DEFAULT_APP_THEME,
+  resolveVuetifyThemeName,
   vuetifyThemes,
   type AppThemeName,
 } from '~/utils/theme/vuetifyThemes';
@@ -45,7 +46,7 @@ export function syncVuetifyThemeToDocument(theme: ThemeDocumentSync) {
 
 /** Sync document from static theme config (safe in Nuxt plugins — no useTheme). */
 export function syncAppThemeByName(themeName: AppThemeName = DEFAULT_APP_THEME) {
-  const definition = vuetifyThemes[themeName];
+  const definition = vuetifyThemes[resolveVuetifyThemeName(themeName)];
   syncVuetifyThemeToDocument({
     dark: definition.dark ?? false,
     colors: definition.colors,

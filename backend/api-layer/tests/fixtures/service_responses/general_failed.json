@@ -1,0 +1,10 @@
+{
+  "request_id": "fixture-general-failed",
+  "session_id": "fixture-session-general",
+  "service": "general",
+  "intent": "general",
+  "status": "failed",
+  "error": {
+    "message": "General service is unavailable"
+  }
+}
