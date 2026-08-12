@@ -6,26 +6,21 @@ answers or store full conversation content.
 
 ## Architecture
 
-Current calculator/web integration:
+Chat integration:
 
 ```text
-Main Chatbot Service complete /query response
-    -> API Layer response normalization
-    -> API Layer SSE start/done wrapper
-    -> Frontend structured block rendering
+Frontend
+    -> API Layer /api/v1/chat/send or /api/v1/chat/stream
+    -> Main Chatbot Service /query or /internal/chat/stream
 ```
 
-The current `/api/v1/chat/stream` endpoint is an SSE progress wrapper around a
-non-streaming `POST /query` call. It sends `start`, waits for the complete
-orchestrator response, normalizes it, and sends the final normalized response in
-`done`. It is not true upstream token streaming.
-
-Future streaming integration:
+Streaming integration:
 
 ```text
-Main Chatbot Service token stream
-    -> API Layer transparent SSE proxy
-    -> Frontend incremental rendering
+Main Chatbot Service live text chunks
+    -> API Layer SSE start/delta/done proxy
+    -> Frontend incremental display
+    -> Frontend final rendering from normalized message.content
 ```
 
 Long work stays in the Main Chatbot Service infrastructure:
@@ -172,26 +167,24 @@ user. Deletes are soft deletes. Deleting a project detaches its active chats.
 
 The gateway calls these internal endpoints:
 
-- `POST /internal/chat/send`
+- `POST /query`
 - `POST /internal/chat/stream`
 - `GET /internal/chat/history`
 - `POST /internal/chat/feedback`
 - `GET|DELETE /internal/chats/{chat_id}...`
 - `GET /internal/jobs/{job_id}` and `/result`
 
-Forwarded chat requests include `chat_id`, `project_id`, `user_id`, `role`,
-`message`, `attachments`, `metadata`, and `request_id`. The internal service must
-authorize the supplied identity at its trust boundary. The current web
-calculator path uses the service's complete `/query` response rather than an
-upstream token stream.
+Forwarded chat requests include stable chat/session IDs and the user's message
+context. The internal service must authorize the supplied identity at its trust
+boundary. The API layer proxies streaming chunks from `/internal/chat/stream`
+and normalizes only the final response payload.
 
 ## Streaming from the frontend
 
 `EventSource` cannot POST, so use `fetch()` and read `response.body`. The API
-returns `text/event-stream` and disables proxy buffering. Today this endpoint is
-a progress wrapper: it emits `start`, performs one non-streaming `/query`
-request, then emits `done` with the complete normalized response. A future
-transparent SSE proxy may relay true upstream token chunks.
+returns `text/event-stream` and disables proxy buffering. The endpoint emits an
+API-owned `start`, relays live upstream text chunks as `delta`, and emits `done`
+with the complete normalized response.
 
 ```javascript
 async function sendMessageStream({ token, chatId, projectId, message }) {

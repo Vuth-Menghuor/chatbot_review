@@ -11,3 +11,17 @@ venv/
 ENV/
 .env/
 .venv/
+
+# Large data files — not tracked in git
+# scripts/gdce_hs_code.json
+# scripts/gdce_docs.json
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/

@@ -4,18 +4,19 @@ import type { ChatApiStreamingConfig } from './chatApi';
 
 // ─── Core Message Roles ───────────────────────────────────────────────────
 export type MessageRole = 'user' | 'assistant' | 'system';
-export type MessageStatus =
-  | 'idle'
-  | 'thinking'
-  | 'loading'
-  | 'streaming'
+export type ResponseStatus =
   | 'processing'
   | 'completed'
   | 'clarification_required'
   | 'partial'
-  | 'done'
-  | 'error'
   | 'failed';
+
+export type MessageUiStatus =
+  | 'thinking'
+  | 'streaming'
+  | 'completed'
+  | 'error'
+  | 'stopped';
 
 // ─── Block Types ────────────────────────────────────────────────────────────
 // Canonical render types map 1:1 with renderer components in `app/composables/renderers/useRenderer.ts`.
@@ -153,11 +154,17 @@ export interface StreamingDeps {
     content: string,
     meta?: {
       generationDurationMs?: number;
-      status?: MessageStatus;
+      status?: MessageUiStatus;
+      responseStatus?: ResponseStatus;
       blocks?: MessageBlock[];
       sources?: MessageSource[];
       coverage?: AnswerCoverage;
       confidence?: AnswerConfidence;
+      requestId?: string;
+      chatId?: string;
+      streamingContent?: string;
+      normalizedResponse?: unknown;
+      error?: string | null;
     },
   ) => void;
   getAssistantMessage: (messageId: string) => Message | null;
@@ -235,7 +242,8 @@ export interface Message {
   id?: string;
   role: 'user' | 'assistant' | 'system';
   type?: 'text' | 'image';
-  status?: MessageStatus;
+  status?: MessageUiStatus;
+  responseStatus?: ResponseStatus;
   content: string;
   imageContent?: ImageContent;
   files?: unknown[];
@@ -244,6 +252,11 @@ export interface Message {
   sources?: MessageSource[];
   /** Wall-clock time spent generating this assistant reply (set when the stream/request completes). */
   generationDurationMs?: number;
+  requestId?: string;
+  chatId?: string;
+  streamingContent?: string;
+  normalizedResponse?: unknown;
+  error?: string;
   coverage?: AnswerCoverage;
   confidence?: AnswerConfidence;
 }

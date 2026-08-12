@@ -292,25 +292,108 @@ not exposed in the normalized response.
 
 ## Streaming
 
-The current `/chat/stream` implementation is an SSE progress wrapper around the
-same non-streaming orchestrator `/query` request used by `/chat/send`. It is not
-true token streaming from the calculator service or orchestrator.
+`/chat/send` and `/chat/stream` are separate API-layer endpoints. `/chat/send`
+uses the orchestrator's non-streaming `/query` request. `/chat/stream` uses the
+orchestrator streaming endpoint and proxies upstream text chunks as SSE `delta`
+events.
 
-The stable calculator streaming contract is metadata at start and structured
-only at completion:
+The API layer owns authentication, ownership validation, rate limiting, request
+IDs, and response normalization. The Main Chatbot / Orchestrator owns routing,
+RAG retrieval, specialized service calls, and live generation chunks. The API
+layer must not split a completed answer into words or chunks to simulate
+streaming.
+
+The initial streaming contract intentionally has only four event types:
 
 ```text
 event: start
-data: {"chat_id":"...","request_id":"..."}
+data: {"chat_id":"...","project_id":null,"request_id":"...","status":"processing"}
+
+event: delta
+data: {"content":"live upstream text"}
 
 event: done
 data: {complete normalized v1 response}
+
+event: error
+data: {"detail":"safe public error message"}
 ```
 
-The frontend uses its thinking indicator after `start`, then renders
-`message.content` blocks from the final normalized `done` event. The API layer
-does not stream partial calculator table rows unless an upstream structured
-streaming contract is provided.
+The frontend may display `delta.content` during generation, but the final
+renderer source of truth remains `message.content` from the normalized `done`
+event. The API layer does not stream partial calculator tables, cards, charts,
+or other structured blocks unless the orchestrator provides a documented
+structured streaming contract for those chunks.
+
+`done` is authoritative. When it arrives, the frontend must render the
+normalized `message.content` blocks from the `done` payload and treat any
+previous `delta` text as temporary incremental display only.
+
+The API layer calls the orchestrator streaming endpoint with the future-ready
+internal request shape:
+
+```json
+{
+  "question": "What is the HS code for a laptop?",
+  "session_id": "session-id",
+  "chat_id": "chat-id",
+  "project_id": null,
+  "request_id": "request-id",
+  "presentation": {},
+  "context": {}
+}
+```
+
+The orchestrator may stream textual deltas and then send a complete final
+payload:
+
+```text
+event: delta
+data: {"content":"The "}
+
+event: done
+data: {"request_id":"...","status":"completed","intent":"hs_code_lookup","answer":"The HS code for a laptop...","table":{},"citations":[]}
+```
+
+The API layer normalizes that final upstream `done` payload into the v1 response
+contract before forwarding its own `done` event.
+
+`delta.content` means append this new content to the currently displayed
+assistant text. A single delta may contain one model token, several model
+tokens, a word fragment, a word, or a phrase. Do not name this event `token`
+unless the upstream contract guarantees exactly one actual model token per
+event.
+
+Do not stream incomplete renderer JSON during the delta phase. Tables, charts,
+predictions, citations, suggestions, clarifications, and other structured
+renderer blocks are emitted only as complete normalized `message.content` blocks
+inside the final `done` payload. During generation, the frontend treats deltas
+as temporary markdown/text display.
+
+Do not fake streaming by splitting a complete answer into words, characters, or
+timed chunks. If the upstream path only returns a complete final object, the API
+stream remains `start` followed by `done` until a real upstream streaming source
+exists.
+
+Fallback behavior is intentionally truthful:
+
+```text
+real streaming upstream available:
+  start -> delta... -> done
+
+only non-streaming /query available:
+  start -> done
+```
+
+The fallback path must not manufacture deltas.
+
+`start` is metadata only. It lets the frontend associate the stream with an
+assistant placeholder and store the request ID. It must not include answer
+content.
+
+`progress` is reserved for a future UI that genuinely displays RAG retrieval or
+service progress. Do not add service-specific event names to the API-layer SSE
+contract.
 
 ## Citation Structure
 
@@ -402,6 +485,60 @@ The API accepts upstream `suggestions`, `suggestion`, `follow_up_questions`, and
 
 Empty strings and duplicates are removed. Do not return both `suggestion` and
 `suggestions`.
+
+## Status Values
+
+Normalized response `status` values are limited to the existing backend
+workflow statuses:
+
+```text
+processing
+completed
+clarification_required
+partial
+failed
+```
+
+Meanings:
+
+| Status | Meaning |
+| --- | --- |
+| `processing` | Request is still executing. |
+| `completed` | Request successfully completed. |
+| `clarification_required` | More information is required from the user. |
+| `partial` | A valid result was returned, but it is incomplete. |
+| `failed` | The operation failed. |
+
+The SSE event type `error` is transport-level stream failure signaling. It does
+not add an `error` normalized response status; normalized failures use
+`status: "failed"`.
+
+Frontend message lifecycle status is separate from backend response status.
+Do not reuse the normalized response status enum for UI message state.
+
+```ts
+type ResponseStatus =
+  | 'processing'
+  | 'completed'
+  | 'clarification_required'
+  | 'partial'
+  | 'failed';
+
+type MessageUiStatus =
+  | 'thinking'
+  | 'streaming'
+  | 'completed'
+  | 'error'
+  | 'stopped';
+```
+
+Typical UI lifecycle:
+
+```text
+thinking -> streaming -> completed
+thinking -> streaming -> error
+streaming -> stopped
+```
 
 ## Coverage And Limitations
 

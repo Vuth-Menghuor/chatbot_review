@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+
 import httpx
-import pytest
 from fastapi import HTTPException
+import pytest
 
 from app.services.main_chatbot_client import MainChatbotClient
 
@@ -15,9 +17,21 @@ def mock_async_client(handler) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
 
+class ChunkedAsyncStream(httpx.AsyncByteStream):
+    def __init__(self, chunks: list[bytes]):
+        self.chunks = chunks
+
+    async def __aiter__(self):
+        for chunk in self.chunks:
+            yield chunk
+
+
 # Requests should use the injected shared client and parse JSON responses.
-@pytest.mark.asyncio
-async def test_request_uses_injected_shared_client():
+def test_request_uses_injected_shared_client():
+    asyncio.run(_request_uses_injected_shared_client())
+
+
+async def _request_uses_injected_shared_client():
     calls = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -44,8 +58,11 @@ async def test_request_uses_injected_shared_client():
 
 
 # A 204 response should return None instead of trying to decode JSON.
-@pytest.mark.asyncio
-async def test_request_returns_none_for_204_response():
+def test_request_returns_none_for_204_response():
+    asyncio.run(_request_returns_none_for_204_response())
+
+
+async def _request_returns_none_for_204_response():
     shared_client = mock_async_client(lambda _request: httpx.Response(204))
     client = MainChatbotClient()
     client.set_client(shared_client)
@@ -56,8 +73,11 @@ async def test_request_returns_none_for_204_response():
 
 
 # Upstream HTTP errors should become FastAPI HTTPException with the upstream status code.
-@pytest.mark.asyncio
-async def test_request_maps_upstream_http_error_to_http_exception():
+def test_request_maps_upstream_http_error_to_http_exception():
+    asyncio.run(_request_maps_upstream_http_error_to_http_exception())
+
+
+async def _request_maps_upstream_http_error_to_http_exception():
     shared_client = mock_async_client(lambda _request: httpx.Response(502, json={"detail": "bad gateway"}))
     client = MainChatbotClient()
     client.set_client(shared_client)
@@ -67,5 +87,92 @@ async def test_request_maps_upstream_http_error_to_http_exception():
 
     assert exc_info.value.status_code == 502
     assert exc_info.value.detail == "bad gateway"
+
+    await client.aclose()
+
+
+def test_stream_sse_yields_complete_sse_blocks_without_parsing_payloads():
+    asyncio.run(_stream_sse_yields_complete_sse_blocks_without_parsing_payloads())
+
+
+async def _stream_sse_yields_complete_sse_blocks_without_parsing_payloads():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/internal/chat/stream"
+        return httpx.Response(
+            200,
+            stream=ChunkedAsyncStream([
+                b"event: delta\r\n",
+                b'data: {"content":"hel"}\r\n\r\nevent: done\n',
+                b'data: {"answer":"hello"}\n\n',
+            ]),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    shared_client = mock_async_client(handler)
+    client = MainChatbotClient()
+    client.set_client(shared_client)
+
+    blocks = [block async for block in client.stream_sse("POST", "/internal/chat/stream", json={"question": "hello"})]
+
+    assert blocks == [
+        'event: delta\ndata: {"content":"hel"}',
+        'event: done\ndata: {"answer":"hello"}',
+    ]
+
+    await client.aclose()
+
+
+def test_stream_yields_upstream_bytes_without_decoding_or_buffering_response():
+    asyncio.run(_stream_yields_upstream_bytes_without_decoding_or_buffering_response())
+
+
+async def _stream_yields_upstream_bytes_without_decoding_or_buffering_response():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/internal/chat/stream"
+        return httpx.Response(
+            200,
+            stream=ChunkedAsyncStream([b"event: delta\n", b'data: {"content":"hi"}\n\n']),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    shared_client = mock_async_client(handler)
+    client = MainChatbotClient()
+    client.set_client(shared_client)
+
+    chunks = [chunk async for chunk in client.stream("POST", "/internal/chat/stream", json={"question": "hello"})]
+
+    assert chunks == [b"event: delta\n", b'data: {"content":"hi"}\n\n']
+
+    await client.aclose()
+
+
+def test_stream_chat_parses_upstream_sse_into_typed_events():
+    asyncio.run(_stream_chat_parses_upstream_sse_into_typed_events())
+
+
+async def _stream_chat_parses_upstream_sse_into_typed_events():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/internal/chat/stream"
+        return httpx.Response(
+            200,
+            stream=ChunkedAsyncStream([
+                b'event: start\ndata: {"request_id":"upstream"}\n\n',
+                b'event: delta\ndata: {"content":"The "}\n\n',
+                b'event: delta\ndata: {"content":{"type":"table"}}\n\n',
+                b'event: done\ndata: {"request_id":"upstream","answer":"The answer."}\n\n',
+            ]),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    shared_client = mock_async_client(handler)
+    client = MainChatbotClient()
+    client.set_client(shared_client)
+
+    events = [event async for event in client.stream_chat({"question": "hello"})]
+
+    assert [(event.type, event.content, event.data) for event in events] == [
+        ("delta", "The ", None),
+        ("done", None, {"request_id": "upstream", "answer": "The answer."}),
+    ]
 
     await client.aclose()

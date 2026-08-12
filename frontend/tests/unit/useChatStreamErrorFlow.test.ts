@@ -64,7 +64,8 @@ function assertFriendlyErrorState(chat: ReturnType<typeof useChat>, forbiddenTex
   const assistant = chat.messages.value[1];
   assert.ok(assistant);
   assert.equal(assistant.role, 'assistant');
-  assert.equal(assistant.status, 'failed');
+  assert.equal(assistant.status, 'error');
+  assert.equal(assistant.responseStatus, 'failed');
   assert.deepEqual(assistant.blocks?.map((block) => block.type), ['error']);
   assert.equal(typeof assistant.blocks?.[0]?.content, 'object');
   if (forbiddenText) {
@@ -107,7 +108,8 @@ test('useChat renders safe ErrorRenderer payloads for invalid normalized done pa
   assert.equal(chat.messages.value[0]?.role, 'user');
   const assistant = chat.messages.value[1];
   assert.ok(assistant);
-  assert.equal(assistant.status, 'failed');
+  assert.equal(assistant.status, 'error');
+  assert.equal(assistant.responseStatus, 'failed');
   assert.deepEqual(assistant.blocks?.map((block) => block.type), ['error']);
   assert.equal(assistant.content.includes('This invalid versioned payload'), false);
 });
@@ -146,6 +148,6 @@ test('useChat treats user abort as cancellation without a false failure', async 
   assert.equal(chat.messages.value[0]?.content, 'What documents do I need?');
   const assistant = chat.messages.value[1];
   assert.ok(assistant);
-  assert.notEqual(assistant.status, 'failed');
+  assert.equal(assistant.status, 'stopped');
   assert.equal(Boolean(assistant.blocks?.some((block) => block.type === 'error')), false);
 });

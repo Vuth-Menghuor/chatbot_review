@@ -1,10 +1,13 @@
 """
-Vector Store Client - Infrastructure layer
-Wraps Qdrant vector database for semantic search.
+Vector Store Client — Infrastructure Layer (General Service).
 
-Connects to the general service's own dedicated Qdrant instance
-(default port 6334), separate from the HS-code retrieval service's
+Wraps the Qdrant vector database for semantic (dense-vector) search against
+the general documents collection (``gdce_docs``). Uses a **dedicated**
+Qdrant instance on port 6334, separate from the HS-code retrieval service's
 Qdrant instance (port 6333).
+
+Supports both the modern ``query_points`` API (Qdrant ≥ 1.7) and the legacy
+``search`` API with automatic fallback.
 """
 
 import logging

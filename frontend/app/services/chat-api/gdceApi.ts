@@ -1,5 +1,6 @@
 import { buildChatApiUrl, ChatApiRequestError } from './chatApiHttp';
 import { useAuthStore } from '~/stores/auth.store';
+import { readSseStream } from '~/utils/stream';
 
 export interface GdceStreamOptions {
   baseUrl: string;
@@ -12,14 +13,21 @@ export interface GdceStreamOptions {
   context?: Record<string, unknown>;
   signal?: AbortSignal;
   onStart?: (data: Record<string, unknown>) => void;
-  onToken?: (content: string) => void;
-  onMetadata?: (data: Record<string, unknown>) => void;
+  onDelta?: (content: string) => void;
   onDone?: (data: Record<string, unknown>) => void;
+  onError?: (data: Record<string, unknown>) => void;
 }
 
 export interface GdcePresentationPreference {
   preferred_blocks: string[];
   fallback: 'markdown';
+}
+
+export class ChatStreamEventError extends Error {
+  constructor(public readonly detail: string) {
+    super(detail);
+    this.name = 'ChatStreamEventError';
+  }
 }
 
 export async function getGdceAccessToken(options: GdceStreamOptions): Promise<string> {
@@ -30,17 +38,6 @@ export async function getGdceAccessToken(options: GdceStreamOptions): Promise<st
   if (token) return token;
 
   throw new Error('Not authenticated. Please sign in.');
-}
-
-function parseEvent(block: string): { event: string; data: Record<string, unknown> } | null {
-  let event = 'message';
-  const dataLines: string[] = [];
-  for (const line of block.split('\n')) {
-    if (line.startsWith('event:')) event = line.slice(6).trim();
-    if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
-  }
-  if (!dataLines.length) return null;
-  return { event, data: JSON.parse(dataLines.join('\n')) as Record<string, unknown> };
 }
 
 export async function streamGdceChat(options: GdceStreamOptions): Promise<void> {
@@ -79,28 +76,18 @@ export async function streamGdceChat(options: GdceStreamOptions): Promise<void> 
     throw new ChatApiRequestError(`Chat request failed (${response.status})`, response.status, body);
   }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
+  await readSseStream(response.body, ({ event, json }) => {
+    if (!isRecord(json)) return;
+    if (event === 'start') options.onStart?.(json);
+    else if (event === 'delta') options.onDelta?.(String(json.content ?? ''));
+    else if (event === 'done') options.onDone?.(json);
+    else if (event === 'error') {
+      options.onError?.(json);
+      throw new ChatStreamEventError(String(json.detail ?? 'Chat stream failed'));
+    }
+  }, { signal: options.signal });
+}
 
-  const handleBlock = (block: string) => {
-    const parsed = parseEvent(block);
-    if (!parsed) return;
-    if (parsed.event === 'start') options.onStart?.(parsed.data);
-    else if (parsed.event === 'token') options.onToken?.(String(parsed.data.content ?? ''));
-    else if (parsed.event === 'metadata') options.onMetadata?.(parsed.data);
-    else if (parsed.event === 'done') options.onDone?.(parsed.data);
-    else if (parsed.event === 'error') throw new Error(String(parsed.data.detail ?? 'Chat stream failed'));
-  };
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
-    const blocks = buffer.split('\n\n');
-    buffer = blocks.pop() ?? '';
-    for (const block of blocks) handleBlock(block);
-  }
-  buffer += decoder.decode();
-  if (buffer.trim()) handleBlock(buffer);
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }

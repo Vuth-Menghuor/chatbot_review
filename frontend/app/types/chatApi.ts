@@ -1,4 +1,4 @@
-import type { AnswerConfidence, AnswerCoverage, MessageSource, MessageStatus } from './chat';
+import type { AnswerConfidence, AnswerCoverage, MessageSource, ResponseStatus } from './chat';
 
 export interface ChatApiIntegrationEphemeralMcp {
   type: 'ephemeral_mcp';
@@ -328,7 +328,7 @@ export interface NormalizedChatResponse {
   session_id: string;
   chat_id?: string;
   project_id?: string | null;
-  status: Extract<MessageStatus, 'completed' | 'clarification_required' | 'partial' | 'processing' | 'failed'>;
+  status: ResponseStatus;
   service?: string | null;
   intent: string;
   query?: string;

@@ -1,4 +1,4 @@
-import type { StreamingDeps, UnifiedToolResponse } from '~/types/message';
+import type { MessageUiStatus, ResponseStatus, StreamingDeps, UnifiedToolResponse } from '~/types/message';
 import {
   isLocalChartTaskId,
   normalizeUnifiedToolResponse,
@@ -8,6 +8,7 @@ import {
   isChatApiConfigured,
   handleNormalizedChatResponse,
   legacyChatResponseToMessageParts,
+  ChatStreamEventError,
   streamGdceChat,
 } from '~/services/chat-api';
 import { uploadImageFile } from '~/services/files-api';
@@ -29,6 +30,31 @@ export function useChatStreaming(deps: StreamingDeps) {
       message: 'ChatGDCE finished responding.',
       notificationId: 'responseCompleted',
     });
+  }
+
+  function responseStatusToUiStatus(status: ResponseStatus): MessageUiStatus {
+    return status === 'failed' ? 'error' : 'completed';
+  }
+
+  function streamingMarkdownBlock(messageId: string, content: string) {
+    return [{
+      id: `${messageId}-streaming-markdown`,
+      type: 'markdown' as const,
+      content,
+      isComplete: false,
+    }];
+  }
+
+  function streamErrorBlock(messageId: string, detail: string) {
+    return [{
+      id: `${messageId}-stream-error`,
+      type: 'error' as const,
+      content: {
+        title: 'Response unavailable',
+        message: detail,
+      },
+      isComplete: true,
+    }];
   }
 
   function maybeStartAsyncTaskPoll(
@@ -114,33 +140,71 @@ export function useChatStreaming(deps: StreamingDeps) {
     const startedAt = Date.now();
     let currentContent = '';
     let normalizedDone: Record<string, unknown> | null = null;
-    let firstToken = true;
+    let firstDelta = true;
     const attachments = await prepareAttachments(files);
 
-    await streamGdceChat({
-      baseUrl: deps.chatApi.baseUrl,
-      apiToken: deps.chatApi.apiToken,
-      message: text,
-      chatId: deps.chatId,
-      projectId: deps.projectId,
-      attachments,
-      presentation: presentationPreferenceFromMessage(text),
-      context,
-      signal: controller.signal,
-      // True token streaming requires an upstream streaming endpoint.
-      onToken: (content) => {
-        if (deps.stopStreaming.value) return;
-        if (firstToken) {
-          firstToken = false;
-          deps.currentRenderType.value = 'markdown';
-        }
-        currentContent += content;
-        deps.upsertAssistantMessage(assistantMsgId, currentContent, { status: 'streaming' });
-      },
-      onDone: (data) => {
-        normalizedDone = data;
-      },
-    });
+    try {
+      await streamGdceChat({
+        baseUrl: deps.chatApi.baseUrl,
+        apiToken: deps.chatApi.apiToken,
+        message: text,
+        chatId: deps.chatId,
+        projectId: deps.projectId,
+        attachments,
+        presentation: presentationPreferenceFromMessage(text),
+        context,
+        signal: controller.signal,
+        onStart: (data) => {
+          if (deps.stopStreaming.value) return;
+          deps.currentRenderType.value = 'response';
+          deps.upsertAssistantMessage(assistantMsgId, '', {
+            status: 'streaming',
+            responseStatus: 'processing',
+            blocks: [],
+            requestId: typeof data.request_id === 'string' ? data.request_id : undefined,
+            chatId: typeof data.chat_id === 'string' ? data.chat_id : undefined,
+            streamingContent: '',
+            error: null,
+          });
+        },
+        onDelta: (content) => {
+          if (deps.stopStreaming.value) return;
+          if (firstDelta) {
+            firstDelta = false;
+            deps.currentRenderType.value = 'markdown';
+          }
+          const existing = deps.getAssistantMessage(assistantMsgId);
+          const baseContent = existing?.content ?? currentContent;
+          currentContent = `${baseContent}${content}`;
+          deps.upsertAssistantMessage(assistantMsgId, currentContent, {
+            status: 'streaming',
+            blocks: streamingMarkdownBlock(assistantMsgId, currentContent),
+            streamingContent: currentContent,
+          });
+        },
+        onDone: (data) => {
+          normalizedDone = data;
+        },
+        onError: (data) => {
+          const detail = String(data.detail ?? 'Chat stream failed');
+          const existing = deps.getAssistantMessage(assistantMsgId);
+          const preservedContent = existing?.content || currentContent;
+          const nextContent = preservedContent || detail;
+          deps.upsertAssistantMessage(assistantMsgId, nextContent, {
+            status: 'error',
+            responseStatus: 'failed',
+            blocks: preservedContent
+              ? streamingMarkdownBlock(assistantMsgId, preservedContent)
+              : streamErrorBlock(assistantMsgId, detail),
+            streamingContent: preservedContent,
+            error: detail,
+          });
+        },
+      });
+    } catch (error) {
+      if (error instanceof ChatStreamEventError) return;
+      throw error;
+    }
 
     if (deps.stopStreaming.value || controller.signal.aborted) return;
     const normalizedParts = handleNormalizedChatResponse(normalizedDone, assistantMsgId);
@@ -149,7 +213,11 @@ export function useChatStreaming(deps: StreamingDeps) {
         blocks: normalizedParts.blocks,
         sources: normalizedParts.sources,
         generationDurationMs: normalizedParts.latencyMs ?? Date.now() - startedAt,
-        status: normalizedParts.status,
+        status: responseStatusToUiStatus(normalizedParts.status),
+        responseStatus: normalizedParts.status,
+        streamingContent: '',
+        normalizedResponse: normalizedDone,
+        error: null,
         coverage: normalizedParts.coverage,
         confidence: normalizedParts.confidence,
       });
@@ -162,7 +230,10 @@ export function useChatStreaming(deps: StreamingDeps) {
         blocks: legacyParts.blocks,
         sources: legacyParts.sources,
         generationDurationMs: Date.now() - startedAt,
-        status: legacyParts.status,
+        status: responseStatusToUiStatus(legacyParts.status),
+        responseStatus: legacyParts.status,
+        streamingContent: '',
+        error: null,
         coverage: legacyParts.coverage,
         confidence: legacyParts.confidence,
       });
@@ -172,7 +243,7 @@ export function useChatStreaming(deps: StreamingDeps) {
 
     const unified = {
       requestId: assistantMsgId,
-      mode: 'stream',
+      mode: 'sync',
       status: 'success',
       tools: [],
     } as UnifiedToolResponse;

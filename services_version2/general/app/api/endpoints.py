@@ -23,16 +23,26 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# Create router
+# ---------------------------------------------------------------------------
+# Router — tagged so OpenAPI groups endpoints under "general".
+# ---------------------------------------------------------------------------
 router = APIRouter(tags=["general"])
 
-# Service dependency (will be injected by app)
+# ---------------------------------------------------------------------------
+# Service singletons — injected at app startup via ``set_service()`` and
+# retrieved per-request via FastAPI's ``Depends(get_service)``.
+# ---------------------------------------------------------------------------
 _service: Optional[GeneralRetrievalService] = None
 _answer_generator: Optional[AnswerGenerator] = None
 
 
 def set_service(service: GeneralRetrievalService):
-    """Set the general retrieval service instance."""
+    """
+    Inject the fully-configured ``GeneralRetrievalService`` instance and
+    initialise the ``AnswerGenerator`` from it.
+
+    Called once during application startup (see ``app/main.py:startup_event``).
+    """
     global _service, _answer_generator
     _service = service
     _answer_generator = AnswerGenerator(
@@ -43,14 +53,27 @@ def set_service(service: GeneralRetrievalService):
 
 
 def get_service() -> GeneralRetrievalService:
-    """Get the current general retrieval service."""
+    """
+    FastAPI dependency that returns the global ``GeneralRetrievalService``.
+
+    Raises
+    ------
+    RuntimeError
+        If ``set_service()`` was never called (i.e. the app is misconfigured).
+    """
     if _service is None:
         raise RuntimeError("General retrieval service not initialized")
     return _service
 
 
 def transform_document(doc: Dict[str, Any]) -> Dict[str, Any]:
-    """Transform Qdrant/raw document to DocumentResult schema."""
+    """
+    Normalise a raw document dict into the standard ``DocumentResult`` shape.
+
+    Handles multiple possible field names (text/content/description/title),
+    sanitises the score, and collects all unrecognised fields into the
+    ``metadata`` sub-dict for passthrough.
+    """
     content = (
         doc.get("text") or
         doc.get("content") or
@@ -89,7 +112,31 @@ async def build_final_answer(
     status: Optional[str] = None,
     clarification: Optional[str] = None,
 ) -> Dict[str, Optional[str]]:
-    """Build user-friendly final answer from documents."""
+    """
+    Build a human-readable final answer from retrieved documents.
+
+    Delegates to the ``AnswerGenerator`` when available; falls back to
+    extractive snippet rendering or a "no results" prompt.
+
+    Parameters
+    ----------
+    query : str
+        The original user query.
+    transformed_docs : List[Dict]
+        Normalised document dicts (see ``transform_document``).
+    generate_answer : bool
+        When False, returns ``final_answer=None`` immediately.
+    status : Optional[str]
+        Service-level status — if ``"clarification_required"``, the
+        clarification message is returned as the answer.
+    clarification : Optional[str]
+        Pre-built clarification message from the service layer.
+
+    Returns
+    -------
+    Dict[str, Optional[str]]
+        Always contains ``final_answer`` and ``answer_source``.
+    """
     if not generate_answer:
         return {"final_answer": None, "answer_source": None}
 
@@ -128,12 +175,23 @@ async def build_final_answer(
     }
 
 
-@router.post("/retrieval/retrieve", tags=["Intent: General"], response_model=QueryResponse)
+@router.post(
+    "/retrieval/retrieve",
+    tags=["Intent: General"],
+    response_model=QueryResponse,
+)
 async def retrieve(
     request: QueryRequest,
-    service: GeneralRetrievalService = Depends(get_service)
+    service: GeneralRetrievalService = Depends(get_service),
 ) -> QueryResponse:
-    """Retrieve documents matching the query (general / FAQ / definition / policy)."""
+    """
+    Retrieve documents for general / FAQ / definition / policy queries.
+
+    This is the primary (and only) retrieval endpoint for the general
+    service. It runs the full pipeline: query processing, semantic +
+    structured search, lexical reranking, and (optionally) LLM-powered
+    answer generation via Gemini or vLLM.
+    """
     try:
         logger.info(f"General retrieve request: {request.query[:100]}... (collection: {request.collection})")
 

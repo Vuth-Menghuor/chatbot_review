@@ -164,6 +164,14 @@ class GeneralRetrievalService:
 
     @staticmethod
     def _is_trade_data_query(query: str) -> bool:
+        """
+        Detect whether a query looks like a trade-data analytics request.
+
+        Returns True only when the query contains both a *flow* term
+        (trade/import/export) AND an *analytics* term (statistics/trend/
+        volume/value/data/compare), to avoid false positives on procedural
+        import questions like "How do I import goods?".
+        """
         q = (query or "").lower()
         flow_terms = ["trade", "import", "export"]
         analytics_terms = ["statistics", "trend", "volume", "value", "data", "compare", "comparison"]
@@ -174,6 +182,12 @@ class GeneralRetrievalService:
 
     @staticmethod
     def _has_time_period(query: str) -> bool:
+        """
+        Check whether a query already specifies a time period.
+
+        Matches year patterns (19xx/20xx), quarters (Q1-Q4), month names,
+        relative expressions ("last month"), and ISO-like dates (YYYY-MM).
+        """
         q = (query or "").lower()
         patterns = [
             r"\b(19|20)\d{2}\b",
@@ -187,6 +201,11 @@ class GeneralRetrievalService:
 
     @staticmethod
     def _doc_text_blob(doc: dict) -> str:
+        """
+        Extract a single lowercased text blob from a document for lexical
+        overlap scoring. Draws from title, description, content, text, and
+        nested metadata fields to be resilient to schema variations.
+        """
         metadata = doc.get("metadata") if isinstance(doc.get("metadata"), dict) else {}
         parts = [
             str(doc.get("title") or ""),
@@ -229,6 +248,20 @@ class GeneralRetrievalService:
         )
 
     def _rerank_general_documents_by_query(self, query: str, documents: list) -> list:
+        """
+        Apply lexical reranking to keep exact FAQ/definition/policy matches
+        on top.
+
+        Scoring factors (added to base vector score):
+        - Token-overlap ratio between query keywords and document text.
+        - Exact phrase boost (+0.45) when the cleaned query phrase appears
+          verbatim in the document.
+        - Exact question boost (+0.40) when the normalised query appears in
+          the normalised document text (catches FAQ heading matches).
+        - Dispute-term boosts for complaint/confiscation queries.
+        - Metadata-chunk penalty (−0.30) for frontmatter/index chunks that
+          frequently pollute top results.
+        """
         if not documents:
             return []
 

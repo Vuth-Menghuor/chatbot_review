@@ -1,7 +1,15 @@
 """
-Embedding Client - Infrastructure layer
-Handles query and document embeddings using sentence-transformers.
-Falls back to keyword-based embeddings if torch is unavailable.
+Embedding Client — Infrastructure Layer (General Service).
+
+Generates dense vector embeddings using ``sentence-transformers``. Defaults
+to ``BAAI/bge-m3`` (1024-dimensional). Falls back to a lightweight
+keyword-based deterministic embedding if the model cannot be loaded.
+
+Architecture Note
+-----------------
+The underlying ``SentenceTransformer`` instance is cached in a module-level
+global. This is safe because the service only ever uses a single model per
+process.
 """
 
 import logging

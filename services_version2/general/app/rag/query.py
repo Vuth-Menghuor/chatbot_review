@@ -1,6 +1,10 @@
 """
-Query Processing Module - General Retrieval Service
-Handles query normalization, validation, and preparation for retrieval
+Query Processing Module — General Retrieval Service.
+
+Handles query normalisation, validation, domain-specific expansion
+(abbreviation → full term), tokenisation, and language detection
+(Khmer vs. English). Produces a ``ProcessedQuery`` dataclass consumed
+by the retrieval orchestrator.
 """
 
 import logging

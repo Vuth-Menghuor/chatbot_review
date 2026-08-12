@@ -1,6 +1,18 @@
 """
-LLM answer generation for General Retrieval Service.
-Builds a user-friendly final answer from retrieved documents.
+LLM Answer Generation — General Retrieval Service.
+
+Builds user-friendly final answers from retrieved documents using a
+cascading strategy:
+
+1. **Gemini** — primary; generates a natural-language summary grounded in
+   the retrieved context. Result is cached in Redis when available.
+2. **vLLM** — optional fallback; calls a self-hosted vLLM instance via its
+   OpenAI-compatible chat completions API.
+3. **Extractive fallback** — returns the top document's first ~320 chars
+   verbatim with a prefix.
+
+Answer caching is keyed on ``(query, doc_ids)`` so identical queries
+against the same document set skip the LLM call entirely.
 """
 
 import asyncio
@@ -15,7 +27,21 @@ logger = logging.getLogger(__name__)
 
 
 class AnswerGenerator:
-    """Generate user-friendly answers from retrieval results."""
+    """
+    Generate user-friendly answers from retrieval results.
+
+    Implements a cascading strategy: Gemini → vLLM → extractive fallback.
+    Results are cached in Redis (keyed on query + doc IDs) when available.
+
+    Parameters
+    ----------
+    config : GeneralConfig
+        Service configuration.
+    gemini_client : Optional[GeminiClient]
+        Gemini LLM client for primary answer generation.
+    cache_client : Optional[CacheClient]
+        Redis cache client for answer caching.
+    """
 
     def __init__(self, config, gemini_client=None, cache_client=None):
         self.config = config
@@ -30,11 +56,22 @@ class AnswerGenerator:
         status: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Generate a final answer from retrieved documents.
+        Generate a final answer using the cascading strategy.
 
-        Returns a dictionary with keys:
-        - final_answer: str
-        - answer_source: str (gemini_llm|vllm|extractive_fallback|no_results)
+        Flow
+        ----
+        1. If ``status == "clarification_required"``, return the
+           clarification prompt immediately.
+        2. If no documents, return the "no results" prompt.
+        3. Check Redis cache (keyed on query + first 5 doc IDs).
+        4. Try Gemini → if successful, cache the result and return.
+        5. Try vLLM → if enabled and successful, return.
+        6. Fall back to extractive answer (top doc snippet).
+
+        Returns
+        -------
+        Dict[str, Any]
+            ``{"final_answer": str, "answer_source": str}``
         """
         if status == "clarification_required":
             return {

@@ -20,7 +20,21 @@ logger = logging.getLogger(__name__)
 
 
 class GeminiClient:
-    """Client for interacting with Gemini API."""
+    """
+    Async-compatible client for the Gemini generative AI API.
+
+    This is a trimmed-down version of the HS-code retrieval service's
+    Gemini client — it only needs the generic context-grounded answer
+    prompt, since this service never handles ``HS_LOOKUP`` /
+    ``EXTRACT_SPECS`` / HS code candidate explanation flows.
+
+    Parameters
+    ----------
+    api_key : str
+        Google AI Studio API key. If empty, the client is a no-op.
+    model : str
+        Gemini model identifier (default ``"gemini-3.1-flash-lite"``).
+    """
 
     def __init__(self, api_key: str, model: str = "gemini-3.1-flash-lite"):
         self.api_key = (api_key or "").strip()
@@ -37,7 +51,17 @@ class GeminiClient:
         intent: Optional[str] = None,
         status: Optional[str] = None,
     ) -> Optional[str]:
-        """Generate a grounded answer from retrieval documents."""
+        """
+        Generate a grounded answer from retrieval documents.
+
+        Builds a context block from up to 15 documents, renders the Gemini
+        prompt via ``gemini_user.txt`` / ``gemini_system.txt``, calls the
+        API synchronously (offloaded to a thread), and retries once with
+        reduced context on empty responses.
+
+        Returns ``None`` if the client is not configured, the API call
+        fails, or no text is returned after retry.
+        """
         if not self.client:
             return None
 

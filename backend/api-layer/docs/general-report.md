@@ -376,17 +376,20 @@ Never expose:
 
 ## Step 12: Streaming
 
-The current `/api/v1/chat/stream` path keeps the same SSE progress-wrapper
-behavior used by the calculator integration:
+The `/api/v1/chat/stream` path uses the orchestrator streaming endpoint and
+keeps the same final normalized response contract:
 
 ```text
 event: start
+event: delta
 event: done
+event: error
 ```
 
-The API layer sends `start`, calls the orchestrator's non-streaming `POST
-/query` endpoint, waits for the complete response, normalizes it, and sends the
-final normalized General response in `done`.
+The API layer sends `start`, proxies live upstream text chunks as `delta`, and
+normalizes the complete upstream response in `done`. Do not split a completed
+General answer into fake chunks; real streaming chunks must originate in the
+Main Chatbot / Orchestrator.
 
-This is an SSE wrapper around a non-streaming `/query` response, not true
-upstream token streaming. Do not add fake token text for General responses.
+Keep the SSE event surface small. Add `progress` only when the frontend
+genuinely displays RAG retrieval or service progress.

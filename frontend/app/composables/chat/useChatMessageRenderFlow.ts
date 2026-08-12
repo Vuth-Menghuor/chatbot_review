@@ -80,7 +80,7 @@ export function useChatMessageRenderFlow(props: UseChatMessageRenderFlowProps) {
   const hasParsedBlocks = computed(() => blocks.value.length > 0);
   const messageStatus = computed(() => props.message.status?.toLowerCase() ?? 'idle');
   const shouldShowWaitingIndicator = computed(
-    () => messageStatus.value === 'thinking' || messageStatus.value === 'loading',
+    () => messageStatus.value === 'thinking' || messageStatus.value === 'streaming',
   );
   const realReasoningBlock = computed(
     () => blocks.value.find((block) => block.type === 'reasoning') ?? null,

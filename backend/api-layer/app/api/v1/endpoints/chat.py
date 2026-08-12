@@ -1,6 +1,6 @@
 import json
 import logging
-from contextlib import asynccontextmanager
+from contextlib import suppress
 from uuid import uuid4
 
 import httpx
@@ -45,7 +45,19 @@ def orchestrator_query_payload(payload: ChatRequest, chat) -> dict:
     return body
 
 
-orchestrator_stream_payload = orchestrator_query_payload
+def orchestrator_stream_payload(payload: ChatRequest, chat, request_id: str) -> dict:
+    body = {
+        "question": payload.message,
+        "session_id": str(chat.id),
+        "chat_id": str(chat.id),
+        "project_id": str(chat.project_id) if chat.project_id else None,
+        "request_id": request_id,
+    }
+    if payload.presentation:
+        body["presentation"] = payload.presentation
+    if payload.context:
+        body["context"] = payload.context
+    return body
 
 
 def sse_event(event: str, data: dict) -> bytes:
@@ -79,52 +91,17 @@ def log_normalization_trace(orchestrator_response: dict, normalized_response: di
         )
 
 
-def adapt_orchestrator_sse_block(block: str, chat, user: User | None = None) -> bytes:
-    if not block.strip():
-        return b""
-    if block.lstrip().startswith(":"):
-        return f"{block}\n\n".encode()
+def is_normalized_v1_response(data: dict) -> bool:
+    return (
+        data.get("api_version") == "1.0"
+        and isinstance(data.get("response"), dict)
+        and isinstance(data.get("message"), dict)
+        and isinstance(data["message"].get("content"), list)
+    )
 
-    event = "message"
-    data_lines: list[str] = []
-    for line in block.split("\n"):
-        if line.startswith("event:"):
-            event = line[6:].strip()
-        elif line.startswith("data:"):
-            data_lines.append(line[5:].lstrip())
 
-    if not data_lines:
-        return f"{block}\n\n".encode()
-
-    try:
-        data = json.loads("\n".join(data_lines))
-    except json.JSONDecodeError:
-        data = {"content": "\n".join(data_lines)}
-
-    if event == "message" and isinstance(data, dict) and "chunk" in data:
-        return sse_event("token", {"content": data.get("chunk", "")})
-
-    if event == "done" and isinstance(data, dict):
-        data.setdefault("chat_id", str(chat.id))
-        data.setdefault("project_id", str(chat.project_id) if chat.project_id else None)
-        if "answer" in data or "final_answer" in data or "citations" in data or "errors" in data:
-            data = normalize_chat_response(
-                data,
-                chat=chat,
-                include_debug=should_include_debug(user) if user else False,
-            ).model_dump(mode="json", exclude_none=True)
-        return sse_event("done", data)
-
-    if event == "error" and isinstance(data, dict):
-        detail = data.get("detail") or data.get("error") or "Chat stream failed"
-        return sse_event("error", {"detail": detail})
-
-    if event == "clarification" and isinstance(data, dict):
-        questions = data.get("questions") or []
-        content = "\n".join(str(question) for question in questions) if isinstance(questions, list) else str(questions)
-        return sse_event("token", {"content": content})
-
-    return sse_event(event, data if isinstance(data, dict) else {"content": data})
+def is_stream_endpoint_unavailable(exc: httpx.HTTPStatusError) -> bool:
+    return exc.response.status_code in {404, 405, 501}
 
 
 @router.post("/send")
@@ -152,8 +129,6 @@ async def send_chat(payload: ChatRequest, request: Request, user: User = Depends
 
 @router.post("/stream")
 async def stream_chat(payload: ChatRequest, request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    # Current web integration is an SSE progress wrapper around one non-streaming
-    # orchestrator POST /query call. Do not emit fake token/table/card deltas here.
     await enforce_rate_limit(f"chat_stream:{user.id}", 30, request=request, user_id=user.id)
     chat = await create_or_get_chat(db, user.id, payload.chat_id, payload.project_id, payload.message)
     if payload.chat_id is None:
@@ -161,24 +136,72 @@ async def stream_chat(payload: ChatRequest, request: Request, user: User = Depen
     await touch_chat(db, chat, payload.message)
     await db.commit()
     request_id = str(uuid4())
-    body = orchestrator_stream_payload(payload, chat)
+    body = orchestrator_stream_payload(payload, chat, request_id)
 
     async def events():
         try:
-            yield sse_event("start", {"chat_id": str(chat.id), "project_id": str(chat.project_id) if chat.project_id else None, "request_id": request_id})
+            yield sse_event(
+                "start",
+                {
+                    "chat_id": str(chat.id),
+                    "project_id": str(chat.project_id) if chat.project_id else None,
+                    "request_id": request_id,
+                    "status": "processing",
+                },
+            )
             if await request.is_disconnected():
                 return
 
-            result = await main_chatbot_client.request("POST", "/query", json=body)
-            normalized = normalize_chat_response(
-                result,
-                chat=chat,
-                include_debug=should_include_debug(user),
-                request_presentation=payload.presentation,
-            ).model_dump(mode="json", exclude_none=True)
-            if isinstance(result, dict):
-                log_normalization_trace(result, normalized)
-            yield sse_event("done", normalized)
+            try:
+                upstream_events = main_chatbot_client.stream_chat(body)
+                try:
+                    while True:
+                        if await request.is_disconnected():
+                            return
+                        try:
+                            upstream_event = await anext(upstream_events)
+                        except StopAsyncIteration:
+                            break
+                        if upstream_event.type == "delta" and upstream_event.content is not None:
+                            yield sse_event("delta", {"content": upstream_event.content})
+                        elif upstream_event.type == "done" and isinstance(upstream_event.data, dict):
+                            data = upstream_event.data
+                            data.setdefault("chat_id", str(chat.id))
+                            data.setdefault("project_id", str(chat.project_id) if chat.project_id else None)
+                            if is_normalized_v1_response(data):
+                                normalized = data
+                            else:
+                                normalized = normalize_chat_response(
+                                    data,
+                                    chat=chat,
+                                    include_debug=should_include_debug(user),
+                                    request_presentation=payload.presentation,
+                                ).model_dump(mode="json", exclude_none=True)
+                            if isinstance(data, dict):
+                                log_normalization_trace(data, normalized)
+                            yield sse_event("done", normalized)
+                        elif upstream_event.type == "error" and isinstance(upstream_event.data, dict):
+                            yield sse_event("error", {"detail": upstream_event.data.get("detail", "Chat stream failed")})
+                finally:
+                    aclose = getattr(upstream_events, "aclose", None)
+                    if aclose:
+                        with suppress(Exception):
+                            await aclose()
+            except httpx.HTTPStatusError as exc:
+                if not is_stream_endpoint_unavailable(exc):
+                    raise
+                if await request.is_disconnected():
+                    return
+                result = await main_chatbot_client.request("POST", "/query", json=orchestrator_query_payload(payload, chat))
+                normalized = normalize_chat_response(
+                    result,
+                    chat=chat,
+                    include_debug=should_include_debug(user),
+                    request_presentation=payload.presentation,
+                ).model_dump(mode="json", exclude_none=True)
+                if isinstance(result, dict):
+                    log_normalization_trace(result, normalized)
+                yield sse_event("done", normalized)
         except httpx.HTTPStatusError as exc:
             detail = "Main Chatbot Service is temporarily unavailable"
             yield sse_event("error", {"detail": detail, "status_code": exc.response.status_code})

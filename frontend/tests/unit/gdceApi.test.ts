@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { streamGdceChat } from '../../app/services/chat-api/gdceApi';
+import { ChatStreamEventError, streamGdceChat } from '../../app/services/chat-api/gdceApi';
 import { presentationPreferenceFromMessage } from '../../app/composables/chat/useChatStreaming';
 
 function sseResponse() {
@@ -9,6 +9,16 @@ function sseResponse() {
     status: 200,
     headers: { 'Content-Type': 'text/event-stream' },
   });
+}
+
+function sseEvents(events: Array<{ event: string; data: unknown }>) {
+  return new Response(
+    events.map(({ event, data }) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join(''),
+    {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    },
+  );
 }
 
 async function captureStreamBody(options: {
@@ -109,6 +119,67 @@ test('streamGdceChat forwards clarification context with same chat request', asy
   assert.equal(body.chat_id, chatId);
   assert.equal(body.message, message);
   assert.deepEqual(body.context, context);
+});
+
+test('streamGdceChat consumes only the small core SSE event contract', async () => {
+  const originalFetch = globalThis.fetch;
+  const deltas: string[] = [];
+  let start: Record<string, unknown> | null = null;
+  let done: Record<string, unknown> | null = null;
+  globalThis.fetch = (async () => sseEvents([
+    { event: 'start', data: { request_id: 'request-1', status: 'processing' } },
+    { event: 'progress', data: { stage: 'retrieving', message: 'Searching customs documents...' } },
+    { event: 'delta', data: { content: 'hello' } },
+    { event: 'metadata', data: { ignored: true } },
+    { event: 'done', data: { status: 'completed' } },
+  ])) as typeof fetch;
+
+  try {
+    await streamGdceChat({
+      baseUrl: 'http://localhost:8000',
+      apiToken: 'test-token',
+      message: 'hello',
+      onStart: (data) => {
+        start = data;
+      },
+      onDelta: (content) => deltas.push(content),
+      onDone: (data) => {
+        done = data;
+      },
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.deepEqual(start, { request_id: 'request-1', status: 'processing' });
+  assert.deepEqual(deltas, ['hello']);
+  assert.deepEqual(done, { status: 'completed' });
+});
+
+test('streamGdceChat dispatches error event detail and stops the stream', async () => {
+  const originalFetch = globalThis.fetch;
+  let errorPayload: Record<string, unknown> | null = null;
+  globalThis.fetch = (async () => sseEvents([
+    { event: 'error', data: { detail: 'Main Chatbot Service stream interrupted' } },
+  ])) as typeof fetch;
+
+  try {
+    await assert.rejects(
+      streamGdceChat({
+        baseUrl: 'http://localhost:8000',
+        apiToken: 'test-token',
+        message: 'hello',
+        onError: (data) => {
+          errorPayload = data;
+        },
+      }),
+      ChatStreamEventError,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.deepEqual(errorPayload, { detail: 'Main Chatbot Service stream interrupted' });
 });
 
 test('presentationPreferenceFromMessage detects explicit output format requests only', () => {

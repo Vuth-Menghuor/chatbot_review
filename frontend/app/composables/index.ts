@@ -183,16 +183,20 @@ export function useChat(chatId?: string) {
 
       if (assistantMsgId) {
         upsertAssistantMessage(assistantMsgId, normalizedErrorMessage, {
-          status: 'failed',
+          status: 'error',
+          responseStatus: 'failed',
           blocks: [errorMessageBlock(assistantMsgId, normalizedErrorMessage)],
+          error: normalizedErrorMessage,
         });
       } else {
         messages.value.push({
           id: uid('msg'),
           role: 'assistant',
-          status: 'failed',
+          status: 'error',
+          responseStatus: 'failed',
           content: normalizedErrorMessage,
           blocks: [errorMessageBlock('chat-api-error', normalizedErrorMessage)],
+          error: normalizedErrorMessage,
           createdAt: new Date().toISOString(),
         });
       }
@@ -202,7 +206,6 @@ export function useChat(chatId?: string) {
         const assistant = messages.value.find((message) => message.id === assistantMsgId);
         if (
           assistant?.role === 'assistant' &&
-          assistant.status !== 'failed' &&
           assistant.status !== 'error'
         ) {
           assistant.status = 'completed';
@@ -230,7 +233,7 @@ export function useChat(chatId?: string) {
     streamController.value = null;
     const latestAssistant = messages.value.slice().reverse().find((message) => message.role === 'assistant');
     if (latestAssistant) {
-      latestAssistant.status = 'completed';
+      latestAssistant.status = 'stopped';
     }
     currentRenderType.value = 'idle';
     loading.value = false;

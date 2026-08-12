@@ -3,7 +3,8 @@ import type {
   AnswerCoverage,
   MessageBlock,
   MessageSource,
-  MessageStatus,
+  MessageUiStatus,
+  ResponseStatus,
   UiBlockInjectionOptions,
 } from '~/types/message';
 import {
@@ -28,11 +29,17 @@ export function useUiBlockInjection({ messages }: UiBlockInjectionOptions) {
     content: string,
     meta?: {
       generationDurationMs?: number;
-      status?: MessageStatus;
+      status?: MessageUiStatus;
+      responseStatus?: ResponseStatus;
       blocks?: MessageBlock[];
       sources?: MessageSource[];
       coverage?: AnswerCoverage;
       confidence?: AnswerConfidence;
+      requestId?: string;
+      chatId?: string;
+      streamingContent?: string;
+      normalizedResponse?: unknown;
+      error?: string | null;
     },
   ) {
     const messages = getMessages();
@@ -59,7 +66,8 @@ export function useUiBlockInjection({ messages }: UiBlockInjectionOptions) {
     messages[index] = {
       id: existingMessage.id,
       role: existingMessage.role,
-      status: hasUnreliableFallback ? 'failed' : meta?.status ?? existingMessage.status,
+      status: hasUnreliableFallback ? 'error' : meta?.status ?? existingMessage.status,
+      responseStatus: hasUnreliableFallback ? 'failed' : meta?.responseStatus ?? existingMessage.responseStatus,
       content: syncedContent,
       type: existingMessage.type,
       imageContent: existingMessage.imageContent,
@@ -68,6 +76,11 @@ export function useUiBlockInjection({ messages }: UiBlockInjectionOptions) {
       blocks: nextBlocks,
       sources: meta?.sources ?? existingMessage.sources,
       generationDurationMs: meta?.generationDurationMs ?? existingMessage.generationDurationMs,
+      requestId: meta?.requestId ?? existingMessage.requestId,
+      chatId: meta?.chatId ?? existingMessage.chatId,
+      streamingContent: meta?.streamingContent ?? existingMessage.streamingContent,
+      normalizedResponse: meta?.normalizedResponse ?? existingMessage.normalizedResponse,
+      error: meta?.error === undefined ? existingMessage.error : meta.error ?? undefined,
       coverage: meta?.coverage ?? existingMessage.coverage,
       confidence: meta?.confidence ?? existingMessage.confidence,
     };

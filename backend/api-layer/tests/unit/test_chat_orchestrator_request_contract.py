@@ -37,6 +37,7 @@ install_optional_dependency_fakes()
 
 from app.api.v1.endpoints import chat as chat_endpoint
 from app.schemas.common import ChatRequest
+from app.services.main_chatbot_client import parse_orchestrator_sse_block
 
 
 class FakeChat:
@@ -82,6 +83,52 @@ class FakeMainChatbotClient:
             "answer": "Upstream answer.",
         }
 
+    async def stream_sse(self, method: str, path: str, **kwargs):
+        self.calls.append((method, path, kwargs))
+        yield "event: done\ndata: " + json.dumps({
+            "request_id": f"req-{len(self.calls)}",
+            "session_id": kwargs["json"]["session_id"],
+            "intent": self.intent,
+            "status": "completed",
+            "answer": "Upstream answer.",
+        })
+
+    async def stream_chat(self, body):
+        async for block in self.stream_sse("POST", "/internal/chat/stream", json=body):
+            parsed = parse_orchestrator_sse_block(block)
+            if parsed:
+                yield parsed
+
+
+class FullContractMainChatbotClient(FakeMainChatbotClient):
+    async def request(self, method: str, path: str, **kwargs):
+        self.calls.append((method, path, kwargs))
+        return self._payload(kwargs["json"])
+
+    async def stream_sse(self, method: str, path: str, **kwargs):
+        self.calls.append((method, path, kwargs))
+        yield "event: done\ndata: " + json.dumps(self._payload(kwargs["json"]))
+
+    def _payload(self, body: dict):
+        return {
+            "request_id": "req-contract",
+            "session_id": body["session_id"],
+            "chat_id": body["chat_id"],
+            "project_id": str(body.get("project_id") or ""),
+            "intent": self.intent,
+            "status": "completed",
+            "query": body["question"],
+            "language": "en",
+            "coverage": "complete",
+            "confidence": "high",
+            "answer": "Upstream answer.",
+            "citations": [],
+            "suggestions": ["Ask about import permits"],
+            "clarifications": [],
+            "errors": [],
+            "metrics": {"latency_ms": 321},
+        }
+
 
 def patch_chat_dependencies(monkeypatch, chat: FakeChat, upstream: FakeMainChatbotClient) -> None:
     async def fake_create_or_get_chat(*_args, **_kwargs):
@@ -102,6 +149,25 @@ def patch_chat_dependencies(monkeypatch, chat: FakeChat, upstream: FakeMainChatb
 
 def sent_bodies(upstream: FakeMainChatbotClient) -> list[dict]:
     return [call[2]["json"] for call in upstream.calls]
+
+
+async def read_sse_events(response) -> list[tuple[str, dict]]:
+    body = b""
+    async for chunk in response.body_iterator:
+        body += chunk
+
+    events: list[tuple[str, dict]] = []
+    for block in body.decode().strip().split("\n\n"):
+        event = "message"
+        data_lines = []
+        for line in block.splitlines():
+            if line.startswith("event:"):
+                event = line.split(":", 1)[1].strip()
+            if line.startswith("data:"):
+                data_lines.append(line.split(":", 1)[1].strip())
+        if data_lines:
+            events.append((event, json.loads("\n".join(data_lines))))
+    return events
 
 
 def test_send_forwards_calculation_and_followup_raw_with_stable_ids(monkeypatch):
@@ -192,11 +258,11 @@ async def _send_preserves_generic_presentation_and_context(monkeypatch):
     }
 
 
-def test_stream_uses_same_raw_request_contract_as_send(monkeypatch):
-    asyncio.run(_stream_uses_same_raw_request_contract_as_send(monkeypatch))
+def test_stream_uses_internal_stream_request_contract(monkeypatch):
+    asyncio.run(_stream_uses_internal_stream_request_contract(monkeypatch))
 
 
-async def _stream_uses_same_raw_request_contract_as_send(monkeypatch):
+async def _stream_uses_internal_stream_request_contract(monkeypatch):
     chat = FakeChat()
     upstream = FakeMainChatbotClient(intent="calculation")
     patch_chat_dependencies(monkeypatch, chat, upstream)
@@ -214,8 +280,117 @@ async def _stream_uses_same_raw_request_contract_as_send(monkeypatch):
 
     assert b"event: start" in body
     assert b"event: done" in body
-    assert sent_bodies(upstream)[0] == {
+    assert upstream.calls[0][0:2] == ("POST", "/internal/chat/stream")
+    sent_body = sent_bodies(upstream)[0]
+    assert sent_body == {
         "question": "1,998 cc",
         "session_id": str(chat.id),
         "chat_id": str(chat.id),
+        "project_id": str(chat.project_id),
+        "request_id": sent_body["request_id"],
     }
+    assert sent_body["request_id"]
+
+
+def test_stream_done_keeps_same_normalized_v1_shape_as_send(monkeypatch):
+    asyncio.run(_stream_done_keeps_same_normalized_v1_shape_as_send(monkeypatch))
+
+
+async def _stream_done_keeps_same_normalized_v1_shape_as_send(monkeypatch):
+    chat = FakeChat()
+    user = FakeUser()
+    message = "What documents do I need to import a car?"
+
+    send_upstream = FullContractMainChatbotClient(intent="general")
+    patch_chat_dependencies(monkeypatch, chat, send_upstream)
+    send_payload = await chat_endpoint.send_chat(
+        ChatRequest(chat_id=chat.id, message=message),
+        FakeRequest(),
+        user=user,
+        db=FakeDb(),
+    )
+
+    stream_upstream = FullContractMainChatbotClient(intent="general")
+    patch_chat_dependencies(monkeypatch, chat, stream_upstream)
+    stream_response = await chat_endpoint.stream_chat(
+        ChatRequest(chat_id=chat.id, message=message),
+        FakeRequest(),
+        user=user,
+        db=FakeDb(),
+    )
+    stream_events = await read_sse_events(stream_response)
+    done_payload = next(data for event, data in stream_events if event == "done")
+
+    expected_keys = {
+        "api_version",
+        "request_id",
+        "session_id",
+        "chat_id",
+        "project_id",
+        "status",
+        "service",
+        "intent",
+        "query",
+        "language",
+        "coverage",
+        "confidence",
+        "response",
+        "message",
+        "citations",
+        "suggestions",
+        "clarifications",
+        "errors",
+        "metrics",
+    }
+
+    assert set(done_payload) == set(send_payload)
+    assert expected_keys <= set(done_payload)
+    assert done_payload == send_payload
+    assert done_payload["api_version"] == "1.0"
+    assert "mode" not in done_payload
+    assert "transport" not in done_payload
+    assert "stream" not in done_payload
+    assert isinstance(done_payload["message"]["content"], list)
+    assert done_payload["message"] == send_payload["message"]
+    assert done_payload["response"] == send_payload["response"]
+
+
+def test_stream_forwards_future_internal_stream_request_shape(monkeypatch):
+    asyncio.run(_stream_forwards_future_internal_stream_request_shape(monkeypatch))
+
+
+async def _stream_forwards_future_internal_stream_request_shape(monkeypatch):
+    chat = FakeChat()
+    upstream = FakeMainChatbotClient(intent="hs_code_lookup")
+    patch_chat_dependencies(monkeypatch, chat, upstream)
+    presentation = {"preferred_blocks": ["table"], "fallback": "markdown"}
+    context = {"reply_to_request_id": "previous-request"}
+
+    response = await chat_endpoint.stream_chat(
+        ChatRequest(
+            chat_id=chat.id,
+            message="What is the HS code for a laptop?",
+            presentation=presentation,
+            context=context,
+        ),
+        FakeRequest(),
+        user=FakeUser(),
+        db=FakeDb(),
+    )
+
+    body = b""
+    async for chunk in response.body_iterator:
+        body += chunk
+
+    sent_body = sent_bodies(upstream)[0]
+    assert upstream.calls[0][0:2] == ("POST", "/internal/chat/stream")
+    assert sent_body == {
+        "question": "What is the HS code for a laptop?",
+        "session_id": str(chat.id),
+        "chat_id": str(chat.id),
+        "project_id": str(chat.project_id),
+        "request_id": sent_body["request_id"],
+        "presentation": presentation,
+        "context": context,
+    }
+    assert f'"request_id": "{sent_body["request_id"]}"'.encode() in body

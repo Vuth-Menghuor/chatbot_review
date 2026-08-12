@@ -1,6 +1,13 @@
 """
-Document Repository - Infrastructure layer
-Handles optional structured data access (search backends, keyword index, etc.)
+Document Repository — Infrastructure Layer.
+
+Optional structured data access layer for keyword-based document search
+against external backends (e.g. OpenSearch, Elasticsearch). When no
+search client is configured, all methods return empty lists — the service
+falls back to pure semantic (vector) search.
+
+This is a stub for future integration; currently unused in the default
+deployment.
 """
 
 import logging

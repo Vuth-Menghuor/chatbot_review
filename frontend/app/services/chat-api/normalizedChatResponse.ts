@@ -1,7 +1,7 @@
 import type {
   MessageBlock,
   MessageSource,
-  MessageStatus,
+  ResponseStatus,
   AnswerConfidence,
   AnswerCoverage,
   NormalizedChartBlock,
@@ -32,7 +32,7 @@ export interface NormalizedChatMessageParts {
   content: string;
   blocks: MessageBlock[];
   sources: MessageSource[];
-  status: MessageStatus;
+  status: ResponseStatus;
   coverage?: AnswerCoverage;
   confidence?: AnswerConfidence;
   latencyMs?: number;

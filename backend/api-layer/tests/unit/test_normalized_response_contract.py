@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 from pathlib import Path
+from typing import get_args, get_origin
 
 import pytest
 
@@ -52,6 +53,19 @@ def assert_frontend_message_contract(response: NormalizedChatResponse) -> None:
     assert isinstance(response.errors, list)
     assert isinstance(response.metrics, dict)
     assert all(block.type in SUPPORTED_BLOCK_TYPES for block in response.message.content)
+
+
+def test_normalized_response_status_schema_keeps_existing_backend_statuses_only():
+    annotation = NormalizedChatResponse.model_fields["status"].annotation
+
+    assert get_origin(annotation).__name__ == "Literal"
+    assert set(get_args(annotation)) == {
+        "processing",
+        "completed",
+        "clarification_required",
+        "partial",
+        "failed",
+    }
 
 
 # Calculator fixtures must keep service identity and the rich block order expected by the frontend renderers.
