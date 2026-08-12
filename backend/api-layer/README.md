@@ -11,7 +11,7 @@ Chat integration:
 ```text
 Frontend
     -> API Layer /api/v1/chat/send or /api/v1/chat/stream
-    -> Main Chatbot Service /query or /internal/chat/stream
+    -> Main Chatbot Service /query or /query/stream
 ```
 
 Streaming integration:
@@ -168,7 +168,7 @@ user. Deletes are soft deletes. Deleting a project detaches its active chats.
 The gateway calls these internal endpoints:
 
 - `POST /query`
-- `POST /internal/chat/stream`
+- `POST /query/stream`
 - `GET /internal/chat/history`
 - `POST /internal/chat/feedback`
 - `GET|DELETE /internal/chats/{chat_id}...`
@@ -176,7 +176,7 @@ The gateway calls these internal endpoints:
 
 Forwarded chat requests include stable chat/session IDs and the user's message
 context. The internal service must authorize the supplied identity at its trust
-boundary. The API layer proxies streaming chunks from `/internal/chat/stream`
+boundary. The API layer proxies streaming chunks from `/query/stream`
 and normalizes only the final response payload.
 
 ## Streaming from the frontend

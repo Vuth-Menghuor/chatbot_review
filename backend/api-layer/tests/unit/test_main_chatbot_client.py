@@ -97,7 +97,7 @@ def test_stream_sse_yields_complete_sse_blocks_without_parsing_payloads():
 
 async def _stream_sse_yields_complete_sse_blocks_without_parsing_payloads():
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/internal/chat/stream"
+        assert request.url.path == "/query/stream"
         return httpx.Response(
             200,
             stream=ChunkedAsyncStream([
@@ -112,7 +112,7 @@ async def _stream_sse_yields_complete_sse_blocks_without_parsing_payloads():
     client = MainChatbotClient()
     client.set_client(shared_client)
 
-    blocks = [block async for block in client.stream_sse("POST", "/internal/chat/stream", json={"question": "hello"})]
+    blocks = [block async for block in client.stream_sse("POST", "/query/stream", json={"question": "hello"})]
 
     assert blocks == [
         'event: delta\ndata: {"content":"hel"}',
@@ -128,7 +128,7 @@ def test_stream_yields_upstream_bytes_without_decoding_or_buffering_response():
 
 async def _stream_yields_upstream_bytes_without_decoding_or_buffering_response():
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/internal/chat/stream"
+        assert request.url.path == "/query/stream"
         return httpx.Response(
             200,
             stream=ChunkedAsyncStream([b"event: delta\n", b'data: {"content":"hi"}\n\n']),
@@ -139,7 +139,7 @@ async def _stream_yields_upstream_bytes_without_decoding_or_buffering_response()
     client = MainChatbotClient()
     client.set_client(shared_client)
 
-    chunks = [chunk async for chunk in client.stream("POST", "/internal/chat/stream", json={"question": "hello"})]
+    chunks = [chunk async for chunk in client.stream("POST", "/query/stream", json={"question": "hello"})]
 
     assert chunks == [b"event: delta\n", b'data: {"content":"hi"}\n\n']
 
@@ -152,13 +152,17 @@ def test_stream_chat_parses_upstream_sse_into_typed_events():
 
 async def _stream_chat_parses_upstream_sse_into_typed_events():
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/internal/chat/stream"
+        assert request.url.path == "/query/stream"
         return httpx.Response(
             200,
             stream=ChunkedAsyncStream([
                 b'event: start\ndata: {"request_id":"upstream"}\n\n',
+                b'event: delta\ndata: {"content":""}\n\n',
                 b'event: delta\ndata: {"content":"The "}\n\n',
+                b'data: {"chunk":""}\n\n',
+                b'data: {"chunk":"answer "}\n\n',
                 b'event: delta\ndata: {"content":{"type":"table"}}\n\n',
+                b'event: clarification\ndata: {"questions":["Which product?"]}\n\n',
                 b'event: done\ndata: {"request_id":"upstream","answer":"The answer."}\n\n',
             ]),
             headers={"content-type": "text/event-stream"},
@@ -172,6 +176,8 @@ async def _stream_chat_parses_upstream_sse_into_typed_events():
 
     assert [(event.type, event.content, event.data) for event in events] == [
         ("delta", "The ", None),
+        ("delta", "answer ", None),
+        ("clarification", None, {"questions": ["Which product?"]}),
         ("done", None, {"request_id": "upstream", "answer": "The answer."}),
     ]
 

@@ -8,7 +8,7 @@ from fastapi import HTTPException
 
 from app.core.config import settings
 
-DEFAULT_CHAT_STREAM_PATH = "/internal/chat/stream"
+DEFAULT_CHAT_STREAM_PATH = "/query/stream"
 
 
 @dataclass(frozen=True)
@@ -137,7 +137,7 @@ def parse_orchestrator_sse_block(block: str) -> ChatStreamEvent | None:
 
     if isinstance(data, dict) and event in {"message", "delta"}:
         content = first_present_text(data, "content", "delta", "text", "chunk")
-        if content is not None:
+        if content:
             return ChatStreamEvent(type="delta", content=content)
         return None
 
@@ -149,9 +149,7 @@ def parse_orchestrator_sse_block(block: str) -> ChatStreamEvent | None:
         return ChatStreamEvent(type="error", data={"detail": str(detail)})
 
     if event == "clarification" and isinstance(data, dict):
-        questions = data.get("questions") or []
-        content = "\n".join(str(question) for question in questions) if isinstance(questions, list) else str(questions)
-        return ChatStreamEvent(type="delta", content=content)
+        return ChatStreamEvent(type="clarification", data=data)
 
     return None
 

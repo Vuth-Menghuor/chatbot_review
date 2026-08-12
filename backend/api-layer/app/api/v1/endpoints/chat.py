@@ -104,6 +104,29 @@ def is_stream_endpoint_unavailable(exc: httpx.HTTPStatusError) -> bool:
     return exc.response.status_code in {404, 405, 501}
 
 
+def clarification_questions(data: dict) -> list[str]:
+    questions = data.get("questions")
+    if not isinstance(questions, list):
+        return []
+    return [str(question).strip() for question in questions if str(question).strip()]
+
+
+def normalized_clarification_payload(data: dict, *, chat, user: User, request_presentation: dict | None) -> dict:
+    questions = clarification_questions(data)
+    payload = dict(data)
+    payload["status"] = "clarification_required"
+    payload["clarifications"] = questions
+    payload.setdefault("answer", data.get("message") or "More information is required to complete the request.")
+    payload.setdefault("intent", "general")
+    payload.setdefault("session_id", str(chat.id))
+    return normalize_chat_response(
+        payload,
+        chat=chat,
+        include_debug=should_include_debug(user),
+        request_presentation=request_presentation,
+    ).model_dump(mode="json", exclude_none=True)
+
+
 @router.post("/send")
 async def send_chat(payload: ChatRequest, request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     await enforce_rate_limit(f"chat_send:{user.id}", 30, request=request, user_id=user.id)
@@ -154,6 +177,7 @@ async def stream_chat(payload: ChatRequest, request: Request, user: User = Depen
 
             try:
                 upstream_events = main_chatbot_client.stream_chat(body)
+                terminal_sent = False
                 try:
                     while True:
                         if await request.is_disconnected():
@@ -162,7 +186,7 @@ async def stream_chat(payload: ChatRequest, request: Request, user: User = Depen
                             upstream_event = await anext(upstream_events)
                         except StopAsyncIteration:
                             break
-                        if upstream_event.type == "delta" and upstream_event.content is not None:
+                        if upstream_event.type == "delta" and upstream_event.content:
                             yield sse_event("delta", {"content": upstream_event.content})
                         elif upstream_event.type == "done" and isinstance(upstream_event.data, dict):
                             data = upstream_event.data
@@ -177,11 +201,34 @@ async def stream_chat(payload: ChatRequest, request: Request, user: User = Depen
                                     include_debug=should_include_debug(user),
                                     request_presentation=payload.presentation,
                                 ).model_dump(mode="json", exclude_none=True)
-                            if isinstance(data, dict):
-                                log_normalization_trace(data, normalized)
+                            log_normalization_trace(data, normalized)
                             yield sse_event("done", normalized)
+                            terminal_sent = True
                         elif upstream_event.type == "error" and isinstance(upstream_event.data, dict):
                             yield sse_event("error", {"detail": upstream_event.data.get("detail", "Chat stream failed")})
+                            terminal_sent = True
+                        elif upstream_event.type == "clarification" and isinstance(upstream_event.data, dict):
+                            if not clarification_questions(upstream_event.data):
+                                logger.error(
+                                    "upstream_contract_inconsistency empty_clarification_questions request_id=%s chat_id=%s",
+                                    request_id,
+                                    chat.id,
+                                )
+                                yield sse_event("error", {"detail": "Main Chatbot Service stream interrupted"})
+                                terminal_sent = True
+                            else:
+                                normalized = normalized_clarification_payload(
+                                    upstream_event.data,
+                                    chat=chat,
+                                    user=user,
+                                    request_presentation=payload.presentation,
+                                )
+                                yield sse_event("done", normalized)
+                                terminal_sent = True
+                        if terminal_sent:
+                            break
+                    if not terminal_sent:
+                        yield sse_event("error", {"detail": "Main Chatbot Service stream interrupted"})
                 finally:
                     aclose = getattr(upstream_events, "aclose", None)
                     if aclose:

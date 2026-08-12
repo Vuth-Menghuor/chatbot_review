@@ -94,7 +94,7 @@ class FakeMainChatbotClient:
         })
 
     async def stream_chat(self, body):
-        async for block in self.stream_sse("POST", "/internal/chat/stream", json=body):
+        async for block in self.stream_sse("POST", "/query/stream", json=body):
             parsed = parse_orchestrator_sse_block(block)
             if parsed:
                 yield parsed
@@ -280,7 +280,7 @@ async def _stream_uses_internal_stream_request_contract(monkeypatch):
 
     assert b"event: start" in body
     assert b"event: done" in body
-    assert upstream.calls[0][0:2] == ("POST", "/internal/chat/stream")
+    assert upstream.calls[0][0:2] == ("POST", "/query/stream")
     sent_body = sent_bodies(upstream)[0]
     assert sent_body == {
         "question": "1,998 cc",
@@ -383,7 +383,7 @@ async def _stream_forwards_future_internal_stream_request_shape(monkeypatch):
         body += chunk
 
     sent_body = sent_bodies(upstream)[0]
-    assert upstream.calls[0][0:2] == ("POST", "/internal/chat/stream")
+    assert upstream.calls[0][0:2] == ("POST", "/query/stream")
     assert sent_body == {
         "question": "What is the HS code for a laptop?",
         "session_id": str(chat.id),

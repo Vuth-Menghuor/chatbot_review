@@ -101,7 +101,7 @@ class FakeMainChatbotClient:
             yield f"event: {event}\ndata: {json.dumps(data)}"
 
     async def stream_chat(self, body):
-        async for block in self.stream_sse("POST", "/internal/chat/stream", json=body):
+        async for block in self.stream_sse("POST", "/query/stream", json=body):
             parsed = parse_orchestrator_sse_block(block)
             if parsed:
                 yield parsed
@@ -511,6 +511,109 @@ def test_stream_chat_sends_error_event_when_upstream_fails_after_sse_response_be
     assert events[2][1] == {"detail": "Main Chatbot Service stream interrupted"}
 
 
+def test_stream_chat_converts_clarification_with_questions_to_terminal_done(monkeypatch):
+    events = asyncio.run(
+        call_stream_chat(
+            monkeypatch,
+            FakeMainChatbotClient(
+                events=[
+                    (
+                        "clarification",
+                        {
+                            "request_id": "upstream-clarification",
+                            "session_id": "upstream-session",
+                            "intent": "hs_code_lookup",
+                            "message": "I need more information about the product.",
+                            "questions": ["What product are you importing?"],
+                        },
+                    ),
+                ],
+            ),
+        )
+    )
+    event_names = [event for event, _data in events]
+    done = events[-1][1]
+
+    assert event_names == ["start", "done"]
+    assert "delta" not in event_names
+    assert done["api_version"] == "1.0"
+    assert done["status"] == "clarification_required"
+    assert done["message"]["content"][0]["text"] == "I need more information about the product."
+    assert done["message"]["content"][-1]["type"] == "clarification"
+    assert done["message"]["content"][-1]["questions"] == ["What product are you importing?"]
+
+
+def test_stream_chat_logs_and_errors_for_clarification_with_empty_questions(monkeypatch, caplog):
+    caplog.set_level("ERROR")
+    events = asyncio.run(
+        call_stream_chat(
+            monkeypatch,
+            FakeMainChatbotClient(
+                events=[
+                    (
+                        "clarification",
+                        {
+                            "request_id": "upstream-empty-clarification",
+                            "session_id": "upstream-session",
+                            "intent": "hs_code_lookup",
+                            "message": "I need more information.",
+                            "questions": [],
+                        },
+                    ),
+                ],
+            ),
+        )
+    )
+
+    assert [event for event, _data in events] == ["start", "error"]
+    assert events[-1][1] == {"detail": "Main Chatbot Service stream interrupted"}
+    assert "upstream_contract_inconsistency empty_clarification_questions" in caplog.text
+
+
+def test_stream_chat_never_emits_empty_delta(monkeypatch):
+    events = asyncio.run(
+        call_stream_chat(
+            monkeypatch,
+            FakeMainChatbotClient(
+                events=[
+                    ("delta", {"content": ""}),
+                    ("message", {"chunk": ""}),
+                    (
+                        "done",
+                        {
+                            "request_id": "upstream-empty-delta",
+                            "session_id": "upstream-session",
+                            "intent": "general",
+                            "status": "completed",
+                            "answer": "Final answer.",
+                        },
+                    ),
+                ],
+            ),
+        )
+    )
+
+    assert [event for event, _data in events] == ["start", "done"]
+    assert not any(event == "delta" and data.get("content") == "" for event, data in events)
+    assert events[-1][1]["status"] == "completed"
+
+
+def test_stream_chat_emits_terminal_error_when_upstream_ends_without_done_or_error(monkeypatch):
+    events = asyncio.run(
+        call_stream_chat(
+            monkeypatch,
+            FakeMainChatbotClient(
+                events=[
+                    ("delta", {"content": "partial"}),
+                ],
+            ),
+        )
+    )
+
+    assert [event for event, _data in events] == ["start", "delta", "error"]
+    assert events[-1][1] == {"detail": "Main Chatbot Service stream interrupted"}
+
+
 def test_stream_chat_proxies_real_upstream_delta_events(monkeypatch):
     upstream = FakeMainChatbotClient(
         events=[
@@ -539,7 +642,7 @@ def test_stream_chat_proxies_real_upstream_delta_events(monkeypatch):
     assert done["status"] == "completed"
     assert done["message"]["content"]
     assert done["message"]["content"][0]["text"] == "Hello, how can I help?"
-    assert upstream.calls[0][0:2] == ("POST", "/internal/chat/stream")
+    assert upstream.calls[0][0:2] == ("POST", "/query/stream")
 
 
 def test_stream_chat_emits_only_core_sse_event_types(monkeypatch):
@@ -662,7 +765,7 @@ def test_stream_chat_does_not_split_complete_done_answer_into_fake_deltas(monkey
 
 
 def test_stream_chat_falls_back_to_query_without_fake_deltas_when_stream_endpoint_missing(monkeypatch):
-    stream_request = httpx.Request("POST", "http://orchestrator.internal/internal/chat/stream")
+    stream_request = httpx.Request("POST", "http://orchestrator.internal/query/stream")
     stream_response = httpx.Response(404, request=stream_request, json={"detail": "not found"})
     upstream = FakeMainChatbotClient(
         stream_exc=httpx.HTTPStatusError("not found", request=stream_request, response=stream_response),
@@ -679,7 +782,7 @@ def test_stream_chat_falls_back_to_query_without_fake_deltas_when_stream_endpoin
 
     assert event_names == ["start", "done"]
     assert [call[0:2] for call in upstream.calls] == [
-        ("POST", "/internal/chat/stream"),
+        ("POST", "/query/stream"),
         ("POST", "/query"),
     ]
     assert "delta" not in event_names
