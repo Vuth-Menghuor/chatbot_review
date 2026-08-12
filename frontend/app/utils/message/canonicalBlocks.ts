@@ -7,6 +7,8 @@ export const CANONICAL_BLOCK_TYPES = [
   'table',
   'details',
   'references',
+  'official_reference',
+  'clarification',
   'image',
   'chart',
   'workflow',

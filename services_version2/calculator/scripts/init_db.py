@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS exchange_rates (
     UNIQUE(currency_code, effective_date)
 );
 
--- Declared values (DV per metric ton)
+-- Deduction values (DV per metric ton)
 CREATE TABLE IF NOT EXISTS declared_values (
     id SERIAL PRIMARY KEY,
     hs_code TEXT NOT NULL,
@@ -192,6 +192,47 @@ CREATE TABLE IF NOT EXISTS rules_audit_log (
     new_value JSONB,
     user_id TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Preferential agreement types + eligible countries (reference only — rates are user-provided)
+-- This replaces the old preferential_rates table that contained HS codes + rates.
+-- One agreement can cover multiple origin countries (e.g., ATIGA → all ASEAN).
+CREATE TABLE IF NOT EXISTS preferential_rates (
+    id SERIAL PRIMARY KEY,
+    agreement_code TEXT NOT NULL,
+    origin_country TEXT NOT NULL,
+    hs_code TEXT,
+    name_kh TEXT,
+    name_en TEXT,
+    valid_from DATE,
+    valid_to DATE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(agreement_code, origin_country)
+);
+
+-- Country groups / regions (reference)
+CREATE TABLE IF NOT EXISTS country_groups (
+    id SERIAL PRIMARY KEY,
+    type_id INTEGER,
+    code TEXT NOT NULL UNIQUE,
+    name TEXT,
+    name_kh TEXT,
+    valid_from DATE,
+    valid_to DATE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Country to region mapping (reference)
+CREATE TABLE IF NOT EXISTS countries_by_regions (
+    id SERIAL PRIMARY KEY,
+    country_code TEXT NOT NULL,
+    region_code TEXT NOT NULL,
+    region_desc TEXT,
+    valid_from DATE,
+    valid_to DATE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(country_code, region_code)
 );
 """
 
@@ -386,6 +427,112 @@ INSERT INTO duty_rates (hs_code, description, unit, cd_rate, st_rate, vat_rate, 
 SELECT hs_code, description, unit, 0.00, 0.00, 0.10, 0.0, 0.0, 'XX', 'Demo cosmetic/pharma rate (CD 0%, VAT 10%)'
 FROM hs_codes WHERE hs_code LIKE '3304.%' OR hs_code LIKE '3004.%'
 ON CONFLICT DO NOTHING;
+
+-- Seed preferential agreements with eligible origin countries (reference only — no rates)
+-- Each row = one agreement + one eligible origin country.
+-- Full membership inferred from official treaty scopes.
+INSERT INTO preferential_rates (agreement_code, origin_country, hs_code, name_kh, name_en, valid_from, valid_to) VALUES
+-- AJCEP (ASEAN-Japan) — historical, replaced by AJFTA
+('AJCEP','KH',NULL,NULL,'ASEAN-JAPAN Compr. Eco. Partnership','2010-01-01','2017-04-07'),
+('AJCEP','TH',NULL,NULL,'ASEAN-JAPAN Compr. Eco. Partnership','2010-01-01','2017-04-07'),
+('AJCEP','VN',NULL,NULL,'ASEAN-JAPAN Compr. Eco. Partnership','2010-01-01','2017-04-07'),
+('AJCEP','JP',NULL,NULL,'ASEAN-JAPAN Compr. Eco. Partnership','2010-01-01','2017-04-07'),
+-- CEPT (ASEAN internal) — historical, replaced by ATIGA
+('CEPT','KH',NULL,NULL,'Common Effective Preferent. Tariff','2000-01-01','2015-11-05'),
+('CEPT','TH',NULL,NULL,'Common Effective Preferent. Tariff','2000-01-01','2015-11-05'),
+('CEPT','VN',NULL,NULL,'Common Effective Preferent. Tariff','2000-01-01','2015-11-05'),
+-- ATIGA (ASEAN intra-bloc)
+('ATIGA','KH','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មទំនិញអាស៊ាន','ASEAN Trade In Goods Agreement','2015-11-01',NULL),
+('ATIGA','TH','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មទំនិញអាស៊ាន','ASEAN Trade In Goods Agreement','2015-11-01',NULL),
+('ATIGA','VN','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មទំនិញអាស៊ាន','ASEAN Trade In Goods Agreement','2015-11-01',NULL),
+('ATIGA','LA','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មទំនិញអាស៊ាន','ASEAN Trade In Goods Agreement','2015-11-01',NULL),
+('ATIGA','SG','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មទំនិញអាស៊ាន','ASEAN Trade In Goods Agreement','2015-11-01',NULL),
+('ATIGA','MY','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មទំនិញអាស៊ាន','ASEAN Trade In Goods Agreement','2015-11-01',NULL),
+('ATIGA','ID','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មទំនិញអាស៊ាន','ASEAN Trade In Goods Agreement','2015-11-01',NULL),
+('ATIGA','PH','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មទំនិញអាស៊ាន','ASEAN Trade In Goods Agreement','2015-11-01',NULL),
+('ATIGA','BN','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មទំនិញអាស៊ាន','ASEAN Trade In Goods Agreement','2015-11-01',NULL),
+('ATIGA','MM','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មទំនិញអាស៊ាន','ASEAN Trade In Goods Agreement','2015-11-01',NULL),
+-- AHKCFTA (ASEAN + Hong Kong)
+('AHKCFTA','KH','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរីអាស៊ាន-ហុងកុង','ASEAN-Hong Kong Free Trade Agreement','2020-11-14',NULL),
+('AHKCFTA','TH','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរីអាស៊ាន-ហុងកុង','ASEAN-Hong Kong Free Trade Agreement','2020-11-14',NULL),
+('AHKCFTA','VN','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរីអាស៊ាន-ហុងកុង','ASEAN-Hong Kong Free Trade Agreement','2020-11-14',NULL),
+('AHKCFTA','HK','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរីអាស៊ាន-ហុងកុង','ASEAN-Hong Kong Free Trade Agreement','2020-11-14',NULL),
+-- ACFTA (ASEAN + China)
+('ACFTA','KH','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរី អាស៊ាន-ចិន','ASEAN-China Free Trade Agreement','2008-09-22',NULL),
+('ACFTA','TH','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរី អាស៊ាន-ចិន','ASEAN-China Free Trade Agreement','2008-09-22',NULL),
+('ACFTA','VN','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរី អាស៊ាន-ចិន','ASEAN-China Free Trade Agreement','2008-09-22',NULL),
+('ACFTA','CN','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរី អាស៊ាន-ចិន','ASEAN-China Free Trade Agreement','2008-09-22',NULL),
+-- AJFTA (ASEAN + Japan)
+('AJFTA','KH','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរី អាស៊ាន-ជប៉ុន','ASEAN-Japan Free Trade Agreement','2017-04-07',NULL),
+('AJFTA','TH','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរី អាស៊ាន-ជប៉ុន','ASEAN-Japan Free Trade Agreement','2017-04-07',NULL),
+('AJFTA','VN','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរី អាស៊ាន-ជប៉ុន','ASEAN-Japan Free Trade Agreement','2017-04-07',NULL),
+('AJFTA','JP','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរី អាស៊ាន-ជប៉ុន','ASEAN-Japan Free Trade Agreement','2017-04-07',NULL),
+-- RCEP (ASEAN + CN + JP + KR + AU + NZ + IN)
+('RCEP','KH','កិច្ចព្រមព្រៀងភាពជាដៃគូសេដ្ឋកិច្ចគ្រប់ជ្រុងជ្រោយតំបន់ ','Regional Comprehensive Economic Partnership Agreement','2021-10-04',NULL),
+('RCEP','TH','កិច្ចព្រមព្រៀងភាពជាដៃគូសេដ្ឋកិច្ចគ្រប់ជ្រុងជ្រោយតំបន់ ','Regional Comprehensive Economic Partnership Agreement','2021-10-04',NULL),
+('RCEP','VN','កិច្ចព្រមព្រៀងភាពជាដៃគូសេដ្ឋកិច្ចគ្រប់ជ្រុងជ្រោយតំបន់ ','Regional Comprehensive Economic Partnership Agreement','2021-10-04',NULL),
+('RCEP','CN','កិច្ចព្រមព្រៀងភាពជាដៃគូសេដ្ឋកិច្ចគ្រប់ជ្រុងជ្រោយតំបន់ ','Regional Comprehensive Economic Partnership Agreement','2021-10-04',NULL),
+('RCEP','JP','កិច្ចព្រមព្រៀងភាពជាដៃគូសេដ្ឋកិច្ចគ្រប់ជ្រុងជ្រោយតំបន់ ','Regional Comprehensive Economic Partnership Agreement','2021-10-04',NULL),
+('RCEP','KR','កិច្ចព្រមព្រៀងភាពជាដៃគូសេដ្ឋកិច្ចគ្រប់ជ្រុងជ្រោយតំបន់ ','Regional Comprehensive Economic Partnership Agreement','2021-10-04',NULL),
+('RCEP','AU','កិច្ចព្រមព្រៀងភាពជាដៃគូសេដ្ឋកិច្ចគ្រប់ជ្រុងជ្រោយតំបន់ ','Regional Comprehensive Economic Partnership Agreement','2021-10-04',NULL),
+('RCEP','NZ','កិច្ចព្រមព្រៀងភាពជាដៃគូសេដ្ឋកិច្ចគ្រប់ជ្រុងជ្រោយតំបន់ ','Regional Comprehensive Economic Partnership Agreement','2021-10-04',NULL),
+('RCEP','IN','កិច្ចព្រមព្រៀងភាពជាដៃគូសេដ្ឋកិច្ចគ្រប់ជ្រុងជ្រោយតំបន់ ','Regional Comprehensive Economic Partnership Agreement','2021-10-04',NULL),
+-- CCFTA (Cambodia-China bilateral)
+('CCFTA','KH','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរី កម្ពុជា-ចិន','Cambodia-China Free Trade Agreement','2021-10-05',NULL),
+('CCFTA','CN','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរី កម្ពុជា-ចិន','Cambodia-China Free Trade Agreement','2021-10-05',NULL),
+-- CKFTA (Cambodia-Korea bilateral)
+('CKFTA','KH','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរី កម្ពុជា-កូរ៉េ','Cambodia-Korea Free Trade Agreement','2022-01-29',NULL),
+('CKFTA','KR','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរី កម្ពុជា-កូរ៉េ','Cambodia-Korea Free Trade Agreement','2022-01-29',NULL),
+-- AANZFTA (ASEAN + Australia + New Zealand)
+('AANZFTA','KH','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរីអាស៊ាន -អូស្រ្តាលី -ណូវ៉ែលហ្សេឡង់','ASEAN-Australia-New Zealand Free Trade Agreement','2010-10-29',NULL),
+('AANZFTA','TH','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរីអាស៊ាន -អូស្រ្តាលី -ណូវ៉ែលហ្សេឡង់','ASEAN-Australia-New Zealand Free Trade Agreement','2010-10-29',NULL),
+('AANZFTA','VN','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរីអាស៊ាន -អូស្រ្តាលី -ណូវ៉ែលហ្សេឡង់','ASEAN-Australia-New Zealand Free Trade Agreement','2010-10-29',NULL),
+('AANZFTA','AU','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរីអាស៊ាន -អូស្រ្តាលី -ណូវ៉ែលហ្សេឡង់','ASEAN-Australia-New Zealand Free Trade Agreement','2010-10-29',NULL),
+('AANZFTA','NZ','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរីអាស៊ាន -អូស្រ្តាលី -ណូវ៉ែលហ្សេឡង់','ASEAN-Australia-New Zealand Free Trade Agreement','2010-10-29',NULL),
+-- AKFTA (ASEAN + Korea)
+('AKFTA','KH','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរី អាស៊ាន-កូរ៉េ','ASEAN-Korea Free Trade Agreement','2007-12-08',NULL),
+('AKFTA','TH','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរី អាស៊ាន-កូរ៉េ','ASEAN-Korea Free Trade Agreement','2007-12-08',NULL),
+('AKFTA','VN','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរី អាស៊ាន-កូរ៉េ','ASEAN-Korea Free Trade Agreement','2007-12-08',NULL),
+('AKFTA','KR','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរី អាស៊ាន-កូរ៉េ','ASEAN-Korea Free Trade Agreement','2007-12-08',NULL),
+-- AIFTA (ASEAN + India)
+('AIFTA','KH','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរី អាស៊ាន-ឥណ្ឌា','ASEAN-India Free Trade Agreement','2011-02-09',NULL),
+('AIFTA','TH','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរី អាស៊ាន-ឥណ្ឌា','ASEAN-India Free Trade Agreement','2011-02-09',NULL),
+('AIFTA','VN','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរី អាស៊ាន-ឥណ្ឌា','ASEAN-India Free Trade Agreement','2011-02-09',NULL),
+('AIFTA','IN','កិច្ចព្រមព្រៀងពាណិជ្ជកម្មសេរី អាស៊ាន-ឥណ្ឌា','ASEAN-India Free Trade Agreement','2011-02-09',NULL),
+-- KHUSPT (Cambodia-US bilateral)
+('KHUSPT','KH','ពន្ធអនុគ្រោះកម្ពុជា-សហរដ្ឋអាម៉េរិក','KH and US Preferential Tariff','2025-08-08',NULL),
+('KHUSPT','US','ពន្ធអនុគ្រោះកម្ពុជា-សហរដ្ឋអាម៉េរិក','KH and US Preferential Tariff','2025-08-08',NULL)
+ON CONFLICT (agreement_code, origin_country) DO NOTHING;
+
+-- Seed country groups (regions)
+INSERT INTO country_groups (type_id, code, name, name_kh, valid_from) VALUES
+(2,'EUU','European Union (Exclude UK)','សហភាពអឺរ៉ុប (មិនរាប់អង់គ្លេស)','2024-01-11'),
+(3,'EUR','Europe','អីរ៉ុប','2021-05-26'),
+(3,'ASI','Asia','អាស៊ី','2021-05-26'),
+(3,'AUS','Australia','អូស្រា្តលី','2021-05-26'),
+(3,'ATC','Antarctica','អង់តាកទិក','2021-05-26'),
+(3,'AFI','Africa','អាហ្រ្វិក','2021-05-26'),
+(3,'NAM','North America','អាមេរិកខាងជើង','2022-03-18'),
+(3,'SAM','South America','អាមេរិកខាងត្បូង','2022-03-18'),
+(2,'ASE','ASEAN','អាស៊ាន','2021-05-26'),
+(2,'CHN','China','ចិន','2022-03-18')
+ON CONFLICT (code) DO NOTHING;
+
+-- Seed countries by regions (abbreviated — full data loaded via CSV import)
+INSERT INTO countries_by_regions (country_code, region_code, region_desc, valid_from) VALUES
+('MY','ASE','ASEAN','2000-01-01'),('ID','ASE','ASEAN','2000-01-01'),('LA','ASE','ASEAN','2000-01-01'),
+('VN','ASE','ASEAN','2000-01-01'),('SG','ASE','ASEAN','2000-01-01'),('PH','ASE','ASEAN','2000-01-01'),
+('TH','ASE','ASEAN','2000-01-01'),('MM','ASE','ASEAN','2000-01-01'),('BN','ASE','ASEAN','2000-01-01'),
+('KH','ASI','ASIA','2000-01-01'),('CN','ASI','ASIA','2000-01-01'),('JP','ASI','ASIA','2000-01-01'),
+('KR','ASI','ASIA','2000-01-01'),('IN','ASI','ASIA','2000-01-01'),('US','NAM','NORTH AMERICA','2000-01-01'),
+('CA','NAM','NORTH AMERICA','2000-01-01'),('MX','NAM','NORTH AMERICA','2000-01-01'),('GB','EUR','EUROPE','2000-01-01'),
+('DE','EUR','EUROPE','2000-01-01'),('FR','EUR','EUROPE','2000-01-01'),('IT','EUR','EUROPE','2000-01-01'),
+('ES','EUR','EUROPE','2000-01-01'),('NL','EUR','EUROPE','2000-01-01'),('BE','EUR','EUROPE','2000-01-01'),
+('PL','EUR','EUROPE','2000-01-01'),('SE','EUR','EUROPE','2000-01-01'),('FI','EUR','EUROPE','2000-01-01'),
+('AU','AUS','AUSTRALIA','2000-01-01'),('NZ','AUS','AUSTRALIA','2000-01-01'),('FJ','AUS','AUSTRALIA','2000-01-01'),
+('ZA','AFI','AFRICA','2000-01-01'),('EG','AFI','AFRICA','2000-01-01'),('NG','AFI','AFRICA','2000-01-01'),
+('BR','SAM','SOUTH AMERICA','2000-01-01'),('AR','SAM','SOUTH AMERICA','2000-01-01'),('CL','SAM','SOUTH AMERICA','2000-01-01')
+ON CONFLICT (country_code, region_code) DO NOTHING;
 """
 
 

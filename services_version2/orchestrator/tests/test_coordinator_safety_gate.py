@@ -164,6 +164,23 @@ def test_rewrite_validation_typo_resilience():
     assert coordinator._is_rewrite_valid(original, rewritten, intent=WorkflowIntent.HS_CODE_LOOKUP) is True
 
 
+def test_typo_correction_handles_greeting_typo():
+    """
+    Greeting typos should be corrected by the shared typo pipeline so
+    small-talk detection can recognize them as conversational input.
+    """
+    coordinator = ServiceCoordinator(
+        retrieval_client=AsyncMock(),
+        llm_service=AsyncMock()
+    )
+
+    result = coordinator._normalize_query_typos("hellop")
+
+    assert result["applied"] is True
+    assert result["corrected_query"] == "hello"
+    assert result["reason"] == "greeting_correction"
+
+
 # Tests for the removed GENERAL→HS heuristic override (Solution 1 changes)
 
 def test_safety_gate_general_high_confidence_pass_through():

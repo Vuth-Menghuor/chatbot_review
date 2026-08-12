@@ -126,7 +126,9 @@ class FirstLayerPipeline:
         session_id: Optional[str] = None,
     ) -> FirstLayerResult:
         """
-        Execute the unified first LLM layer pipeline.
+        [DEPRECATED] Execute the unified first LLM layer pipeline.
+        
+        Deprecated: Unused in production request lifecycles. Use get_unified_result instead.
         
         Steps:
         1. Validate input
@@ -144,6 +146,12 @@ class FirstLayerPipeline:
         Returns:
             FirstLayerResult with all processing results
         """
+        import warnings
+        warnings.warn(
+            "FirstLayerPipeline.process is deprecated and unused in production. Use get_unified_result instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         start_time = time.time()
         errors = []
         providers_used = set()
@@ -523,6 +531,10 @@ class LLMFirstLayerService:
         """Retrieve or create session context for a session ID."""
         return self.session_manager.get_or_create_session(session_id)
 
+    def get_session_readonly(self, session_id: str) -> Optional[Any]:
+        """Retrieve session context read-only without creating it if it doesn't exist."""
+        return self.session_manager.get_session_readonly(session_id)
+
     def update_session_context(self, session_id: str, **kwargs: Any) -> None:
         """Update session context attributes."""
         self.session_manager.update_session_context(session_id, **kwargs)
@@ -592,10 +604,28 @@ class LLMFirstLayerService:
             parts = []
             if getattr(session_context, "product_category", None):
                 parts.append(f"- Product Category: {session_context.product_category}")
+            if getattr(session_context, "commercial_description", None):
+                parts.append(f"- Commercial Description: {session_context.commercial_description}")
+            if getattr(session_context, "last_entity", None):
+                parts.append(f"- Last Entity: {session_context.last_entity}")
             if getattr(session_context, "import_export_mode", None):
                 parts.append(f"- Import/Export Mode: {session_context.import_export_mode}")
+            if getattr(session_context, "origin_country", None):
+                parts.append(f"- Origin Country: {session_context.origin_country}")
+            if getattr(session_context, "destination_country", None):
+                parts.append(f"- Destination Country: {session_context.destination_country}")
+            if getattr(session_context, "hs_code", None):
+                parts.append(f"- HS Code: {session_context.hs_code}")
+            if getattr(session_context, "cif_value", None):
+                parts.append(f"- CIF Value: {session_context.cif_value}")
             if getattr(session_context, "currency", None):
                 parts.append(f"- Currency: {session_context.currency}")
+            if getattr(session_context, "year", None):
+                parts.append(f"- Year: {session_context.year}")
+            if getattr(session_context, "month", None):
+                parts.append(f"- Month: {session_context.month}")
+            if getattr(session_context, "trade_agreement", None):
+                parts.append(f"- Trade Agreement: {session_context.trade_agreement}")
             if parts:
                 context_str = "\nActive Session Context:\n" + "\n".join(parts) + "\n"
                 
@@ -620,11 +650,20 @@ class LLMFirstLayerService:
         user_input: str,
         context: Optional[Any] = None,
         intent_hint: Optional[str] = None,
+        prompt_name: str = "gemini_unified_first_layer",
     ) -> Tuple[str, Dict[str, Any]]:
         """Compatibility wrapper for legacy rewrite_input callers."""
-        # Try to use unified cache results if available
+        # Try to use unified cache results if available.
+        # IMPORTANT: skip the cache when the caller requests a non-unified prompt
+        # (e.g. "gemini_rewrite_input" for post-clarification rewrites where intent is
+        # already locked). The pre-warm in endpoints.py always runs the full unified layer,
+        # so its cached result is wrong to reuse for lightweight-only calls.
         cached = unified_result_var.get()
-        if cached and self._normalize_key(cached.get("query", "")) == self._normalize_key(user_input):
+        if (
+            prompt_name == "gemini_unified_first_layer"
+            and cached
+            and self._normalize_key(cached.get("query", "")) == self._normalize_key(user_input)
+        ):
             rewritten = cached.get("rewritten_query")
             if rewritten:
                 rewritten = rewritten.strip()
@@ -637,12 +676,18 @@ class LLMFirstLayerService:
                     "topic_switch": False,
                     "rewritten": was_rewritten,
                 }
+        elif prompt_name != "gemini_unified_first_layer" and cached:
+            logger.info(
+                f"[REWRITE] Cache bypass: prompt_name='{prompt_name}' requested; "
+                f"skipping pre-warm unified cache hit and calling LLM directly."
+            )
 
         llm_service = self._get_llm_service()
         return await llm_service.rewrite_input(
             user_input=user_input,
             context=context,
             intent_hint=intent_hint,
+            prompt_name=prompt_name,
         )
 
     # Primary async API
@@ -654,7 +699,13 @@ class LLMFirstLayerService:
         session_context: Optional[Any] = None,
         session_id: Optional[str] = None,
     ) -> FirstLayerResult:
-        """Run the full first-layer pipeline and return a FirstLayerResult."""
+        """[DEPRECATED] Run the full first-layer pipeline and return a FirstLayerResult."""
+        import warnings
+        warnings.warn(
+            "LLMFirstLayerService.process is deprecated and unused in production. Use get_unified_result instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         return await self._pipeline.process(
             query=query,
             request_id=request_id,
@@ -846,7 +897,10 @@ class LLMAskBackService:
 
         if len(candidate_intents) == 1:
             return candidate_intents[0]
-            
+
+        if has_hs_number and "calculation" in candidate_intents:
+            return "calculation"
+
         # Simple rule-based resolution
         # Check for hs lookup keywords
         hs_kws = ["hs", "lookup", "tariff", "classify", "code", "first", "1"]

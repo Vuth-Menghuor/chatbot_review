@@ -6,10 +6,26 @@ answers or store full conversation content.
 
 ## Architecture
 
-Normal text takes the low-latency path:
+Current calculator/web integration:
 
 ```text
-Main Chatbot Service token stream -> API Layer SSE proxy -> frontend fetch stream
+Main Chatbot Service complete /query response
+    -> API Layer response normalization
+    -> API Layer SSE start/done wrapper
+    -> Frontend structured block rendering
+```
+
+The current `/api/v1/chat/stream` endpoint is an SSE progress wrapper around a
+non-streaming `POST /query` call. It sends `start`, waits for the complete
+orchestrator response, normalizes it, and sends the final normalized response in
+`done`. It is not true upstream token streaming.
+
+Future streaming integration:
+
+```text
+Main Chatbot Service token stream
+    -> API Layer transparent SSE proxy
+    -> Frontend incremental rendering
 ```
 
 Long work stays in the Main Chatbot Service infrastructure:
@@ -165,14 +181,17 @@ The gateway calls these internal endpoints:
 
 Forwarded chat requests include `chat_id`, `project_id`, `user_id`, `role`,
 `message`, `attachments`, `metadata`, and `request_id`. The internal service must
-authorize the supplied identity at its trust boundary and return SSE-formatted
-chunks from its stream endpoint.
+authorize the supplied identity at its trust boundary. The current web
+calculator path uses the service's complete `/query` response rather than an
+upstream token stream.
 
 ## Streaming from the frontend
 
 `EventSource` cannot POST, so use `fetch()` and read `response.body`. The API
-returns `text/event-stream`, disables proxy buffering, and relays upstream bytes
-without collecting the answer.
+returns `text/event-stream` and disables proxy buffering. Today this endpoint is
+a progress wrapper: it emits `start`, performs one non-streaming `/query`
+request, then emits `done` with the complete normalized response. A future
+transparent SSE proxy may relay true upstream token chunks.
 
 ```javascript
 async function sendMessageStream({ token, chatId, projectId, message }) {

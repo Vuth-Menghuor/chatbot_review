@@ -44,3 +44,11 @@ export function normalizeAssistantContentForUi(raw: unknown): string {
       .replace(/\r/g, '\n'),
   );
 }
+
+export const UNRELIABLE_SERVICE_FALLBACK_MESSAGE =
+  'The service could not generate a reliable answer for this request. Please try again.';
+
+export function isUnreliableServiceFallbackText(text: unknown): boolean {
+  if (typeof text !== 'string') return false;
+  return /^Based on Cambodia Customs regulations:/i.test(text.trim());
+}

@@ -10,3 +10,6 @@ docker compose up -d
 docker compose build
 docker compose up -d 
 
+
+# Restart only the orchestrator container so it reloads config/network connections
+docker compose restart orchestrator-service-orches

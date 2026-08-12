@@ -63,6 +63,11 @@ class OrchestratorLLMService:
             return self._session_provider.get_or_create_session(session_id)
         raise RuntimeError("Session management is not available from the configured rewrite provider")
 
+    def get_session_readonly(self, session_id: str):
+        if hasattr(self._session_provider, "get_session_readonly"):
+            return self._session_provider.get_session_readonly(session_id)
+        return None
+
 
     def update_session_context(self, session_id: str, **kwargs: Any) -> None:
         if hasattr(self._session_provider, "update_session_context"):
@@ -123,6 +128,7 @@ class OrchestratorLLMService:
         user_input: str,
         context: Optional[Any] = None,
         intent_hint: Optional[str] = None,
+        prompt_name: str = "gemini_unified_first_layer",
     ) -> Tuple[str, Dict[str, Any]]:
         if self._is_explicit_hs_lookup_query(user_input): #Checks whether query already explicitly asks for HS code.
             return user_input, {
@@ -139,6 +145,7 @@ class OrchestratorLLMService:
             user_input,
             context,
             intent_hint,
+            prompt_name,
         )
         return result.value
 

@@ -62,11 +62,13 @@ class OllamaProvider(BaseLLMProvider):
         user_input: str,
         context: Optional[Any] = None,
         intent_hint: Optional[str] = None,
+        prompt_name: str = "gemini_unified_first_layer",
     ) -> Tuple[str, Dict[str, Any]]:
         return await self._rewriter_service.rewrite_input(
             user_input,
             context=context,
             intent_hint=intent_hint,
+            prompt_name=prompt_name,
         )
 
     async def summarize_text(self, text: str, context: Optional[Dict[str, Any]] = None) -> str:

@@ -138,6 +138,7 @@
   "interaction": {
     "title": "Additional input needed",
     "submit": "Submit",
+    "answerPlaceholder": "Type your answer",
     "submitted": "Response submitted",
     "cancelled": "Cancelled"
   },
@@ -147,8 +148,8 @@
     "valueLabel": "Value",
     "year": "Year",
     "confidence": "Confidence",
-    "primaryMatch": "Primary match ({percent}%)",
-    "alternative": "Alt {index}: {hsCode} ({percent}%)",
+    "primaryMatch": "Primary match",
+    "alternative": "Alt {index}: {hsCode}",
     "tariffSection": "Tariff rates",
     "reason": "Reasoning",
     "evidence": "Evidence",

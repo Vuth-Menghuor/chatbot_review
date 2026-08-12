@@ -22,6 +22,7 @@ const {
   taskId,
   hasChartData,
   echartsOption,
+  chartHeight,
   isLoading,
   isError,
   errorMessage,
@@ -62,18 +63,22 @@ function retryChart() {
 
 <template>
   <div
-    class="chart-task-renderer group/chart overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800"
+    class="chart-task-renderer group/chart overflow-hidden rounded-lg border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-zinc-950"
   >
     <div
-      class="flex items-center justify-between gap-3 border-b border-neutral-200 bg-neutral-100 px-4 py-2 text-xs text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800/60 dark:text-neutral-300"
+      class="flex items-center justify-between gap-3 border-b border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900/60 dark:text-neutral-300"
     >
       <div class="flex min-w-0 items-center gap-2">
-        <component :is="headerIcon" class="size-4 shrink-0 text-black dark:text-white" />
+        <span
+          class="flex size-7 shrink-0 items-center justify-center rounded-md border border-neutral-200 bg-white text-neutral-700 dark:border-neutral-700 dark:bg-zinc-950 dark:text-neutral-200"
+        >
+          <component :is="headerIcon" class="size-4" />
+        </span>
         <div class="min-w-0">
-          <div class="truncate font-semibold text-neutral-900 dark:text-neutral-100">
+          <div class="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
             {{ title || chartTypeLabel }}
           </div>
-          <div class="truncate font-mono uppercase tracking-widest">
+          <div class="truncate font-mono text-[10px] uppercase tracking-widest text-neutral-500 dark:text-neutral-400">
             {{ chartTypeLabel }}
           </div>
         </div>
@@ -107,9 +112,8 @@ function retryChart() {
       </div>
     </div>
 
-    <div class="relative bg-white p-4 dark:bg-zinc-950">
-      <div class="dot-pattern absolute inset-0 opacity-40" />
-      <div class="relative z-10">
+    <div class="bg-white p-3 dark:bg-zinc-950 sm:p-4">
+      <div>
         <div v-if="isLoading || loading" class="chart-loading" role="status" aria-live="polite">
           <v-skeleton-loader type="image" class="chart-skeleton" />
           <div class="chart-loading-label">
@@ -124,7 +128,7 @@ function retryChart() {
           v-else-if="hasChartData"
           ref="chartPanelRef"
           :option="echartsOption"
-          :height="320"
+          :height="chartHeight"
         />
 
         <div

@@ -103,6 +103,10 @@ def generate_visualizations(
     config = VISUALIZATION_REGISTRY.get(intent, VISUALIZATION_REGISTRY["summary"])
     chart_type = config["type"]
 
+    user_pref = params.get("chart_preference") or params.get("extra", {}).get("chart_preference")
+    if user_pref in ("bar", "line", "pie", "kpi"):
+        chart_type = user_pref
+
     # Resolve actual keys from rows
     first_row = rows[0]
 
@@ -315,7 +319,7 @@ def generate_visualizations(
                 dataset_label = "Net Trade Balance (USD)"
 
     # 2.5 Visual Suitability Check: Fallback to KPI card if 1 or 0 unique X-axis labels/rows (single-period queries only)
-    if chart_type in ("line", "bar", "pie"):
+    if chart_type in ("line", "bar", "pie") and not user_pref:
         is_single_period = params.get("period") is not None
         unique_labels = set(str(r.get(label_col, "")) for r in chart_rows if r.get(label_col) is not None)
         if intent != "trade_balance" and is_single_period and (len(chart_rows) <= 1 or len(unique_labels) <= 1):

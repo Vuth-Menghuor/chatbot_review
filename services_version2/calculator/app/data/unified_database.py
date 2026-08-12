@@ -210,27 +210,10 @@ class UnifiedDatabase(DatabaseInterface):
 
             rates = dict(row)
 
-            # 2. Preferential rate override (origin-specific)
-            origin = self._normalize_origin_country(origin_country)
-            if origin and origin != "XX":
-                cursor.execute(
-                    """
-                    SELECT preferential_cd_rate, agreement_code
-                    FROM preferential_rates
-                    WHERE hs_code = %s
-                      AND origin_country = %s
-                      AND (end_date IS NULL OR end_date > %s)
-                      AND effective_date <= %s
-                    ORDER BY effective_date DESC
-                    LIMIT 1
-                    """,
-                    (hs_code, origin, effective_date, effective_date),
-                )
-                pref = cursor.fetchone()
-                if pref:
-                    rates["cd_rate"] = pref["preferential_cd_rate"]
-                    rates["agreement_code"] = pref["agreement_code"]
-                    rates["source"] = f"shared_pg_preferential ({pref['agreement_code']})"
+            # NOTE: preferential_rates table is disabled for now.
+            # Preferential rates are provided by the user via preferential_cd_rate
+            # or auto-applied for known zero-rate agreements in calculator.py.
+            # The preferential_rates DB table is reserved for future use.
 
             cursor.close()
 
@@ -457,7 +440,7 @@ class UnifiedDatabase(DatabaseInterface):
         return None
 
     # =====================================================================
-    # Declared value —
+    # Deduction value (DV) —
     #   Standalone: Calculator DB → Shared PG
     #   Legacy:     Shared PG → Calculator DB
     # =====================================================================
@@ -490,14 +473,14 @@ class UnifiedDatabase(DatabaseInterface):
                     row = cursor.fetchone()
                     cursor.close()
                     if row:
-                        logger.info(f"Declared value for {hs_code} from SHARED PG (legacy)")
+                        logger.info(f"Deduction value (DV) for {hs_code} from SHARED PG (legacy)")
                         return {
                             "dv_per_metric_ton": Decimal(str(row[0])),
                             "currency": row[1] or "USD",
                             "source": row[2] or "government",
                         }
                 except Exception as e:
-                    logger.warning(f"Shared PostgreSQL declared-value query failed for {hs_code}: {e}")
+                    logger.warning(f"Shared PostgreSQL deduction-value (DV) query failed for {hs_code}: {e}")
 
             if self.calculator_db:
                 try:
@@ -505,7 +488,7 @@ class UnifiedDatabase(DatabaseInterface):
                     if dv:
                         return dv
                 except Exception as e:
-                    logger.warning(f"CalculatorDB declared-value query failed for {hs_code}: {e}")
+                    logger.warning(f"CalculatorDB deduction-value (DV) query failed for {hs_code}: {e}")
         else:
             # STANDALONE priority: Calculator DB → Shared PG
             if self.calculator_db:
@@ -514,7 +497,7 @@ class UnifiedDatabase(DatabaseInterface):
                     if dv:
                         return dv
                 except Exception as e:
-                    logger.warning(f"CalculatorDB declared-value query failed for {hs_code}: {e}")
+                    logger.warning(f"CalculatorDB deduction-value (DV) query failed for {hs_code}: {e}")
 
             if self.postgres and self.postgres.conn:
                 try:
@@ -540,7 +523,7 @@ class UnifiedDatabase(DatabaseInterface):
                             "source": row[2] or "government",
                         }
                 except Exception as e:
-                    logger.warning(f"Shared PostgreSQL declared-value query failed for {hs_code}: {e}")
+                    logger.warning(f"Shared PostgreSQL deduction-value (DV) query failed for {hs_code}: {e}")
 
         return None
 

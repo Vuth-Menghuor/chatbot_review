@@ -4,10 +4,10 @@ that exactly matches the calculator request schema.
 
 Supported cases:
 - normal: standard import (CIF + duty + VAT)
-- petroleum: HS 27xx + volume (liters) + net mass (kg) + DV per metric ton
+- petroleum: HS 27xx + volume (liters) + net mass (kg) + DV (Deduction Value) per metric ton
 - rubber: export regime + HS 40xx + net mass (kg)
 - fta_dv: import with FTA certificate (Form D, E, AK, AJ, RCEP, AANZ)
-- fta_dv_dq: FTA case + DQ factor
+- fta_dv_dq: FTA case + DQ (Deduction Quantity) factor
 
 Schema fields you MUST extract:
 - hs_code: normalize bare 8-digit → dotted (e.g. 27101229 → 2710.12.29)
@@ -16,15 +16,15 @@ Schema fields you MUST extract:
 - origin_country: 2-letter ISO code (e.g. VN, CN, TH, US)
 - net_mass_kg: weight in kilograms
 - volume_liter: volume in liters (only for petroleum)
-- declared_value + declared_value_basis: per_ton for petroleum, total otherwise
-- dq_factor: decimal 0-1 (e.g. 0.4 for 40% DQ). If user says "DQ=40%" output 0.4.
+- declared_value + declared_value_basis: per_ton for petroleum, total otherwise. Also accepts "DV" or "Deduction Value".
+- dq_factor: decimal 0-1 (e.g. 0.4 for 40% DQ). If user says "DQ=40%" or "Deduction Quantity=40%" output 0.4.
 - regime: import or export
 - flags:
   - petroleum_case: true if HS 27xx or keywords (petroleum, gasoline, diesel, fuel, motor spirit)
   - rubber_case: true if HS 40xx or keyword "rubber"
   - fta_applicable: true if FTA/ASEAN/ACFTA/preferential mentioned
   - fta_certificate_type: ACFTA, ASEAN, AANZFTA, AJCEP, AKFTA, RCEP
-  - dq_applicable: true if DQ or quota mentioned
+  - dq_applicable: true if DQ (Deduction Quantity) or quota mentioned
   - qip_exemption: true if QIP mentioned
   - sez_applicable: true if SEZ mentioned
 
@@ -41,11 +41,15 @@ Rules:
    - If the user already typed dots ("1234.56.78"), keep it exactly as-is.
    - Never return a bare number without dots in the hs_code field.
 8. HS PREFIXES (4, 5, or 6 digits): If the user provides a bare partial code combined with a product description (e.g. "7204 steel", "HS 72049 iron bars", "chapter 72 steel"), you MUST output the bare partial code in hs_code (e.g. "7204" or "72049"). Do NOT append dots or zeros. The calculator will combine the prefix with the description to find the best matching 8-digit HS code. Always include the description when a partial HS code is present.
-9. If the query mentions "DV = 700" for petroleum, set declared_value=700 and declared_value_basis="per_ton".
-10. If the query mentions "DV = 5" for a normal/FTA case, set declared_value=5 and declared_value_basis="total" (DV is the COP rate percentage).
+9. If the query mentions "DV = 700" or "Deduction Value = 700" for petroleum, set declared_value=700 and declared_value_basis="per_ton".
+10. If the query mentions "DV = 5" or "Deduction Value = 5" for a normal/FTA case, set declared_value=5 and declared_value_basis="total" (DV is the COP rate percentage).
 11. If the user does NOT provide a CIF value (no price, no amount, no money mentioned), you MUST set customs_value = 8000 and add "CIF value defaulted to 8000 USD (user did not provide)" to your reasoning. Do NOT set customs_value to 0.
 12. COMMERCIAL DESCRIPTIONS ARE VALID INPUT: If the user provides a product description but NO explicit HS code (e.g., "iphone 15 from china", "toyota camry 2024", "rice from thailand"), you MUST extract the description into goods.description and leave hs_code null. Do NOT fail or return an error. The calculator will resolve the HS code automatically from the description. Always include the description field when the user mentions a product name.
 13. Be robust to typos, misspellings, and noisy input (e.g. "ciiif valueb umport vietmam" → infer CIF value, import, Vietnam). Do NOT fail just because words are misspelled.
+14. CRITICAL — Currency codes vs magnitude suffixes:
+    - "khr" means Cambodian Riel (currency), NOT thousand. "500khr" → customs_value=500, currency="KHR".
+    - "eur" means Euro (currency), NOT thousand. "5000eur" → customs_value=5000, currency="EUR".
+    - Only expand K/M/B when they are standalone magnitude suffixes (e.g. "2.2M" → 2200000), NEVER when they are part of a currency code.
 
 Today's date: {today}
 

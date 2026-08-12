@@ -99,7 +99,7 @@ def calculate_dv_declared_value(
     fair_market_value: Union[float, Decimal]
 ) -> Decimal:
     """
-    Calculate DV (Declared Value).
+    Calculate DV (Deduction Value).
     DV is the fair amount of price that keeps the market in the middle,
     not too high or too low.
     Used as the customs valuation basis for imports only (not exports).
@@ -559,8 +559,8 @@ def calculate_dq_adjustment(
     market_price: Union[float, Decimal]
 ) -> Decimal:
     """
-    DQ (Deal/Trade Agreement) - real agreement between one company and the
-    government. Cambodia Customs-specific, not formal in other countries.
+    DQ (Deduction Quantity) - Cambodia Customs-specific adjustment factor
+    between one company and the government. Not formal in other countries.
     
     Formula: government_agreed_price - market_price
     
@@ -750,10 +750,10 @@ def calculate_petroleum_phase1_cpp_base(
     Formula: (dv * exchange_rate * net_mass) / 1000
     
     Args:
-        dv: Declared Value
+        dv: Deduction Value
         exchange_rate: Exchange rate (exact value)
         net_mass: Net mass in kg
-        
+
     Returns:
         CPP base amount
     """
@@ -914,10 +914,10 @@ def calculate_rubber_etr(
     Formula: (dv * exchange_rate * net_mass) / 1000
     
     Args:
-        dv: Declared Value
+        dv: Deduction Value
         exchange_rate: Exchange rate (exact value)
         net_mass: Net mass in kg
-        
+
     Returns:
         ETR amount
     """
@@ -1080,8 +1080,8 @@ def calculate_fta_dv_dq_case_sop(
         sop_base: SOP base
         cop_base: COP base
         sop_rate: SOP rate as decimal
-        dq: DQ (Deal/Trade Agreement) factor
-        
+        dq: DQ (Deduction Quantity) factor
+
     Returns:
         SOP amount with DQ adjustment (ALWAYS rounded UP to nearest 100)
     """
@@ -1188,7 +1188,7 @@ def calculate_fta_dv_case(
     vop_rate: Union[float, Decimal] = Decimal('0.10')
 ) -> Dict[str, Decimal]:
     """
-    FTA/DV CASE: Free Trade Agreement with Declared Value (duty typically 0%) with CONDITIONAL VAT base.
+    FTA/DV CASE: Free Trade Agreement with Deduction Value (duty typically 0%) with CONDITIONAL VAT base.
     
     Sequence:
         1. Currency Conversion: Already done (customs_value provided)

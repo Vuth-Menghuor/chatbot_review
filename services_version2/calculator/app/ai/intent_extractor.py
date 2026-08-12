@@ -28,7 +28,11 @@ from typing import Any, Dict, Optional
 import httpx
 
 from ..core.config import get_settings
-from ...prompts import get_intent_extraction_prompt
+
+try:
+    from prompts import get_intent_extraction_prompt
+except ImportError:
+    from calculator.prompts import get_intent_extraction_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -58,8 +62,8 @@ _HS_RE = re.compile(r"\b(\d{4}(?:\.\d{2}){0,2}|\d{5,8})\b")
 _VOL_RE = re.compile(r"(\d[\d,.]*)\s*(?:L|l|liters?|litres?)\b")
 _MASS_RE = re.compile(r"(\d[\d,.]*)\s*(?:kg|kgs|kilos?|kilograms?)\b")
 _TON_RE = re.compile(r"(\d[\d,.]*)\s*(?:tons?|tonnes?)\b")
-_DV_RE = re.compile(r"DV\s*=\s*([\d,.]+)", re.IGNORECASE)
-_DQ_RE = re.compile(r"DQ\s*(?:factor|percentage|percent|pct)?\s*[:=]?\s*([\d,.]+)", re.IGNORECASE)
+_DV_RE = re.compile(r"(?:DV|Deduction\s*Value)\s*[:=]?\s*([\d,.]+)", re.IGNORECASE)
+_DQ_RE = re.compile(r"(?:DQ|Deduction\s*Quantity)\s*(?:factor|percentage|percent|pct)?\s*[:=]?\s*([\d,.]+)", re.IGNORECASE)
 
 
 # ---------------------------------------------------------------------------
@@ -119,11 +123,24 @@ class IntentExtractor:
           1. LLM extraction (if enabled and available)
           2. Regex fallback
           3. Return empty IntentResult with source="none"
+
+        Post-validation: when LLM returns a currency that appears in the
+        original text as a glued suffix (e.g. "400000000khr"), the LLM
+        may inflate the value by treating "k" as ×1000. We cross-check
+        against our deterministic regex and prefer the regex result when
+        the discrepancy is exactly 1000× for KHR/EUR.
         """
         if self.enabled:
             try:
                 llm_result = await self._extract_llm(text)
                 if llm_result and llm_result.confidence >= 0.5:
+                    corrected = self._post_validate_money(text, llm_result)
+                    if corrected is not llm_result:
+                        logger.info(
+                            f"LLM intent extraction succeeded (confidence={llm_result.confidence}) "
+                            f"— value corrected by regex validation"
+                        )
+                        return corrected
                     logger.info(f"LLM intent extraction succeeded (confidence={llm_result.confidence})")
                     return llm_result
             except Exception as e:
@@ -142,6 +159,48 @@ class IntentExtractor:
 
         logger.warning("Intent extraction failed: both LLM and regex returned nothing")
         return IntentResult(source="none", reasoning="Could not parse query")
+
+    def _post_validate_money(self, text: str, llm_result: IntentResult) -> IntentResult:
+        """
+        Cross-check LLM-extracted value+currency against deterministic regex.
+
+        Known failure mode: LLM sees "400,000,000khr" and treats "k" as ×1000,
+        producing customs_value=400,000,000,000. Our regex correctly parses
+        "khr" as the currency KHR. When regex value × 1000 == LLM value and
+        currency is KHR/EUR, we trust the regex.
+
+        Returns:
+            Corrected IntentResult (may be the same object if no issue found).
+        """
+        regex_result = self._extract_regex(text)
+        if not regex_result:
+            return llm_result
+
+        llm_val = llm_result.valuation.get("customs_value")
+        llm_cur = llm_result.valuation.get("currency")
+        reg_val = regex_result.valuation.get("customs_value")
+        reg_cur = regex_result.valuation.get("currency")
+
+        if reg_val is None or reg_cur is None:
+            return llm_result
+
+        # If currencies match and LLM value is exactly 1000× regex value,
+        # the LLM likely misread KHR/EUR suffix as a ×1000 multiplier.
+        if llm_cur == reg_cur and llm_val is not None:
+            try:
+                ratio = float(llm_val) / float(reg_val)
+                if 990 < ratio < 1010:  # within ±1% of exactly 1000×
+                    logger.warning(
+                        f"LLM inflated {reg_val} {reg_cur} by ~1000× to {llm_val}. "
+                        f"Correcting to regex-extracted value."
+                    )
+                    llm_result.valuation["customs_value"] = reg_val
+                    # Preserve any other fields the LLM extracted better
+                    return llm_result
+            except (ValueError, TypeError, ZeroDivisionError):
+                pass
+
+        return llm_result
 
     def extract_sync(self, text: str) -> IntentResult:
         """Synchronous wrapper."""
@@ -371,8 +430,8 @@ class IntentExtractor:
             elif "aanzfta" in lowered:
                 flags["fta_certificate_type"] = "AANZFTA"
 
-        # DQ
-        if "dq" in lowered or (flags.get("fta_applicable") and "quota" in lowered):
+        # DQ (Deduction Quantity)
+        if any(k in lowered for k in ("dq", "deduction quantity", "deductionquantity")) or (flags.get("fta_applicable") and "quota" in lowered):
             flags["dq_applicable"] = True
             case_type = "fta_dv_dq"
 
@@ -512,6 +571,15 @@ class IntentExtractor:
 
     @staticmethod
     def _extract_money(text: str) -> tuple[Optional[float], Optional[str]]:
+        # Explicitly handle currency codes that share a prefix with magnitude
+        # suffixes (e.g. "400,000,000khr" — 'k' must be part of KHR, not ×1000).
+        m = re.search(r"([\d,.]+)\s*(KHR|khr)\b", text, re.IGNORECASE)
+        if m:
+            return float(m.group(1).replace(",", "")), "KHR"
+        m = re.search(r"([\d,.]+)\s*(EUR|eur)\b", text, re.IGNORECASE)
+        if m:
+            return float(m.group(1).replace(",", "")), "EUR"
+
         for pat in [
             r"[\$\€\£\¥]\s*([\d,.]+(?:\s*[KkMmBb])?)\s*(?:USD|usd)?",
             r"([\d,.]+(?:\s*[KkMmBb])?)\s*(?:USD|usd)",
@@ -519,6 +587,7 @@ class IntentExtractor:
             m = re.search(pat, text, re.IGNORECASE)
             if m:
                 return IntentExtractor._expand_number(m.group(1)), "USD"
+        # Remaining KHR/EUR catch-all (magnitude suffix already excluded above)
         m = re.search(r"([\d,.]+(?:\s*[KkMmBb])?)\s*(KHR|khr|EUR|eur)", text, re.IGNORECASE)
         if m:
             return IntentExtractor._expand_number(m.group(1)), m.group(2).upper()
@@ -578,7 +647,7 @@ class IntentExtractor:
         desc = text
         if hs_code:
             desc = desc.replace(hs_code, "")
-        desc = re.sub(r"DV\s*=\s*[\d,.]+", "", desc, flags=re.IGNORECASE)
+        desc = re.sub(r"(?:DV|Deduction\s*Value)\s*[:=]?\s*[\d,.]+", "", desc, flags=re.IGNORECASE)
         desc = re.sub(r"[\$\€\£\¥]?\s*[\d,.]+(?:\s*[KkMmBb])?\s*(?:USD|usd|\$)?", "", desc)
         desc = re.sub(r"\d[\d,.]*\s*(?:kg|kgs|kilos?|kilograms?|liters?|litres?|tons?|tonnes?|L)\b", "", desc, flags=re.IGNORECASE)
         desc = re.sub(r"\b[\d,.]+(?:\s*[KkMmBb])?\b", "", desc)

@@ -336,6 +336,7 @@ def orchestrate_query_plan(scoped_plan: ScopedQueryPlan) -> FinalQueryPlan:
         "consolidate_flows": consolidate_flows,
         "user_limit": original_limit,
         "period_was_defaulted": scoped_plan_extra_defaulted,
+        "chart_preference": scoped_plan.chart_preference,
         # Flag that the default period is the current in-progress year (YTD data, not a full year)
         "is_current_year_partial": (
             scoped_plan_extra_defaulted

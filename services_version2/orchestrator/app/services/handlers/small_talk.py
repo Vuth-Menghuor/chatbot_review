@@ -22,6 +22,25 @@ async def generate_small_talk_response(query: str, llm_service=None) -> str:
     """
     DEFAULT_FALLBACK = "Hello! I'm here to help you with Cambodia customs and trade questions. How can I assist you today?"
     
+    cleaned = (query or "").strip().lower().strip("?!.,- ")
+    greetings_map = {
+        "hi": "Hello! I'm here to help you with Cambodia customs and trade questions. How can I assist you today?",
+        "hello": "Hello! I'm here to help you with Cambodia customs and trade questions. How can I assist you today?",
+        "hey": "Hello! I'm here to help you with Cambodia customs and trade questions. How can I assist you today?",
+        "good morning": "Good morning! How can I help you with Cambodia customs and trade questions today?",
+        "good afternoon": "Good afternoon! How can I help you with Cambodia customs and trade questions today?",
+        "good evening": "Good evening! How can I help you with Cambodia customs and trade questions today?",
+        "hello there": "Hello! I'm here to help you with Cambodia customs and trade questions. How can I assist you today?",
+        "hi there": "Hello! I'm here to help you with Cambodia customs and trade questions. How can I assist you today?",
+        "សួស្តី": "សួស្តី! ខ្ញុំជាជំនួយការស្វ័យប្រវត្តិនៃអគ្គនាយកដ្ឋានគយ និងរដ្ឋាករកម្ពុជា។ តើខ្ញុំអាចជួយអ្វីលោកអ្នកបានខ្លះនៅថ្ងៃនេះ?",
+        "ជំរាបសួរ": "ជំរាបសួរ! ខ្ញុំជាជំនួយការស្វ័យប្រវត្តិនៃអគ្គនាយកដ្ឋានគយ និងរដ្ឋាករកម្ពុជា។ តើខ្ញុំអាចជួយអ្វីលោកអ្នកបានខ្លះនៅថ្ងៃនេះ?",
+        "suasdey": "សួស្តី! ខ្ញុំជាជំនួយការស្វ័យប្រវត្តិនៃអគ្គនាយកដ្ឋានគយ និងរដ្ឋាករកម្ពុជា។ តើខ្ញុំអាចជួយអ្វីលោកអ្នកបានខ្លះនៅថ្ងៃនេះ?",
+        "suesdey": "សួស្តី! ខ្ញុំជាជំនួយការស្វ័យប្រវត្តិនៃអគ្គនាយកដ្ឋានគយ និងរដ្ឋាករកម្ពុជា។ តើខ្ញុំអាចជួយអ្វីលោកអ្នកបានខ្លះនៅថ្ងៃនេះ?",
+    }
+    
+    if cleaned in greetings_map:
+        return greetings_map[cleaned]
+    
     # Call LLM as a general-purpose conversational assistant.
     if llm_service and llm_service.is_available():
         current_datetime = datetime.now(timezone.utc).strftime("%A, %B %d, %Y at %H:%M UTC")

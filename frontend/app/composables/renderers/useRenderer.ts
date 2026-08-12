@@ -16,6 +16,7 @@ import KeyValueRenderer from '~/components/renderers/KeyValueRenderer.vue';
 import TableRenderer from '~/components/renderers/TableRenderer.vue';
 import DetailsRenderer from '~/components/renderers/DetailsRenderer.vue';
 import ReferencesRenderer from '~/components/renderers/ReferencesRenderer.vue';
+import OfficialReferenceRenderer from '~/components/renderers/OfficialReferenceRenderer.vue';
 import ChartTaskRenderer from '~/components/renderers/ChartTaskRenderer.vue';
 import WorkflowRenderer from '~/components/renderers/WorkflowRenderer.vue';
 import ImageRenderer from '~/components/renderers/ImageRenderer.vue';
@@ -39,6 +40,8 @@ export const rendererMap: Record<string, Component> = {
   table: TableRenderer,
   details: DetailsRenderer,
   references: ReferencesRenderer,
+  official_reference: OfficialReferenceRenderer,
+  clarification: InteractionRenderer,
   chart: ChartTaskRenderer,
   workflow: WorkflowRenderer,
   image: ImageRenderer,
@@ -48,19 +51,17 @@ export const rendererMap: Record<string, Component> = {
   coverage: CoverageRenderer,
   code: CodeBlockRenderer,
   ocr: OCRRenderer,
-  interaction: InteractionRenderer,
   tool_output: ToolOutputRenderer,
   error: ErrorRenderer,
-  fallback: MarkdownRenderer,
 };
 
 // ─── Block Type Descriptions ─────────────────────────────────────────────────
 // Human-readable labels for each canonical block type.
 export const blockTypeLabels: Record<string, string> = {
-  markdown: 'Markdown', reasoning: 'Reasoning', summary: 'Summary', key_value: 'Key Value', table: 'Table', details: 'Details', references: 'References', chart: 'Chart',
+  markdown: 'Markdown', reasoning: 'Reasoning', summary: 'Summary', key_value: 'Key Value', table: 'Table', details: 'Details', references: 'References', official_reference: 'Official Reference', clarification: 'Clarification', chart: 'Chart',
   workflow: 'Workflow', image: 'Image', prediction: 'Prediction', report: 'Report',
-  suggestions: 'Suggestions', coverage: 'Coverage', code: 'Code', ocr: 'OCR', interaction: 'Interaction', tool_output: 'Tool Output',
-  error: 'Error', fallback: 'Fallback',
+  suggestions: 'Suggestions', coverage: 'Coverage', code: 'Code', ocr: 'OCR', tool_output: 'Tool Output',
+  error: 'Error',
 };
 
 const streamingVisibleTypes = new Set(['markdown', 'reasoning', 'chart', 'workflow']);
@@ -119,7 +120,7 @@ export function useRenderer() {
 
   function resolveRenderer(type: string): Component {
     const canonical = canonicalizeBlockType(type);
-    return rendererMap[canonical] ?? rendererMap.fallback ?? rendererMap.markdown;
+    return rendererMap[canonical] ?? MarkdownRenderer;
   }
 
   function isKnownType(type: string): boolean {

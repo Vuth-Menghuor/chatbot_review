@@ -889,7 +889,7 @@ class RuleBasedValidatorProvider:
             
         # 2. Value check
         value_indicators = ["$", "usd", "cif", "fob", "price", "value", "khr", "baht", "exempt"]
-        has_value = any(vi in t_lower for vi in value_indicators) and re.search(r'\b\d+\b', t_lower)
+        has_value = any(vi in t_lower for vi in value_indicators) and re.search(r'\d+', t_lower)
         if not has_value:
             missing.append("customs_value")
             

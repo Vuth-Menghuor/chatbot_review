@@ -55,7 +55,7 @@ export function resolveRenderer(type: string): Component {
 | `structured`, `tool`  | `tool_output` |
 | `steps`, `guide`      | `workflow`    |
 | `latex`, `formula`, `equation`, `mathjax` | `markdown` |
-| `calculator`, `calc`  | `markdown`    |
+| `calculator`, `calc`  | legacy local tool alias only: `markdown`; GDCE calculator API responses should already contain normalized blocks |
 
 
 ## Adding a new renderer

@@ -46,7 +46,7 @@ async def ready(response: Response):
     return {"status": "ready" if is_ready else "not_ready", "dependencies": dependencies}
 
 
-# Backward-compatible legacy endpoint for existing scripts while callers migrate to /live and /ready.
+# Backward-compatible legacy endpoint for existing scripts w    hile callers migrate to /live and /ready.
 @router.get("/health")
 async def health():
     dependencies = await dependency_statuses()

@@ -36,6 +36,7 @@ class RawQueryPlan:
     raw_sort_metric: Optional[str] = None
     raw_limit: Optional[int] = None
     raw_offset: Optional[int] = None
+    raw_chart_preference: Optional[str] = None
     version: str = "trade_volume_1.0"
     question: Optional[str] = None
 
@@ -68,6 +69,7 @@ class EnrichedQueryPlan:
     sort_metric: Optional[str] = None
     limit: Optional[int] = None
     offset: Optional[int] = None
+    chart_preference: Optional[str] = None
     version: str = "trade_volume_1.0"
     hs_vs_sitc_suggestion: Optional[str] = None  # "HS" or "SITC"
     question: Optional[str] = None
@@ -77,31 +79,32 @@ class EnrichedQueryPlan:
 class ScopedQueryPlan:
     """Stage 3 Output: Scoping rules, base defaults, country perspective flips, and classification system locked in."""
     intent: str
-    version: str
-    origin_country: Optional[str]
-    destination_country: Optional[str]
-    partner_countries: Optional[List[str]]
-    trade_direction: Optional[str]
-    hs_code: Optional[str]
-    hs_chapter: Optional[str]
-    sitc_section: Optional[str]
-    sitc_division: Optional[str]
-    mode_of_transport: Optional[Union[str, List[str]]]
-    year: Optional[int]
-    years: Optional[List[int]]
-    month: Optional[int]
-    quarter: Optional[str]
-    semester: Optional[int]
-    start_period: Optional[str]
-    end_period: Optional[str]
-    frequency: Optional[str]
-    group_by: List[str]
-    dimensions: List[str]
-    metrics: List[str]
-    sort_order: Optional[str]
-    sort_metric: Optional[str]
-    limit: int
-    offset: int
+    version: str = "trade_volume_1.0"
+    origin_country: Optional[str] = None
+    destination_country: Optional[str] = None
+    partner_countries: Optional[List[str]] = None
+    trade_direction: Optional[str] = None
+    hs_code: Optional[str] = None
+    hs_chapter: Optional[str] = None
+    sitc_section: Optional[str] = None
+    sitc_division: Optional[str] = None
+    mode_of_transport: Optional[Union[str, List[str]]] = None
+    year: Optional[int] = None
+    years: Optional[List[int]] = None
+    month: Optional[int] = None
+    quarter: Optional[str] = None
+    semester: Optional[int] = None
+    start_period: Optional[str] = None
+    end_period: Optional[str] = None
+    frequency: Optional[str] = None
+    group_by: List[str] = field(default_factory=list)
+    dimensions: List[str] = field(default_factory=list)
+    metrics: List[str] = field(default_factory=list)
+    sort_order: Optional[str] = None
+    sort_metric: Optional[str] = None
+    limit: int = 100
+    offset: int = 0
+    chart_preference: Optional[str] = None
     question: Optional[str] = None
 
 
@@ -109,16 +112,17 @@ class ScopedQueryPlan:
 class FinalQueryPlan:
     """Stage 4 Output: Fully structured query parameters ready for validation & serialization."""
     intent: str
-    version: str
-    filters: Dict[str, Any]
-    metrics: List[str]
-    group_by: List[str]
-    dimensions: List[str]
-    period: Optional[str]
-    start_period: Optional[str]
-    end_period: Optional[str]
-    frequency: Optional[str]
-    sort: Optional[str]
-    limit: int
-    offset: int
+    version: str = "trade_volume_1.0"
+    filters: Dict[str, Any] = field(default_factory=dict)
+    metrics: List[str] = field(default_factory=lambda: ["VALUE_USD", "NET_WEIGHT"])
+    group_by: List[str] = field(default_factory=list)
+    dimensions: List[str] = field(default_factory=list)
+    period: Optional[str] = None
+    start_period: Optional[str] = None
+    end_period: Optional[str] = None
+    frequency: Optional[str] = None
+    sort: Optional[str] = None
+    limit: int = 100
+    offset: int = 0
     extra: Dict[str, Any] = field(default_factory=dict)
+

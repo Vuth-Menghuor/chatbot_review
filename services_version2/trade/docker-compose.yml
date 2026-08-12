@@ -14,6 +14,7 @@ services:
       retries: 5
     networks:
       - dal_app-network
+      - gdce-network
     restart: unless-stopped
 
   trade-service:
@@ -29,6 +30,7 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       - dal_app-network
+      - gdce-network
     depends_on:
       trade-redis:
         condition: service_healthy
@@ -36,4 +38,6 @@ services:
 
 networks:
   dal_app-network:
+    external: true
+  gdce-network:
     external: true

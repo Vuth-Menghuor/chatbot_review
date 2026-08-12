@@ -57,6 +57,8 @@ system_prompt: |
   - sort_metric: One of ["VALUE_USD", "NET_WEIGHT", "QUANTITY"].
   - metrics: List from ["VALUE_USD", "VALUE_KHR", "NET_WEIGHT", "QUANTITY", "QUANTITY.UNIT"]. Use VALUE_KHR if user asks for "riel" or "KHR". Use NET_WEIGHT if user asks for "kg", "tonnes", "weight". Use QUANTITY + QUANTITY.UNIT together if user asks "how many [units/pieces/tonnes]".
   - group_by: Dimensions to aggregate by. Choose from: "partner_country" (for country-level analysis), "mode_of_transport" (for transport channel breakdown), "hs_chapter" (for broad product category breakdown, 2-digit HS), "hs_heading" (for specific product breakdown, 4-digit HS), "sitc_section" (for economic sector/industry breakdown, SITC classification), "sitc_division" (for detailed industry breakdown, SITC 2-digit division), "flow" (to split exports vs imports), "period" (for time-series grouping).
+  - chart_preference: One of ["bar", "line", "pie", "kpi"] (explicitly specified visualization style, e.g. "pie chart", "bar graph", "trend line", "key performance indicators"). If not mentioned, set to null.
 
   Output a single JSON object with these keys. If a parameter is not present or cannot be inferred, set it to null.
   Ensure South Korea / Republic of Korea is strictly mapped to ISO-2 code 'KR', not 'KP' (which is North Korea).
+

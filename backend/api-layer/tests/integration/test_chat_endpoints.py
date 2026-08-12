@@ -98,7 +98,97 @@ async def test_send_chat_returns_normalized_response(monkeypatch):
     assert response["chat_id"] == str(chat.id)
     assert response["message"]["content"][0]["type"] == "markdown"
     assert upstream.calls[0][0:2] == ("POST", "/query")
+    upstream_body = upstream.calls[0][2]["json"]
+    assert upstream_body["question"] == "hello"
+    assert upstream_body["session_id"] == str(chat.id)
+    assert upstream_body["chat_id"] == str(chat.id)
+    assert "presentation" not in upstream_body
     assert db.committed is True
+
+
+@pytest.mark.asyncio
+async def test_send_chat_forwards_presentation_preference_to_orchestrator(monkeypatch):
+    user = make_user()
+    chat = make_chat_thread(user_id=user.id)
+    upstream = FakeMainChatbotClient(
+        {
+            "request_id": "req-chat-presentation",
+            "session_id": str(chat.id),
+            "intent": "hs_code_lookup",
+            "answer": "The service did not return structured rows.",
+            "table": None,
+            "visualization": None,
+        }
+    )
+
+    async def fake_create_or_get_chat(*_args, **_kwargs):
+        return chat
+
+    async def fake_touch_chat(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(chat_endpoint, "create_or_get_chat", fake_create_or_get_chat)
+    monkeypatch.setattr(chat_endpoint, "touch_chat", fake_touch_chat)
+    monkeypatch.setattr(chat_endpoint, "main_chatbot_client", upstream)
+
+    presentation = {"preferred_blocks": ["table"], "fallback": "markdown"}
+    response = await chat_endpoint.send_chat(
+        ChatRequest(message="Give me the HS code for cotton fabric as a table.", presentation=presentation),
+        fake_request(),
+        user=user,
+        db=FakeChatSession(),
+    )
+
+    upstream_body = upstream.calls[0][2]["json"]
+    assert upstream_body == {
+        "question": "Give me the HS code for cotton fabric as a table.",
+        "session_id": str(chat.id),
+        "chat_id": str(chat.id),
+        "presentation": presentation,
+    }
+    assert [block["type"] for block in response["message"]["content"]] == ["markdown"]
+
+
+@pytest.mark.asyncio
+async def test_send_chat_forwards_clarification_context_to_orchestrator(monkeypatch):
+    user = make_user()
+    chat = make_chat_thread(user_id=user.id)
+    upstream = FakeMainChatbotClient(
+        {
+            "request_id": "req-chat-clarified",
+            "session_id": str(chat.id),
+            "intent": "hs_code_lookup",
+            "answer": "Refined classification remains service-generated.",
+        }
+    )
+
+    async def fake_create_or_get_chat(*_args, **_kwargs):
+        return chat
+
+    async def fake_touch_chat(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(chat_endpoint, "create_or_get_chat", fake_create_or_get_chat)
+    monkeypatch.setattr(chat_endpoint, "touch_chat", fake_touch_chat)
+    monkeypatch.setattr(chat_endpoint, "main_chatbot_client", upstream)
+
+    context = {"reply_to_request_id": "cf827455-bd51-4424-a944-a3a3582244b7"}
+    await chat_endpoint.send_chat(
+        ChatRequest(
+            chat_id=chat.id,
+            message="The fabric is 100% cotton, dyed, and weighs 180 g/m².",
+            context=context,
+        ),
+        fake_request(),
+        user=user,
+        db=FakeChatSession(),
+    )
+
+    upstream_body = upstream.calls[0][2]["json"]
+    assert upstream_body["question"] == "The fabric is 100% cotton, dyed, and weighs 180 g/m²."
+    assert upstream_body["session_id"] == str(chat.id)
+    assert upstream_body["chat_id"] == str(chat.id)
+    assert upstream_body["context"] == context
 
 
 # Failed orchestrator-style payloads should become normalized failed responses with an error block.

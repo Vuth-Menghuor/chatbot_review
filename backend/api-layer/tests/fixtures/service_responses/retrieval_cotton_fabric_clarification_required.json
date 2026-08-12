@@ -1,0 +1,84 @@
+{
+  "request_id": "cf827455-bd51-4424-a944-a3a3582244b7",
+  "session_id": "bruno-local-session",
+  "question": "What is the HS code for cotton fabric?",
+  "answer": "Based on your request for cotton fabric, the most suitable candidate is HS 5208.39.00, which covers lightweight dyed woven cotton fabrics containing at least 85% cotton.\n1. 5208.39.00 - Woven cotton fabrics containing 85% or more cotton by weight, weighing no more than 200 g/m², dyed\n2. 5408.10.90 - Other woven fabrics made from high tenacity viscose rayon artificial filament yarn\n3. 5408.10.10 - Unbleached woven fabrics made from high tenacity viscose rayon artificial filament yarn\n\nSince 'cotton fabric' covers many variations, this is a preliminary best match based on the available options.\n\n Verify on the official GDCE tariff lookup: https://customs.gov.kh/en/publications/14037-customs-tariff-of-cambodia-km-2022",
+  "intent": "hs_code_lookup",
+  "status": "clarification_required",
+  "citations": [
+    {
+      "doc_id": "4769",
+      "title": null,
+      "snippet": "Woven fabrics of cotton, containing 85 % or more by weight of cotton, weighing not more than 200 g/m2. > Dyed : > Other Fabrics    5208.39.00",
+      "score": 0.95
+    },
+    {
+      "doc_id": "4959",
+      "title": null,
+      "snippet": "Woven fabrics of artificial filament yarn, including woven fabrics obtained from materials of heading 54.05. > Woven fabrics obtained from high tenacity yarn of viscose rayon : > Other",
+      "score": 0.57070094
+    },
+    {
+      "doc_id": "4958",
+      "title": null,
+      "snippet": "Woven fabrics of artificial filament yarn, including woven fabrics obtained from materials of heading 54.05. > Woven fabrics obtained from high tenacity yarn of viscose rayon : > Unbleached",
+      "score": 0.56904304
+    }
+  ],
+  "clarifications": [
+    "What is the exact fiber composition (e.g., 100% cotton vs. blended with artificial filaments)?",
+    "Is the fabric dyed, unbleached, bleached, printed, or made of yarns of different colors?",
+    "What is the weight of the fabric per square meter (e.g., more or less than 200 g/m²)?"
+  ],
+  "errors": [],
+  "latency_ms": 10976.346492767334,
+  "metadata": {
+    "semantic_count": 3,
+    "structured_count": 0,
+    "total_count": 3,
+    "answer_source": "gemini_llm",
+    "hs_prefix": "520839",
+    "candidate_source": "prefix_scan_with_semantic_fill_2",
+    "candidate_confidence": "low",
+    "normalized_input": "what is the hs code for cotton fabric?",
+    "validation_passed": true,
+    "scope_keywords_detected": [],
+    "llm_confidence": 0.99,
+    "nlu_unified_result": {
+      "reason": "User is asking for the HS code for a specific commodity (cotton fabric).",
+      "is_safe": true,
+      "is_on_topic": true,
+      "intent": "hs_code_lookup",
+      "rewritten_query": "HS code cotton fabric",
+      "requested_language": null,
+      "is_language_explicitly_requested": false,
+      "is_ambiguous": false,
+      "suggested_clarification_prompt": null,
+      "confidence": 0.99,
+      "entity": "cotton fabric",
+      "entity_confidence": "high",
+      "query_nature": "specific",
+      "query": "what is the hs code for cotton fabric?"
+    },
+    "nlu_entity": "cotton fabric",
+    "nlu_entity_confidence": "high",
+    "has_nlu_entity": true,
+    "language": "en",
+    "intent_query": "cotton fabric?",
+    "service_query": "import cotton fabric latest",
+    "query_strategy": "rewritten_after_llm",
+    "service_latencies_s": {
+      "retrieval": 7.634
+    }
+  },
+  "table": null,
+  "visualization": null,
+  "message": "Based on your request for cotton fabric, the most suitable candidate is HS 5208.39.00, which covers lightweight dyed woven cotton fabrics containing at least 85% cotton.\n1. 5208.39.00 - Woven cotton fabrics containing 85% or more cotton by weight, weighing no more than 200 g/m², dyed\n2. 5408.10.90 - Other woven fabrics made from high tenacity viscose rayon artificial filament yarn\n3. 5408.10.10 - Unbleached woven fabrics made from high tenacity viscose rayon artificial filament yarn\n\nSince 'cotton fabric' covers many variations, this is a preliminary best match based on the available options.\n\n Verify on the official GDCE tariff lookup: https://customs.gov.kh/en/publications/14037-customs-tariff-of-cambodia-km-2022",
+  "suggestion": [
+    "How do I import cotton fabric?",
+    "What's the import duty on cotton fabric?",
+    "Any trade data for cotton fabric?"
+  ],
+  "summary": null,
+  "summary_metrics": null
+}

@@ -8,6 +8,50 @@ _TRADE_COUNTRIES = frozenset([
     "india", "germany", "france", "uk", "united kingdom", "australia", "canada"
 ])
 
+_TYPO_GAZETTEER_COUNTRIES = frozenset(_TRADE_COUNTRIES)
+_TYPO_GAZETTEER_DOMAIN = frozenset([
+    "hs", "hscode", "hs-code", "code", "codes", "customs",
+    "duty", "duties", "tax", "taxes", "tariff", "tariffs",
+    "trade", "import", "export", "calculate", "calculation",
+    "classification", "procedure", "policy", "regulation",
+    "rice", "vehicle", "product", "laptop", "phone",
+    "computer", "electronics", "gdce", "gdce-intern",
+])
+_TYPO_GAZETTEER_BRANDS = frozenset([
+    "bmw", "toyota", "honda", "mazda", "nissan", "hyundai",
+    "kia", "mitsubishi", "suzuki", "isuzu", "mercedes",
+    "volkswagen", "audi", "ford", "chevrolet", "peugeot",
+    "volvo", "renault", "subaru", "lexus", "infiniti",
+    "jaguar", "landrover",
+])
+
+_TYPO_PROTECTED_TERMS = frozenset().union(
+    _TYPO_GAZETTEER_COUNTRIES,
+    _TYPO_GAZETTEER_DOMAIN,
+    _TYPO_GAZETTEER_BRANDS,
+)
+
+_TYPO_CORRECTION_TERMS = frozenset([
+    "bmw", "toyota", "honda", "mazda", "nissan", "hyundai",
+    "kia", "mitsubishi", "suzuki", "isuzu", "mercedes",
+    "volkswagen", "audi", "ford", "chevrolet", "peugeot",
+    "volvo", "renault", "subaru", "lexus", "infiniti",
+    "jaguar", "landrover", "trade", "data", "import", "export",
+    "customs", "duty", "tax", "tariff", "calculate", "calculation",
+    "classification", "procedure", "policy", "regulation", "lookup",
+    "search", "find", "product", "vehicle", "rice", "laptop",
+    "phone", "computer", "electronics", "gdce", "gdce-intern",
+])
+
+_TYPO_CORRECTION_GREETINGS = frozenset([
+    "hello", "hi", "hey", "hiya", "howdy"
+])
+
+_TYPO_CORRECTION_TERMS = frozenset().union(
+    _TYPO_CORRECTION_TERMS,
+    _TYPO_CORRECTION_GREETINGS,
+)
+
 _NON_PRODUCT_PREFIXES = (
     "regulat",   # regulate, regulation, regulatory, regulator
     "procedur",  # procedure, procedures, procedural
@@ -36,6 +80,7 @@ _CLARIFY_STOP_WORDS = frozenset([
     "is", "the", "a", "an", "or", "as", "and", "of", "for", "are", "does",
     "do", "was", "with", "its", "this", "that", "your", "it", "in", "to",
     "has", "have", "can", "will", "be", "if", "not", "from", "you", "how",
+    "what", "which", "who", "where", "when", "why", "whose", "whom",
 ])
 
 # Generic nouns that survive stop-word stripping but are too broad to be
@@ -261,19 +306,19 @@ class Heuristics:
             r"\bappreciate\b", r"\bthank\s+u\b",
         ]
         CASUAL_PATTERNS = [
-            r"\bhow\s+are\s+you\b", r"\bwhats\s+up\b", r"\bhow\s+is\s+your\s+day\b",
-            r"\bhows\s+it\s+going\b", r"\bnice\s+to\s+meet\s+you\b",
-            r"\bpleasure\s+to\s+meet\s+you\b", r"\btell\s+me\s+a\s+joke\b",
+            r"\bhow\s+are\s+(?:you|u)\b", r"\bwhats\s+up\b", r"\bhow\s+is\s+your\s+day\b",
+            r"\bhows\s+it\s+going\b", r"\bnice\s+to\s+meet\s+(?:you|u)\b",
+            r"\bpleasure\s+to\s+meet\s+(?:you|u)\b", r"\btell\s+me\s+a\s+joke\b",
             r"\bjoke\b", r"\broast\s+me\b",
         ]
         IDENTITY_PATTERNS = [
-            r"\b(what|who)\s+are\s+you\b",
+            r"\b(what|who)\s+are\s+(?:you|u)\b",
             r"\bwhat\s+is\s+your\s+(name|purpose)\b",
-            r"\bwhat\s+(can|do)\s+you\s+do\b",
-            r"\bare\s+you\s+(a\s+)?(bot|ai|robot|chatbot|assistant|human|real)\b",
+            r"\bwhat\s+(can|do)\s+(?:you|u)\s+do\b",
+            r"\bare\s+(?:you|u)\s+(a\s+)?(bot|ai|robot|chatbot|assistant|human|real)\b",
             r"\btell\s+me\s+about\s+yourself\b",
             r"\b(what\s+are\s+)?your\s+capabilities\b",
-            r"\bhow\s+can\s+you\s+help\b",
+            r"\b(how|what)\s+can\s+(?:you|u)\s+help\b",
         ]
         CONFIRMATION_PATTERNS = [
             r"^(ok|okay|got\s+it|sure|alright|noted|sounds\s+good|perfect|great)\s*\.?$",

@@ -53,7 +53,6 @@ export function normalizeToolData(type: string, data: unknown): unknown {
       hsCode: typeof record.hsCode === 'string' ? record.hsCode : undefined,
       productName: typeof record.productName === 'string' ? record.productName : undefined,
       category: typeof record.category === 'string' ? record.category : undefined,
-      confidence: Number(record.confidence ?? 0),
       predictedVolume:
         record.predictedVolume != null ? Number(record.predictedVolume) : undefined,
       year: record.year != null ? Number(record.year) : undefined,

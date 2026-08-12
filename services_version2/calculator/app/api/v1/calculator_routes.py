@@ -291,11 +291,8 @@ async def calculate_import_taxes(
         result = calculator.calculate(calc_request)
         result_dict = _enrich_result(result.to_dict(), calc_request, request, calculator, currency_assumption, cif_assumption, hs_assumption)
 
-        # Generate human-readable report
-        try:
-            result_dict["human_readable"] = format_human_readable(calc_request, result_dict)
-        except Exception as e:
-            logger.debug(f"Human-readable formatting failed: {e}")
+        # JSON endpoint returns pure structured data; presentation is handled by the consumer
+        result_dict.pop("human_readable", None)
 
         return CalculateImportTaxesResponse(**result_dict)
 
@@ -534,16 +531,20 @@ async def direct_query(
                 f"Please verify the HS code with customs or provide the exact HS code for an accurate calculation."
             )
 
+        # Generate human-readable report for the chat/query endpoint
+        human_readable = None
         try:
-            result_dict["human_readable"] = format_human_readable(calc_request, result_dict)
+            human_readable = format_human_readable(calc_request, result_dict)
         except Exception as e:
             logger.debug(f"Human-readable formatting failed: {e}")
 
+        # Remove presentation fields from the structured result so the schema stays clean
+        result_dict.pop("human_readable", None)
         calc_response = CalculateImportTaxesResponse(**result_dict)
 
         return DirectQueryResponse(
             success=True,
-            answer=calc_response.human_readable or "Calculation completed but no report was generated.",
+            answer=human_readable or "Calculation completed but no report was generated.",
             source=intent_result.source,
             confidence=intent_result.confidence,
             result=calc_response,

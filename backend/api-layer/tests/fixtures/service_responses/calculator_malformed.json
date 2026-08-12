@@ -1,0 +1,20 @@
+{
+  "request_id": 12345,
+  "session_id": null,
+  "question": [
+    "calculate import tax"
+  ],
+  "answer": {
+    "unexpected": "object"
+  },
+  "intent": "calculation",
+  "status": "completed",
+  "citations": "not-a-list",
+  "clarifications": "not-a-list",
+  "errors": "not-a-list",
+  "latency_ms": "not-a-number",
+  "metadata": [],
+  "table": "not-a-table",
+  "visualization": "not-a-visualization",
+  "message": null
+}

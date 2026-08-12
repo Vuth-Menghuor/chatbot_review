@@ -67,6 +67,12 @@ class SessionContext:
     clarification_last_query: Optional[str] = None    # Original turn-1 raw input
     product_ask_back_count: int = 0                   # Number of spec follow-ups so far
     clarification_expected_terms: List[str] = field(default_factory=list)  # Dynamic vocab from retrieval questions
+    clarification_candidate_codes: List[str] = field(default_factory=list)  # Top HS candidates from unresolved lookup
+
+    # Sequential slot-collection state for calculation intent.
+    # Stores {"missing": ["hs_code"|"cif_value"], "original_query": str}
+    # while the bot is asking the user for mandatory fields one at a time.
+    calc_slot_collection: Optional[Dict[str, Any]] = None
 
     # Turn-to-turn state (required for two-turn rewriting / ask-back)     
     last_intent: Optional[str] = None
@@ -110,6 +116,24 @@ class SessionContext:
                 )
                 self.rolling_summary = (self.rolling_summary + " " + fallback_text).strip()[-1600:]
 
+        self._trigger_change()
+
+    def clear_context_slots(self):
+        """Clears all short-term conversation slots to prevent topic pollution."""
+        self.import_export_mode = None
+        self.product_category = None
+        self.product_category_km = None
+        self.currency = None
+        self.origin_country = None
+        self.destination_country = None
+        self.hs_code = None
+        self.cif_value = None
+        self.commercial_description = None
+        self.year = None
+        self.month = None
+        self.trade_agreement = None
+        self.last_entity = None  # Clear specific entity on topic switch
+        self.clarification_candidate_codes = []
         self._trigger_change()
 
     def is_expired(self) -> bool:
@@ -174,6 +198,7 @@ class SessionContext:
             "clarification_last_query": self.clarification_last_query,
             "product_ask_back_count": self.product_ask_back_count,
             "clarification_expected_terms": self.clarification_expected_terms,
+            "clarification_candidate_codes": self.clarification_candidate_codes,
             "last_intent": self.last_intent,
             "last_entity": self.last_entity,
             "last_raw_query": self.last_raw_query,
@@ -238,6 +263,7 @@ class SessionContext:
             clarification_last_query=data.get("clarification_last_query"),
             product_ask_back_count=data.get("product_ask_back_count", 0),
             clarification_expected_terms=data.get("clarification_expected_terms", []),
+            clarification_candidate_codes=data.get("clarification_candidate_codes", []),
             last_intent=data.get("last_intent"),
             last_entity=data.get("last_entity"),
             last_raw_query=data.get("last_raw_query"),
@@ -371,6 +397,40 @@ class SessionManager:
         self._sessions[session_id] = session
         self._save_session(session)
         return session
+
+    def get_session_readonly(self, session_id: str) -> Optional[SessionContext]:
+        if session_id in self._sessions:
+            return self._sessions[session_id]
+
+        if self._check_redis_online():
+            try:
+                raw = self.redis_client.get(f"session:{session_id}:context")
+                if raw:
+                    data = json.loads(raw)
+                    session = SessionContext.from_dict(data)
+                    session._on_change = lambda: self._save_session(session)
+                    session._on_turns_evicted = lambda evicted: self._schedule_summarization(session, evicted)
+                    session._streamed_count = len(session.turns)
+                    self._sessions[session_id] = session
+                    return session
+            except Exception:
+                pass
+
+        file_path = self._get_file_path(session_id)
+        if file_path.exists():
+            try:
+                with open(file_path, "r") as f:
+                    data = json.load(f)
+                session = SessionContext.from_dict(data)
+                session._on_change = lambda: self._save_session(session)
+                session._on_turns_evicted = lambda evicted: self._schedule_summarization(session, evicted)
+                session._streamed_count = len(session.turns)
+                self._sessions[session_id] = session
+                return session
+            except Exception:
+                pass
+
+        return None
 
     def update_session_context(self, session_id: str, **kwargs):
         session = self.get_or_create_session(session_id)

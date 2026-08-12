@@ -81,71 +81,64 @@ class GeminiProvider(BaseLLMProvider):
             confidence = default
         return max(0.0, min(1.0, confidence))
 
+    def detect_currency(self, question: str) -> Tuple[Optional[str], float, str]:
+        # Currency is handled as part of get_unified_result's single LLM call.
+        # Returning low-confidence fallback here lets workflow.py use fast regex.
+        return None, 0.0, "unsupported_on_gemini_provider"
+
     def classify_intent(self, question: str) -> Tuple[str, float, str]:
-        if not self.is_available(): #check provider availability.
+        if not self.is_available():
             raise RuntimeError("Gemini provider is not available")
 
-        prompt = self.prompt_manager.render("gemini_classify_intent", question=question)
+        # Reuse unified prompt with empty dialog context fields
+        prompt = self.prompt_manager.render(
+            "gemini_unified_first_layer",
+            history="",
+            rolling_summary="",
+            context="",
+            user_input=question
+        )
 
         try:
+            from google.genai import types
+            config = types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.0,
+                max_output_tokens=150
+            )
             response = self.client.models.generate_content(
                 model=self.model_name,
                 contents=prompt,
-            ) #send request to Gemini
+                config=config
+            )
             _log_gemini_usage(self.model_name, response)
-            content = (response.text or "").strip() #extract text
+            content = (response.text or "").strip()
             
-            # Better JSON extraction: find the first JSON object boundaries
+            # Find matching closing brace for JSON extraction
             json_start = content.find("{")
-            if json_start == -1:
-                raise ValueError("No '{' found in Gemini response")
-            
-            # Find matching closing brace (simple but effective)
-            brace_count = 0
-            json_end = -1
-            for i in range(json_start, len(content)):
-                if content[i] == "{":
-                    brace_count += 1
-                elif content[i] == "}":
-                    brace_count -= 1
-                    if brace_count == 0:
-                        json_end = i + 1
-                        break
-            
-            if json_end == -1:
-                raise ValueError("Unbalanced braces in Gemini response")
-            
-            json_str = content[json_start:json_end]
-            #convert json string to python object (dict)
-            payload = json.loads(json_str)
-            
-            # Validate and extract fields with defaults
-            intent = str(payload.get("intent", "unclassified")).lower().strip()
-            if not intent or intent == "none":
-                intent = "unclassified"
-            
-            try:
-                confidence = float(payload.get("confidence", 0.5))
-                confidence = max(0.0, min(1.0, confidence))  # Clamp to [0, 1]
-            except (TypeError, ValueError):
-                logger.warning(f"Invalid confidence value: {payload.get('confidence')}")
-                confidence = 0.5
-            
-            reasoning = str(payload.get("reasoning", "Gemini classification")).strip()
-            if not reasoning:
-                reasoning = "Gemini classification"
-            
-            logger.debug(f"Intent classification: intent={intent}, confidence={confidence:.2f}")
-            return intent, confidence, reasoning
-            
-        except json.JSONDecodeError as exc:
-            logger.error(f"JSON parse error in Gemini response: {exc}")
-            raise ValueError(f"Invalid JSON from Gemini: {exc}")
-        except ValueError as exc:
-            logger.error(f"Validation error: {exc}")
-            raise
+            if json_start != -1:
+                brace_count = 0
+                json_end = -1
+                for i in range(json_start, len(content)):
+                    if content[i] == "{":
+                        brace_count += 1
+                    elif content[i] == "}":
+                        brace_count -= 1
+                        if brace_count == 0:
+                            json_end = i + 1
+                            break
+                if json_end != -1:
+                    json_str = content[json_start:json_end]
+                    payload = json.loads(json_str)
+                    
+                    intent = str(payload.get("intent", "unclassified")).lower().strip()
+                    confidence = self._clamp_confidence(payload.get("confidence", 0.5))
+                    reasoning = str(payload.get("reason", "Gemini classification")).strip()
+                    return intent, confidence, reasoning
+                    
+            raise ValueError(f"No JSON found in response: {content}")
         except Exception as exc:
-            logger.error(f"Unexpected error in Gemini intent classification: {exc}", exc_info=True)
+            logger.error(f"Fallback intent classification failed: {exc}", exc_info=True)
             raise
 
 
@@ -154,6 +147,7 @@ class GeminiProvider(BaseLLMProvider):
         user_input: str,
         context: Optional[Any] = None,
         intent_hint: Optional[str] = None,
+        prompt_name: str = "gemini_unified_first_layer",
     ) -> Tuple[str, Dict[str, Any]]:
         if not self.is_available():
             raise RuntimeError("Gemini provider is not available")
@@ -162,51 +156,79 @@ class GeminiProvider(BaseLLMProvider):
         context_str = ""
         
         if context:
-            # Build conversation history
             if hasattr(context, "turns") and context.turns:
                 history_str = "\nConversation History:\n"
-                for turn in context.turns[-3:]:  # Last 3 turns for context
+                for turn in context.turns[-3:]:
                     user_val = turn.get("user") or turn.get("user_input", "")
                     bot_val = turn.get("bot") or turn.get("bot_response", "")
                     history_str += f"User: {user_val}\nAssistant: {bot_val}\n"
             
-            # Build active session parameters context
             parts = []
-            if getattr(context, "product_category", None):
-                parts.append(f"- Product Category: {context.product_category}")
-            if getattr(context, "import_export_mode", None):
-                parts.append(f"- Import/Export Mode: {context.import_export_mode}")
-            if getattr(context, "currency", None):
-                parts.append(f"- Currency: {context.currency}")
+            for field in [
+                "product_category", "commercial_description", "last_entity", 
+                "import_export_mode", "origin_country", "destination_country", 
+                "hs_code", "cif_value", "currency", "year", "month", "trade_agreement"
+            ]:
+                val = getattr(context, field, None)
+                if val:
+                    label = field.replace("_", " ").title()
+                    parts.append(f"- {label}: {val}")
             if parts:
                 context_str = "\nActive Session Context:\n" + "\n".join(parts) + "\n"
 
         prompt = self.prompt_manager.render(
-            "gemini_rewrite_input",
+            prompt_name,
             history=history_str,
-            context=context_str,
             rolling_summary=getattr(context, "rolling_summary", "") if context else "",
+            context=context_str,
             user_input=user_input
         )
 
         try:
-            response = await asyncio.to_thread(
-                self.client.models.generate_content,
+            from google.genai import types
+            config = types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.0,
+                max_output_tokens=250
+            )
+            response = await self.client.aio.models.generate_content(
                 model=self.model_name,
                 contents=prompt,
+                config=config
             )
             _log_gemini_usage(self.model_name, response)
-            rewritten = (response.text or "").strip() or user_input
-            was_rewritten = rewritten != user_input
-            return rewritten, {
-                "rewrite_reason": "gemini_rewrite",
-                "confidence": 0.8,
-                "intent_changed": was_rewritten,
-                "topic_switch": False,
-                "rewritten": was_rewritten,
-            }
+            content = (response.text or "").strip()
+            
+            # Parse JSON out of response
+            json_start = content.find("{")
+            if json_start != -1:
+                brace_count = 0
+                json_end = -1
+                for i in range(json_start, len(content)):
+                    if content[i] == "{":
+                        brace_count += 1
+                    elif content[i] == "}":
+                        brace_count -= 1
+                        if brace_count == 0:
+                            json_end = i + 1
+                            break
+                if json_end != -1:
+                    json_str = content[json_start:json_end]
+                    payload = json.loads(json_str)
+                    
+                    rewritten = payload.get("rewritten_query", user_input)
+                    was_rewritten = rewritten != user_input
+                    return rewritten, {
+                        "rewrite_reason": "lightweight_rewrite" if prompt_name == "gemini_rewrite_input" else "unified_rewrite_fallback",
+                        "confidence": self._clamp_confidence(payload.get("confidence", 0.8)),
+                        "intent_changed": was_rewritten,
+                        "topic_switch": False,
+                        "rewritten": was_rewritten,
+                    }
+                    
+            raise ValueError(f"No JSON found in response: {content}")
         except Exception as exc:
-            logger.warning(f"Gemini rewrite failed: {exc}")
+            logger.warning(f"Fallback query rewrite failed: {exc}", exc_info=True)
             raise
 
     async def summarize_text(self, text: str, context: Optional[Dict[str, Any]] = None) -> str:
@@ -214,8 +236,7 @@ class GeminiProvider(BaseLLMProvider):
             return text
         prompt = self.prompt_manager.render("shared_summarize_text", text=text)
         try:
-            response = await asyncio.to_thread(
-                self.client.models.generate_content,
+            response = await self.client.aio.models.generate_content(
                 model=self.model_name,
                 contents=prompt,
             )
@@ -232,8 +253,7 @@ class GeminiProvider(BaseLLMProvider):
         
         prompt = self.prompt_manager.render("shared_translate_to_english", text=text)
         try:
-            response = await asyncio.to_thread(
-                self.client.models.generate_content,
+            response = await self.client.aio.models.generate_content(
                 model=self.model_name,
                 contents=prompt,
             )
@@ -249,8 +269,7 @@ class GeminiProvider(BaseLLMProvider):
         
         prompt = self.prompt_manager.render("shared_translate_to_khmer", text=text)
         try:
-            response = await asyncio.to_thread(
-                self.client.models.generate_content,
+            response = await self.client.aio.models.generate_content(
                 model=self.model_name,
                 contents=prompt,
             )
@@ -283,10 +302,10 @@ class GeminiProvider(BaseLLMProvider):
             from google.genai import types
             config = types.GenerateContentConfig(
                 response_mime_type="application/json",
-                temperature=0.0
+                temperature=0.0,
+                max_output_tokens=500
             )
-            response = await asyncio.to_thread(
-                self.client.models.generate_content,
+            response = await self.client.aio.models.generate_content(
                 model=self.model_name,
                 contents=prompt,
                 config=config
@@ -488,7 +507,7 @@ class GeminiFormatterProvider(BaseFormatterProvider):
         citations: Optional[list] = None,
     ) -> str:
         """Build the formatting prompt dynamically based on intent type."""
-        base_guidelines = self.prompt_manager.get_system_prompt("base_formatting_guidelines")
+        base_guidelines = self.prompt_manager.render("base_formatting_guidelines")
         
         intent_mapping = {
             FormatterIntent.CALCULATION: "gemini_format_calculation",
@@ -559,14 +578,16 @@ class GeminiFormatterProvider(BaseFormatterProvider):
             prompt = f"User Query: {query}\n{context_str}\n{history}"
 
         try:
-            loop = asyncio.get_running_loop()
-            res = await loop.run_in_executor(
-                None,
-                lambda: self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=prompt,
-                    config={"response_mime_type": "application/json"}
-                )
+            from google.genai import types
+            config = types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.0,
+                max_output_tokens=500
+            )
+            res = await self.client.aio.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config=config
             )
             _log_gemini_usage(self.model_name, res)
             text = (res.text or "").strip()

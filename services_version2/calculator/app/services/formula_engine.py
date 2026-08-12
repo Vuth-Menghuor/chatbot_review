@@ -36,7 +36,6 @@ logger = logging.getLogger(__name__)
 _ALLOWED_NODES = (
     ast.Expression,
     ast.Constant,       # Python 3.8+ numeric/string constants
-    ast.Num,            # Python 3.7 compat
     ast.BinOp,
     ast.UnaryOp,
     ast.Compare,
@@ -215,8 +214,6 @@ class FormulaEngine:
         # Numeric constant
         if isinstance(node, ast.Constant):
             return Decimal(str(node.value))
-        if isinstance(node, ast.Num):  # Python 3.7 compat
-            return Decimal(str(node.n))
 
         # Variable reference
         if isinstance(node, ast.Name):

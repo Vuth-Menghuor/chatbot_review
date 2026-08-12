@@ -192,10 +192,39 @@ def enrich_query_plan(raw_plan: RawQueryPlan) -> EnrichedQueryPlan:
             hs_vs_sitc_suggestion = "SITC"
             break
 
+    from app.core.config import get_settings
+    settings = get_settings()
+    min_yr = settings.min_available_year
+    max_yr = settings.max_available_year
+
+    def _clamp_year_string(period_str: Optional[str], min_yr: int, max_yr: int) -> Optional[str]:
+        if not period_str:
+            return period_str
+        parts = period_str.split("-")
+        try:
+            yr = int(parts[0])
+            clamped_yr = max(min_yr, min(yr, max_yr))
+            if clamped_yr != yr:
+                parts[0] = str(clamped_yr)
+                return "-".join(parts)
+        except (ValueError, TypeError):
+            pass
+        return period_str
+
     year = raw_plan.raw_year
+    if year is not None:
+        year = max(min_yr, min(year, max_yr))
+
     years = raw_plan.raw_years
+    if years:
+        years = [max(min_yr, min(y, max_yr)) for y in years]
+        years = sorted(list(set(years)))
+
     if year is None and isinstance(years, list) and len(years) == 1:
         year = years[0]
+
+    start_period = _clamp_year_string(raw_plan.raw_start_period, min_yr, max_yr)
+    end_period = _clamp_year_string(raw_plan.raw_end_period, min_yr, max_yr)
 
     return EnrichedQueryPlan(
         intent=intent_normalized,
@@ -213,8 +242,8 @@ def enrich_query_plan(raw_plan: RawQueryPlan) -> EnrichedQueryPlan:
         month=raw_plan.raw_month,
         quarter=raw_plan.raw_quarter,
         semester=raw_plan.raw_semester,
-        start_period=raw_plan.raw_start_period,
-        end_period=raw_plan.raw_end_period,
+        start_period=start_period,
+        end_period=end_period,
         frequency=raw_plan.raw_frequency,
         group_by=dims["group_by"],
         dimensions=dims["dimensions"],
@@ -223,6 +252,7 @@ def enrich_query_plan(raw_plan: RawQueryPlan) -> EnrichedQueryPlan:
         sort_metric=dims["sort_metric"],
         limit=raw_plan.raw_limit,
         offset=raw_plan.raw_offset,
+        chart_preference=raw_plan.raw_chart_preference,
         version=raw_plan.version,
         hs_vs_sitc_suggestion=hs_vs_sitc_suggestion,
     )

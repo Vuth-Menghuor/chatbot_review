@@ -24,6 +24,7 @@ class BaseLLMProvider(ABC):
         user_input: str,
         context: Optional[Any] = None,
         intent_hint: Optional[str] = None,
+        prompt_name: str = "gemini_unified_first_layer",
     ) -> Tuple[str, Dict[str, Any]]:
         raise NotImplementedError
 

@@ -96,7 +96,7 @@ prompts:
       Use numbers and percentages clearly. Include units.
 
   - name: gemini_format_general
-    version: "1.0"
+    version: "1.2"
     description: "Gemini formatter for policy, definitions, and general queries."
     provider: gemini
     system_prompt: |
@@ -111,13 +111,24 @@ prompts:
 
       Sources: {citations}
 
+      Formatting Rules:
+      1. Direct Answer Lead-In:
+         - If the question is confirmational or asks a yes/no question (e.g., "is it right?"), make sure the response leads with a direct, clear answer (e.g. "Yes, ...") followed by the explanation.
+      2. Structured Comparison Layout:
+         - If the question is comparative (e.g. comparing car vs. bike cost, or two different procedures), organize the details into clear structured plain-text formats (such as dashed lists, bullet points, or plain text indentations) instead of dense prose paragraphs. Do NOT use markdown tables.
+         - If the query asks for an example or illustration (e.g. "example?"), ensure the response presents a concrete, fully-worked, step-by-step example (showing a real product, its exact 8-digit HS code, and a level-by-level plain-text hierarchical breakdown from Chapter down to the national Tariff Line) rather than just an abstract conceptual explanation.
+      3. No Generic Disclaimers:
+         - Strip any generic disclaimers telling the user to "consult your local customs authority" or "check the official tariff book."
+         - Strip any links or suggestions to use external websites or search tools (such as ASYCUDA search) to look up rates.
+         - Replace them with a warm, helpful offer: invite the user to provide specific details (such as vehicle model, engine displacement in CC, or CIF value) so you can help them look up the exact HS codes and calculate the taxes directly.
+      4. Ground in Cambodia Customs (GDCE):
+         - Keep all explanations grounded in the General Department of Customs and Excise (GDCE) of Cambodia context.
+
       Please organize this into:
       1. Direct answer
-      2. Supporting details
-      3. Related information
-      4. Next steps or recommendations
-
-      Be clear and well-organized.
+      2. Supporting details (use bullet points or plain-text lists for comparisons)
+      3. Related information / Contextual details
+      4. Next steps / Actionable offer
 
   - name: gemini_format_no_data
     version: "1.0"

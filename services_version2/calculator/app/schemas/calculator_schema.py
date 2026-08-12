@@ -58,7 +58,7 @@ class ValuationModel(BaseModel):
         None,
         ge=0,
         description=(
-            "DV override. For mass-based cases such as petroleum and rubber, "
+            "DV (Deduction Value) override. For mass-based cases such as petroleum and rubber, "
             "use with declared_value_basis='per_ton' when DV is price per metric ton."
         ),
     )
@@ -70,7 +70,7 @@ class ValuationModel(BaseModel):
         None,
         ge=0,
         description=(
-            "User-provided DQ adjustment factor. Applied to SOP/SPP when dq_applicable is true. "
+            "User-provided DQ (Deduction Quantity) adjustment factor. Applied to SOP/SPP when dq_applicable is true. "
             "No backend registry — user must supply the factor directly."
         ),
     )
@@ -107,7 +107,7 @@ class FlagsModel(BaseModel):
     dq_factor: Optional[float] = Field(
         None,
         ge=0,
-        description="User-provided DQ adjustment factor. No backend registry.",
+        description="User-provided DQ (Deduction Quantity) adjustment factor. No backend registry.",
     )
     petroleum_case: bool = False
     rubber_case: bool = False
@@ -188,6 +188,18 @@ class TaxLineItemModel(BaseModel):
     rate: Optional[float] = None
 
 
+class CalculationStepModel(BaseModel):
+    """Individual step in the calculation (for wizard rendering)."""
+
+    step: int
+    name: str
+    formula: str
+    base: Optional[float] = None
+    rate: Optional[float] = None
+    amount: Optional[float] = None
+    note: Optional[str] = None
+
+
 class TaxReferenceModel(BaseModel):
     """Reference to source document."""
 
@@ -221,6 +233,10 @@ class CalculateImportTaxesResponse(BaseModel):
         ..., description="Keyed amounts; render with currency symbol for display."
     )
     line_items: List[TaxLineItemModel]
+    steps: List[CalculationStepModel] = Field(
+        default_factory=list,
+        description="Step-by-step calculation trace for wizard rendering."
+    )
     assumptions: List[str]
     references: List[TaxReferenceModel]
     exchange_rate_usd_to_khr: Optional[float] = None
@@ -240,10 +256,6 @@ class CalculateImportTaxesResponse(BaseModel):
     requested_agreement: Optional[str] = Field(
         None,
         description="The FTA agreement code or exemption type that was requested but needs a user-provided rate (e.g., ACFTA, QIP)."
-    )
-    human_readable: Optional[str] = Field(
-        None,
-        description="Standalone human-readable calculation report with step-by-step formulas (no LLM required)."
     )
 
     class Config:

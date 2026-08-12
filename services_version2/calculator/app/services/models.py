@@ -17,6 +17,7 @@ __all__ = [
     "CalculationResult",
     "TaxLineItem",
     "TaxReference",
+    "CalculationStep",
 ]
 
 
@@ -56,6 +57,7 @@ class CalculationRequest:
 
     @property
     def declared_value(self) -> Optional[Decimal]:
+        """DV (Deduction Value) override from valuation or flags."""
         value = self.valuation.get("declared_value")
         return Decimal(str(value)) if value is not None else None
 
@@ -65,6 +67,7 @@ class CalculationRequest:
 
     @property
     def dq_factor(self) -> Decimal:
+        """DQ (Deduction Quantity) adjustment factor."""
         value = self.valuation.get("dq_factor")
         if value is None:
             value = self.flags.get("dq_factor") if self.flags else None
@@ -188,6 +191,35 @@ class TaxReference:
 
 
 @dataclass
+class CalculationStep:
+    """Individual step in the calculation (for wizard rendering)."""
+
+    step: int
+    name: str
+    formula: str
+    base: Optional[Decimal] = None
+    rate: Optional[Decimal] = None
+    amount: Optional[Decimal] = None
+    note: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        result: Dict[str, Any] = {
+            "step": self.step,
+            "name": self.name,
+            "formula": self.formula,
+        }
+        if self.base is not None:
+            result["base"] = float(self.base)
+        if self.rate is not None:
+            result["rate"] = float(self.rate)
+        if self.amount is not None:
+            result["amount"] = float(self.amount)
+        if self.note is not None:
+            result["note"] = self.note
+        return result
+
+
+@dataclass
 class CalculationResult:
     """Complete calculation result."""
 
@@ -198,6 +230,7 @@ class CalculationResult:
     line_items: List[TaxLineItem]
     assumptions: List[str]
     references: List[TaxReference]
+    steps: List[CalculationStep] = field(default_factory=list)
     exchange_rate_usd_to_khr: Optional[Decimal] = None
     cif_value_usd: Optional[Decimal] = None
     preferential_rate_missing: Optional[bool] = None
@@ -212,6 +245,7 @@ class CalculationResult:
             "line_items": [item.to_dict() for item in self.line_items],
             "assumptions": self.assumptions,
             "references": [ref.to_dict() for ref in self.references],
+            "steps": [step.to_dict() for step in self.steps],
         }
         if self.exchange_rate_usd_to_khr is not None:
             result["exchange_rate_usd_to_khr"] = float(self.exchange_rate_usd_to_khr)

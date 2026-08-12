@@ -9,7 +9,10 @@ export type MessageStatus =
   | 'thinking'
   | 'loading'
   | 'streaming'
+  | 'processing'
   | 'completed'
+  | 'clarification_required'
+  | 'partial'
   | 'done'
   | 'error'
   | 'failed';
@@ -26,6 +29,8 @@ export type CanonicalMessageBlockType =
   | 'table'
   | 'details'
   | 'references'
+  | 'official_reference'
+  | 'clarification'
   | 'image'
   | 'chart'
   | 'workflow'
@@ -131,6 +136,7 @@ export interface PromptPayload {
 
 export interface StreamingDeps {
   chatId?: string;
+  projectId?: string;
   /** When set, the chat send pipeline routes through Chat API. */
   chatApi?: ChatApiStreamingConfig;
   stopStreaming: { value: boolean };

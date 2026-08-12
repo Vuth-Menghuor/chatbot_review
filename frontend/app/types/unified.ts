@@ -114,7 +114,6 @@ export interface PredictionToolData {
   hsCode?: string;
   productName?: string;
   category?: string;
-  confidence?: number;
   reason?: string;
   evidence?: string[];
   predictedVolume?: number;

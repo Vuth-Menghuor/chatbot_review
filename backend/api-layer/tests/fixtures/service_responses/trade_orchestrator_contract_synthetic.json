@@ -1,0 +1,43 @@
+{
+  "request_id": "fixture-trade-request",
+  "session_id": "fixture-trade-session",
+  "question": "Show Cambodia's top export partners in 2024.",
+  "answer": "Cambodia's top export partners in 2024 are shown below.",
+  "intent": "trade_query",
+  "status": "completed",
+  "citations": [],
+  "clarifications": [],
+  "errors": [],
+  "latency_ms": 500,
+  "metadata": {
+    "language": "en"
+  },
+  "table": {
+    "title": "Top Export Partners",
+    "columns": [
+      {
+        "key": "partner_country",
+        "label": "Partner Country"
+      },
+      {
+        "key": "value_usd",
+        "label": "Value USD"
+      }
+    ],
+    "rows": [
+      {
+        "partner_country": "Vietnam",
+        "value_usd": 1200000
+      },
+      {
+        "partner_country": "Thailand",
+        "value_usd": 900000
+      }
+    ]
+  },
+  "visualization": null,
+  "message": "Cambodia's top export partners in 2024 are shown below.",
+  "suggestion": ["Show export values by year", "Compare exports with imports"],
+  "summary": null,
+  "summary_metrics": null
+}

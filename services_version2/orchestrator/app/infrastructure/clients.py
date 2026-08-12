@@ -610,16 +610,121 @@ class GeneralServiceClient(HttpxServiceClient):
         ]
         require_period = not any(term in q_lower for term in disqualifiers)
 
+        # Retrieve raw documents only — generation is performed locally in Orchestrator
         payload = {
             "query": query,
             "top_k": top_k,
-            "generate_answer": generate_answer,
+            "generate_answer": False,
             "intent": intent,
             "require_period_for_trade": require_period,
         }
         if session_id:
             payload["session_id"] = session_id
-        return await self._post("retrieval/retrieve", payload)
+        
+        result = await self._post("retrieval/retrieve", payload)
+
+        if result.get("status") == "clarification_required":
+            return result
+
+        # ── QIP Retrieval-time penalty (Gap 1 robust fix) ──────────────────────────
+        qip_keywords = ["qip", "qualified investment", "cdc", "cib", "exemption", "exempt", "incentive"]
+        is_qip_query = any(k in q_lower for k in qip_keywords)
+        documents = result.get("documents", [])
+
+        if not is_qip_query and documents:
+            penalized = False
+            for doc in documents:
+                content = (doc.get("content") or "").lower()
+                is_qip_doc = any(k in content for k in ["qip", "qualified investment", "duty exemption", "tax exemption"])
+                if is_qip_doc:
+                    # Penalize the score of QIP documents for generic queries
+                    current_score = float(doc.get("score", 0.0) or 0.0)
+                    doc["score"] = max(0.0, current_score - 0.40)
+                    penalized = True
+            
+            if penalized:
+                # Re-sort and slice to top_k
+                documents.sort(key=lambda d: float(d.get("score", 0.0) or 0.0), reverse=True)
+                result["documents"] = documents[:top_k]
+
+        # ── Orchestrator LLM Answer Generation (Gaps 3 & 4 parity) ─────────────────
+        if generate_answer:
+            if not result.get("documents"):
+                result["final_answer"] = "I could not find any document references matching your query."
+                result["answer_source"] = "no_results"
+            else:
+                # Format context documents for LLM injection
+                context_blocks = []
+                for idx, doc in enumerate(result["documents"][:3], start=1):
+                    content = str(doc.get("content", "")).strip()
+                    if content:
+                        context_blocks.append(f"[{idx}] {content[:900]}")
+                
+                context_text = "\n\n".join(context_blocks)
+                
+                prompt = _prompt_manager.render(
+                    "orchestrator_general_answering",
+                    query=query,
+                    context=context_text
+                )
+
+                llm_answer = None
+                try:
+                    from ..ai import get_llm_service
+                    llm_service = get_llm_service()
+                    
+                    if llm_service and llm_service.is_available():
+                        # 1. Try Gemini primary provider
+                        gemini_provider = llm_service.router.providers.get("gemini")
+                        if gemini_provider and gemini_provider.is_available():
+                            try:
+                                response = await asyncio.to_thread(
+                                    gemini_provider.client.models.generate_content,
+                                    model=gemini_provider.model_name,
+                                    contents=prompt,
+                                )
+                                llm_answer = (response.text or "").strip()
+                                result["answer_source"] = "gemini_llm_orchestrator"
+                            except Exception as e:
+                                logger.warning(f"Orchestrator Gemini generation failed: {e}")
+
+                        # 2. Try Ollama fallback
+                        if not llm_answer:
+                            ollama_provider = llm_service.router.providers.get("ollama")
+                            if ollama_provider and ollama_provider.is_available():
+                                try:
+                                    import httpx
+                                    async with httpx.AsyncClient(timeout=ollama_provider.timeout) as client:
+                                        resp = await client.post(
+                                            f"{ollama_provider.host}/api/generate",
+                                            json={
+                                                "model": ollama_provider.model,
+                                                "prompt": prompt,
+                                                "stream": False,
+                                                "temperature": 0.2
+                                            }
+                                        )
+                                        resp.raise_for_status()
+                                        resp_payload = resp.json()
+                                        llm_answer = resp_payload.get("response", "").strip()
+                                        result["answer_source"] = "ollama_llm_orchestrator"
+                                except Exception as e:
+                                    logger.warning(f"Orchestrator Ollama fallback generation failed: {e}")
+                except Exception as e:
+                    logger.error(f"Failed to access Orchestrator LLM service: {e}")
+
+                if llm_answer:
+                    result["final_answer"] = llm_answer
+                else:
+                    # Extractive fallback
+                    best_doc = result["documents"][0]
+                    snippet = str(best_doc.get("content", "")).strip().replace("\n", " ")
+                    if len(snippet) > 320:
+                        snippet = snippet[:317] + "..."
+                    result["final_answer"] = f"Based on Cambodia Customs regulations: {snippet}"
+                    result["answer_source"] = "extractive_fallback_orchestrator"
+
+        return result
 
 
     async def ask(
@@ -831,10 +936,10 @@ class CalculatorServiceClient(HttpxServiceClient):
         hs_patterns = [
             r'hs\s+code\s+(\d{4}(?:\.\d{2}){0,2}|\d{6}|\d{8})',      # hs code 0102.29.11 or 010229 or 01022911
             r'hs\s+(\d{4}(?:\.\d{2}){0,2}|\d{6}|\d{8})',             # hs 0102.29.11 or 010229 or 01022911
-            r'(\d{8})',                                                 # 8-digit raw code (01022911)
-            r'(\d{4}\.\d{2}\.\d{2})',                                   # dotted 4.2.2 format
-            r'(\d{4}\.\d{2})',                                          # dotted 4.2 format
-            r'(\d{6})',                                                 # 6-digit raw code (010229)
+            r'\b(\d{8})\b',                                             # 8-digit raw code (01022911)
+            r'\b(\d{4}\.\d{2}\.\d{2})\b',                               # dotted 4.2.2 format
+            r'\b(\d{4}\.\d{2})\b',                                      # dotted 4.2 format
+            r'\b(\d{6})\b',                                             # 6-digit raw code (010229)
             r'(?:code\s+)?(\d{4}(?:\s+\d{2}){1,2})',                  # legacy: code 0102 29 11 (no bare 4-digit amounts)
         ]
         for pattern in hs_patterns:
@@ -887,8 +992,15 @@ class CalculatorServiceClient(HttpxServiceClient):
                 country_raw = match.group(1).strip(" ,.-")
                 country_clean = re.sub(r'\s+', ' ', country_raw)
                 country = country_clean.title()
-                # Filter out common non-country words
-                if country.lower() not in ['the', 'a', 'an', 'is', 'are', 'for', 'to', 'on', 'tax', 'duty', 'import', 'export']:
+                if len(country) == 2:
+                    country = country.upper()
+
+                # Slice the raw matched substring casing using match indices
+                start, end = match.span(1)
+                original_substring = sanitized_question[start:end]
+
+                from app.utils.entity_utils import is_valid_country
+                if is_valid_country(country, original_substring, sanitized_question):
                     params["origin_country"] = country
                     break
 
@@ -949,12 +1061,18 @@ class CalculatorServiceClient(HttpxServiceClient):
             params["preferential_cd_rate"] = 0
 
         # Extract quantity if present
-        qty_match = re.search(r'(\d+)\s*(?:head|unit|pcs|pieces|kg|liter|meter)', q_lower)
+        qty_match = re.search(r'(\d+)\s*(?:head|unit|pcs|pieces|kg|liter|meter)s?\b', q_lower)
         if qty_match:
             params["quantity"] = float(qty_match.group(1))
             unit_match = re.search(r'(\d+)\s*(\w+)$', qty_match.group(0))
             if unit_match:
                 params["unit"] = unit_match.group(2).lower()
+
+        # Check if the CIF value is a unit price and multiply by quantity if present
+        if params["cif_value"] is not None and params["quantity"] is not None:
+            from app.utils.entity_utils import looks_like_unit_price
+            if looks_like_unit_price(q_lower) and params["quantity"] > 1:
+                params["cif_value"] = params["cif_value"] * params["quantity"]
         
         # Extract DQ (Discount Quotient / Duty Quota factor)
         # e.g., DQ = 40%, DQ = 0.40, dq 40%
@@ -980,13 +1098,10 @@ class CalculatorServiceClient(HttpxServiceClient):
             except ValueError:
                 pass
         
-        # Detect petroleum /vehicle case for specialized taxes (BUR, VVF)
-        petroleum_terms = ["petrol", "fuel", "gasoline", "diesel", "petroleum", "oil", "car", "vehicle", "truck","ev"]
-        if any(kw in q_lower for kw in petroleum_terms):
-            params["petroleum_case"] = True
-            
-        # 1. Extract Net Mass (e.g. "net mass 100 kg", "net weight 200kg")
-        mass_match = re.search(r'(?:net\s+mass\s+)?(\d+(?:\.\d+)?)\s*kg', q_lower)
+        # 1. Extract Net Mass — requires an explicit "net mass" or "net weight" prefix.
+        # The prefix is mandatory (not optional) to prevent bare numbers in DV/DQ terms,
+        # HS codes, or CIF values from being mis-captured as a mass value.
+        mass_match = re.search(r'(?:net\s+(?:mass|weight))\s+(\d+(?:\.\d+)?)\s*kg', q_lower)
         if mass_match:
             params["net_mass"] = float(mass_match.group(1))
             
@@ -995,11 +1110,14 @@ class CalculatorServiceClient(HttpxServiceClient):
         if volume_match:
             params["volume"] = float(volume_match.group(1))
             
-        # 3. Auto-detect Petroleum case by HS Code prefix (2710) or keywords
-        if (params.get("hs_code") and params["hs_code"].startswith("2710")) or any(
-            term in q_lower
-            for term in ["petrol", "fuel", "gasoline", "diesel", "petroleum"]):
-            params["petroleum_case"] = True
+        # 3. Determine if it is a petroleum case (Chapter 27 of HS nomenclature)
+        if params.get("hs_code"):
+            clean_hs = params["hs_code"].replace(".", "").strip()
+            params["petroleum_case"] = clean_hs.startswith("27")
+        else:
+            # Fallback to keyword matching only when no HS code is present yet
+            petroleum_terms = ["petrol", "fuel", "gasoline", "diesel", "petroleum", "oil"]
+            params["petroleum_case"] = any(kw in q_lower for kw in petroleum_terms)
 
         return params
     

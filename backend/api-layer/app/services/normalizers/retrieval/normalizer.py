@@ -10,7 +10,9 @@ class RetrievalNormalizer(BaseNormalizer):
 
     def can_handle(self, payload: dict[str, Any]) -> bool:
         service = normalize_service_name(payload.get("service") or payload.get("intent") or payload.get("route"))
-        return service == "retrieval" or first_structured_retrieval_result(payload) is not None
+        result = payload.get("result")
+        has_hs_code_result = isinstance(result, dict) and result.get("kind") == "hs_code_lookup"
+        return service == "retrieval" or has_hs_code_result or first_structured_retrieval_result(payload) is not None
 
     def normalize(self, payload: dict[str, Any]) -> str:
         return normalize_retrieval_response(payload)

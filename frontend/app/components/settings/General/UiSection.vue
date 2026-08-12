@@ -33,12 +33,12 @@
     </div>
 
     <div class="space-y-3 pt-3">
-      <h3 class="settings-section-title px-1">{{ $t('settings.ui.fontStyle.title') }}</h3>
+      <h3 class="settings-section-title px-1">{{ fontStyleTitle }}</h3>
       <div class="settings-panel">
         <div
           class="grid grid-cols-3 gap-1 bg-gray-50 p-1 dark:bg-zinc-900/70"
           role="radiogroup"
-          :aria-label="$t('settings.ui.fontStyle.title')"
+          :aria-label="fontStyleTitle"
         >
           <BaseButton
             v-for="option in fontStyleOptions"
@@ -85,10 +85,17 @@ const fontSizeOptions = computed(() => [
   { value: 'large' as FontSizePreference, label: t('settings.ui.fontSize.large') },
 ]);
 
+function safeT(key: string, fallback: string) {
+  const translated = t(key);
+  return translated === key ? fallback : translated;
+}
+
+const fontStyleTitle = computed(() => safeT('settings.ui.fontStyle.title', 'Font style'));
+
 const fontStyleOptions = computed(() => [
-  { value: 'system' as FontStylePreference, label: t('settings.ui.fontStyle.system') },
-  { value: 'serif' as FontStylePreference, label: t('settings.ui.fontStyle.serif') },
-  { value: 'mono' as FontStylePreference, label: t('settings.ui.fontStyle.mono') },
+  { value: 'system' as FontStylePreference, label: safeT('settings.ui.fontStyle.system', 'System') },
+  { value: 'serif' as FontStylePreference, label: safeT('settings.ui.fontStyle.serif', 'Serif') },
+  { value: 'mono' as FontStylePreference, label: safeT('settings.ui.fontStyle.mono', 'Mono') },
 ]);
 
 const sidebarRailItems = computed<SettingsSwitchListItem[]>(() => [

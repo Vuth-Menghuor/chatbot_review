@@ -9,8 +9,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
 
     app_name: str = "Chatbot API Layer"
-    environment: Literal["development", "testing", "staging", "production"] = "development"
+    environment: Literal["development", "local", "dev", "testing", "staging", "production"] = "development"
     debug: bool = False
+    enable_chat_response_debug: bool = False
     enable_docs: bool = True
     database_url: str = "postgresql+asyncpg://api_user:api_password@api-postgres:5432/api_layer_db"
     redis_url: str = "redis://api-redis:6379/0"

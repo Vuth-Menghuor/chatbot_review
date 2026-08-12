@@ -1,0 +1,24 @@
+{
+  "request_id": "8afaa949-4c7a-43a4-b9b4-77aa61dbc832",
+  "session_id": "debug-session",
+  "question": "What documents do I need to import goods into Cambodia?",
+  "answer": "When importing goods into Cambodia...",
+  "intent": "general",
+  "status": "completed",
+  "citations": [
+    {
+      "doc_id": "1021",
+      "title": null,
+      "snippet": "Conditions for Import or Export...",
+      "score": 0.9358
+    }
+  ],
+  "clarifications": [],
+  "errors": [],
+  "latency_ms": 21995.5,
+  "suggestion": [
+    "How do I classify my goods?",
+    "How is customs duty calculated?",
+    "What documents do I need to import?"
+  ]
+}

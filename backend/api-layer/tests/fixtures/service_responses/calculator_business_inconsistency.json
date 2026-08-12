@@ -1,0 +1,30 @@
+{
+  "request_id": "fixture-calculator-business-inconsistency",
+  "session_id": "fixture-session-calculator-business-inconsistency",
+  "question": "calculate import tax for petroleum",
+  "answer": "The majority tax component is Special Tax (SPP). Keep the calculator conclusion unchanged.",
+  "intent": "calculation",
+  "status": "completed",
+  "citations": [],
+  "clarifications": [],
+  "errors": [],
+  "latency_ms": 0,
+  "metadata": {},
+  "table": null,
+  "visualization": null,
+  "message": "The majority tax component is Special Tax (SPP). Keep the calculator conclusion unchanged.",
+  "calculator_result": {
+    "summary": {
+      "largest_component": "Special Tax (SPP)",
+      "total_tax": "446,614,600 KHR"
+    },
+    "tax_breakdown": [
+      {
+        "tax_component": "Special Tariff (SOP)",
+        "tax_base_khr": "1,488,715,093",
+        "rate": "30.00%",
+        "amount_khr": "446,614,600"
+      }
+    ]
+  }
+}

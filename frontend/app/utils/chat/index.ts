@@ -1,1 +1,6 @@
-export { generateChatTitle, normalizeAssistantContentForUi } from './chatText';
+export {
+  generateChatTitle,
+  isUnreliableServiceFallbackText,
+  normalizeAssistantContentForUi,
+  UNRELIABLE_SERVICE_FALLBACK_MESSAGE,
+} from './chatText';

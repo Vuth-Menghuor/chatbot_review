@@ -47,7 +47,7 @@ Defined in `app/utils/message/canonicalBlocks.ts`:
 
 `markdown` · `reasoning` · `code` · `table` · `image` · `chart` · `workflow` · `ocr` · `prediction` · `report` · `interaction` · `tool_output` · `error` · `fallback`
 
-API tool types `calculator` / `math` / `latex` / `formula` normalize to `markdown` blocks (see `formulaToMarkdown.ts`).
+GDCE calculator API responses render generic normalized blocks: `summary`, `key_value`, `table`, `details`, `references`, or `markdown` fallback. Legacy local formula tool aliases such as `math`, `latex`, and `formula` still normalize to `markdown` blocks (see `formulaToMarkdown.ts`).
 
 ## Component map
 

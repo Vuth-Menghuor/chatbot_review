@@ -47,7 +47,7 @@ def is_trade_result(value: dict[str, Any]) -> bool:
 
 
 # Convert structured trade data into the existing reusable UI blocks.
-def normalize_structured_trade_blocks(payload: dict[str, Any]) -> list[ChatContentBlock]:
+def normalize_structured_trade_blocks(payload: dict[str, Any], *, include_tables: bool = True) -> list[ChatContentBlock]:
     result = first_structured_trade_result(payload)
     if not result:
         return []
@@ -57,13 +57,14 @@ def normalize_structured_trade_blocks(payload: dict[str, Any]) -> list[ChatConte
     if summary:
         blocks.append(SummaryBlock(title="Trade Data Summary", data={key: scalar_to_cell(value) for key, value in summary.items()}))
 
-    for table in (
-        normalize_top_export_partners_table(result),
-        normalize_import_export_values_table(result),
-        normalize_trade_ranking_table(result),
-    ):
-        if table:
-            blocks.append(table)
+    if include_tables:
+        for table in (
+            normalize_top_export_partners_table(result),
+            normalize_import_export_values_table(result),
+            normalize_trade_ranking_table(result),
+        ):
+            if table:
+                blocks.append(table)
 
     missing_items = normalize_missing_trade_data(result)
     if missing_items:

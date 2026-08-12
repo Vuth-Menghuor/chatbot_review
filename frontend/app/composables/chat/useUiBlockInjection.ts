@@ -6,7 +6,11 @@ import type {
   MessageStatus,
   UiBlockInjectionOptions,
 } from '~/types/message';
-import { normalizeAssistantContentForUi } from '~/utils/chat';
+import {
+  isUnreliableServiceFallbackText,
+  normalizeAssistantContentForUi,
+  UNRELIABLE_SERVICE_FALLBACK_MESSAGE,
+} from '~/utils/chat';
 import { blocksToMarkerText, parseAiResponse } from '~/utils/message';
 
 export function useUiBlockInjection({ messages }: UiBlockInjectionOptions) {
@@ -44,13 +48,18 @@ export function useUiBlockInjection({ messages }: UiBlockInjectionOptions) {
     }
 
     const displayContent = normalizeAssistantContentForUi(content);
-    const nextBlocks = meta?.blocks ?? parseAiResponse(displayContent);
-    const syncedContent = displayContent || (nextBlocks.length ? blocksToMarkerText(nextBlocks) : '');
+    const nextBlocks = protectUnreliableFallbackBlocks(
+      meta?.blocks ?? parseAiResponse(displayContent),
+    );
+    const hasUnreliableFallback = nextBlocks.some(isUnreliableFallbackErrorBlock);
+    const syncedContent = hasUnreliableFallback
+      ? blocksToMarkerText(nextBlocks)
+      : displayContent || (nextBlocks.length ? blocksToMarkerText(nextBlocks) : '');
 
     messages[index] = {
       id: existingMessage.id,
       role: existingMessage.role,
-      status: meta?.status ?? existingMessage.status,
+      status: hasUnreliableFallback ? 'failed' : meta?.status ?? existingMessage.status,
       content: syncedContent,
       type: existingMessage.type,
       imageContent: existingMessage.imageContent,
@@ -68,4 +77,39 @@ export function useUiBlockInjection({ messages }: UiBlockInjectionOptions) {
     getAssistantMessage,
     upsertAssistantMessage,
   };
+}
+
+function protectUnreliableFallbackBlocks(blocks: MessageBlock[]): MessageBlock[] {
+  return blocks.map((block) => {
+    if (block.type !== 'markdown' || typeof block.content !== 'string') {
+      return block;
+    }
+    if (isUnreliableServiceFallbackText(block.content)) {
+      return unreliableServiceFallbackErrorBlock(`${block.id}-unreliable-fallback`);
+    }
+    return {
+      ...block,
+      content: normalizeAssistantContentForUi(block.content),
+    };
+  });
+}
+
+function unreliableServiceFallbackErrorBlock(id: string): MessageBlock {
+  return {
+    id,
+    type: 'error',
+    content: {
+      title: 'Response unavailable',
+      message: UNRELIABLE_SERVICE_FALLBACK_MESSAGE,
+    },
+    isComplete: true,
+  };
+}
+
+function isUnreliableFallbackErrorBlock(block: MessageBlock): boolean {
+  return block.type === 'error' &&
+    typeof block.content === 'object' &&
+    block.content !== null &&
+    'message' in block.content &&
+    block.content.message === UNRELIABLE_SERVICE_FALLBACK_MESSAGE;
 }

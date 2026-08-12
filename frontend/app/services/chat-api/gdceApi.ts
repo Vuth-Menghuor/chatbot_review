@@ -6,12 +6,20 @@ export interface GdceStreamOptions {
   apiToken?: string;
   message: string;
   chatId?: string;
+  projectId?: string;
   attachments?: unknown[];
+  presentation?: GdcePresentationPreference;
+  context?: Record<string, unknown>;
   signal?: AbortSignal;
   onStart?: (data: Record<string, unknown>) => void;
   onToken?: (content: string) => void;
   onMetadata?: (data: Record<string, unknown>) => void;
   onDone?: (data: Record<string, unknown>) => void;
+}
+
+export interface GdcePresentationPreference {
+  preferred_blocks: string[];
+  fallback: 'markdown';
 }
 
 export async function getGdceAccessToken(options: GdceStreamOptions): Promise<string> {
@@ -46,9 +54,12 @@ export async function streamGdceChat(options: GdceStreamOptions): Promise<void> 
     },
     body: JSON.stringify({
       chat_id: options.chatId || null,
+      project_id: options.projectId || null,
       message: options.message,
       attachments: options.attachments ?? [],
       metadata: { client: 'gdce-nuxt-frontend' },
+      ...(options.presentation ? { presentation: options.presentation } : {}),
+      ...(options.context ? { context: options.context } : {}),
     }),
     signal: options.signal,
   });

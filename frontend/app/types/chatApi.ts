@@ -210,6 +210,15 @@ export interface NormalizedReferencesBlock {
   items: Array<Record<string, string | number | boolean | null>>;
 }
 
+export interface NormalizedOfficialReferenceBlock {
+  type: 'official_reference';
+  title: string;
+  label: string;
+  url: string;
+  agency?: string | null;
+  source_type?: string | null;
+}
+
 export interface NormalizedClarificationBlock {
   type: 'clarification';
   title?: string;
@@ -224,6 +233,12 @@ export interface NormalizedErrorBlock {
 export interface NormalizedChartBlock {
   type: 'chart';
   title?: string;
+  data: Record<string, unknown>;
+}
+
+export interface NormalizedPredictionBlock {
+  type: 'prediction';
+  title: string;
   data: Record<string, unknown>;
 }
 
@@ -246,6 +261,12 @@ export interface NormalizedResponseLimitation {
   message: string;
 }
 
+export interface NormalizedPublicError {
+  code: string;
+  message: string;
+  retryable: boolean;
+}
+
 export interface NormalizedResponseBody {
   type: 'markdown' | 'table' | 'chart';
   coverage: AnswerCoverage;
@@ -262,9 +283,11 @@ export type NormalizedChatContentBlock =
   | NormalizedTableBlock
   | NormalizedDetailsBlock
   | NormalizedReferencesBlock
+  | NormalizedOfficialReferenceBlock
   | NormalizedClarificationBlock
   | NormalizedErrorBlock
   | NormalizedChartBlock
+  | NormalizedPredictionBlock
   | NormalizedSuggestionsBlock
   | NormalizedCoverageBlock;
 
@@ -288,6 +311,7 @@ export interface NormalizedChatDebug {
 
 export interface NormalizedCitation extends MessageSource {
   id: string;
+  marker?: number;
   label?: string;
   score?: number;
   citation_id?: string;
@@ -299,11 +323,12 @@ export interface NormalizedCitation extends MessageSource {
 }
 
 export interface NormalizedChatResponse {
+  api_version: '1.0';
   request_id: string;
   session_id: string;
   chat_id?: string;
   project_id?: string | null;
-  status: Extract<MessageStatus, 'completed' | 'processing' | 'failed'>;
+  status: Extract<MessageStatus, 'completed' | 'clarification_required' | 'partial' | 'processing' | 'failed'>;
   service?: string | null;
   intent: string;
   query?: string;
@@ -314,6 +339,8 @@ export interface NormalizedChatResponse {
   message: NormalizedChatMessage;
   citations: NormalizedCitation[];
   suggestions?: string[];
+  clarifications?: string[];
+  errors?: Array<string | NormalizedPublicError>;
   metrics?: Record<string, string | number | boolean | null>;
   debug?: NormalizedChatDebug;
 }

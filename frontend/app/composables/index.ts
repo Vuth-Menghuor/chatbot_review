@@ -1,5 +1,5 @@
-import { ref } from 'vue';
-import type { Message } from '~/types/message';
+import { computed, ref } from 'vue';
+import type { Message, MessageBlock } from '~/types/message';
 import { useAuthStore } from '~/stores/auth.store';
 import { useChatStore } from '~/stores/chat.store';
 import { uid } from '~/utils/id';
@@ -13,7 +13,6 @@ import { canonicalizeBlockType } from '~/utils/message';
 import { ChatApiRequestError } from '~/services/chat-api';
 
 export { useChatList } from './chat/useChatList';
-export { useRenderer } from './renderers/useRenderer';
 
 export function useChat(chatId?: string) {
   const chatStore = useChatStore();
@@ -67,9 +66,15 @@ export function useChat(chatId?: string) {
   persistMessages(messages);
 
   const { upsertAssistantMessage, getAssistantMessage } = useUiBlockInjection({ messages });
+  const projectId = computed(() =>
+    chatId ? chatStore.recentChats.find((chat) => chat.id === chatId)?.projectId : undefined,
+  );
 
   const { streamFromChatApi } = useChatStreaming({
     chatId,
+    get projectId() {
+      return projectId.value;
+    },
     chatApi: chatApiConfig,
     stopStreaming,
     streamController,
@@ -80,7 +85,44 @@ export function useChat(chatId?: string) {
     getUiBlockDelay,
   });
 
-  async function send(text: string, files?: unknown[]) {
+  function isAbortError(error: unknown) {
+    return (
+      stopStreaming.value ||
+      streamController.value?.signal.aborted ||
+      (error instanceof DOMException && error.name === 'AbortError') ||
+      (error instanceof Error && error.name === 'AbortError')
+    );
+  }
+
+  function friendlyChatError(error: unknown) {
+    if (error instanceof ChatApiRequestError) {
+      if (error.status === 401) {
+        return 'Your session has expired. Please sign in again to continue.';
+      }
+      if (error.status === 503) {
+        return 'The chat service is temporarily unavailable. Please try again in a moment.';
+      }
+      return 'The chat request could not be completed. Please try again.';
+    }
+    if (error instanceof TypeError) {
+      return 'We could not reach the chat service. Please check your connection and try again.';
+    }
+    return 'Something went wrong while generating the response. Please try again.';
+  }
+
+  function errorMessageBlock(messageId: string, message: string): MessageBlock {
+    return {
+      id: `${messageId}-stream-error`,
+      type: 'error',
+      content: {
+        title: 'Response unavailable',
+        message,
+      },
+      isComplete: true,
+    };
+  }
+
+  async function send(text: string, files?: unknown[], context?: Record<string, unknown>) {
     if ((!text.trim() && (!files || files.length === 0)) || loading.value) return true;
 
     if (chatId && messages.value.filter((m) => m.role === 'user').length === 0) {
@@ -130,34 +172,27 @@ export function useChat(chatId?: string) {
         createdAt: new Date().toISOString(),
       });
 
-      await streamFromChatApi(text, files, assistantMsgId, conversationMessages);
+      await streamFromChatApi(text, files, assistantMsgId, context);
       return false;
     } catch (error) {
+      if (isAbortError(error)) {
+        return false;
+      }
       failed = true;
-      const normalizedErrorMessage = (() => {
-        if (error instanceof ChatApiRequestError) {
-          const body = error.body?.trim();
-          const detail = body ? `\n\nDetails: ${body}` : '';
-          return `Chat API request failed (${error.status}). Please verify your model is loaded and server is running.${detail}`;
-        }
-        if (error instanceof Error && error.message?.trim()) {
-          return error.message.trim();
-        }
-        return 'I apologize, but something went wrong. Please try again.';
-      })();
+      const normalizedErrorMessage = friendlyChatError(error);
 
-      const latestAssistant = messages.value.slice().reverse().find((m) => m.role === 'assistant');
-      if (latestAssistant) {
-        latestAssistant.status = 'failed';
-        latestAssistant.content = latestAssistant.content?.trim()
-          ? latestAssistant.content
-          : normalizedErrorMessage;
+      if (assistantMsgId) {
+        upsertAssistantMessage(assistantMsgId, normalizedErrorMessage, {
+          status: 'failed',
+          blocks: [errorMessageBlock(assistantMsgId, normalizedErrorMessage)],
+        });
       } else {
         messages.value.push({
           id: uid('msg'),
           role: 'assistant',
           status: 'failed',
           content: normalizedErrorMessage,
+          blocks: [errorMessageBlock('chat-api-error', normalizedErrorMessage)],
           createdAt: new Date().toISOString(),
         });
       }
@@ -165,7 +200,13 @@ export function useChat(chatId?: string) {
     } finally {
       if (assistantMsgId && !failed && !stopStreaming.value) {
         const assistant = messages.value.find((message) => message.id === assistantMsgId);
-        if (assistant?.role === 'assistant') assistant.status = 'completed';
+        if (
+          assistant?.role === 'assistant' &&
+          assistant.status !== 'failed' &&
+          assistant.status !== 'error'
+        ) {
+          assistant.status = 'completed';
+        }
       }
       streamController.value = null;
       currentRenderType.value = 'idle';
@@ -189,7 +230,7 @@ export function useChat(chatId?: string) {
     streamController.value = null;
     const latestAssistant = messages.value.slice().reverse().find((message) => message.role === 'assistant');
     if (latestAssistant) {
-      latestAssistant.status = latestAssistant.content?.trim() ? 'completed' : 'failed';
+      latestAssistant.status = 'completed';
     }
     currentRenderType.value = 'idle';
     loading.value = false;
@@ -207,11 +248,19 @@ export function useChat(chatId?: string) {
       return;
     }
 
-    const text = JSON.stringify({
-      message: '',
-      meta: { continuation: payload },
+    const values = Object.values(payload.values)
+      .map((value) => String(value ?? '').trim())
+      .filter(Boolean);
+    const displayMessage = values.length
+      ? values.join('\n')
+      : payload.action === 'cancel'
+        ? 'Cancelled'
+        : 'Submitted clarification';
+
+    await send(displayMessage, undefined, {
+      reply_to_request_id: payload.requestId,
+      clarification_action: payload.action,
     });
-    await send(text);
   }
 
   return { messages, input, loading, currentRenderType, send, sendUserReply, stop, regenerate };

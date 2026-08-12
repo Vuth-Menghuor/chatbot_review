@@ -138,6 +138,7 @@
   "interaction": {
     "title": "ត្រូវការព័ត៌មានបន្ថែម",
     "submit": "ដាក់ស្នើ",
+    "answerPlaceholder": "បញ្ចូលចម្លើយរបស់អ្នក",
     "submitted": "បានដាក់ស្នើចម្លើយ",
     "cancelled": "បានបោះបង់"
   },
@@ -147,8 +148,8 @@
     "valueLabel": "តម្លៃ",
     "year": "ឆ្នាំ",
     "confidence": "ភាពជឿជាក់",
-    "primaryMatch": "លទ្ធផលចម្បង ({percent}%)",
-    "alternative": "ជម្រើស {index}: {hsCode} ({percent}%)",
+    "primaryMatch": "លទ្ធផលចម្បង",
+    "alternative": "ជម្រើស {index}: {hsCode}",
     "tariffSection": "អត្រាពន្ធ",
     "reason": "ហេតុផល",
     "evidence": "ភស្តុតាង",

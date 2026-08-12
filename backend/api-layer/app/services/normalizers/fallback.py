@@ -4,6 +4,30 @@ from app.services.normalizers.base import BaseNormalizer
 
 KNOWN_SERVICE_NAMES = {"calculator", "trade", "retrieval", "general", "unknown"}
 
+INTENT_SERVICE_MAP = {
+    # Retrieval
+    "hs_code_lookup": "retrieval",
+    "customs_qa": "retrieval",
+    "document_lookup": "retrieval",
+    "regulation_lookup": "retrieval",
+    "retrieval": "retrieval",
+    "rag": "retrieval",
+    "search": "retrieval",
+
+    # Trade
+    "trade_query": "trade",
+    "trade_statistics": "trade",
+    "trade_lookup": "trade",
+
+    # Calculator
+    "tax_calculation": "calculator",
+    "import_tax_calculation": "calculator",
+    "calculation": "calculator",
+
+    # General
+    "general": "general",
+}
+
 
 class FallbackNormalizer(BaseNormalizer):
     """Provide safe service classification until each service gets its own normalizer."""
@@ -41,7 +65,10 @@ def normalize_service_name(value: Any) -> str | None:
     if value is None:
         return None
     service = str(value).strip().lower().replace("-", "_")
-    if service in {"trade", "trade_service"}:
+    mapped = INTENT_SERVICE_MAP.get(service)
+    if mapped:
+        return mapped
+    if service in {"trade", "trade_service", "trade_data"}:
         return "trade"
     if service in {"retrieval", "retriever", "rag", "search"}:
         return "retrieval"

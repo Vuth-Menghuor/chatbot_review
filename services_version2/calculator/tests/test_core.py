@@ -138,9 +138,9 @@ def test_normal_case_rounding_to_ceiling_100():
     Using whisky-like rates: CD=35%, ST=35%, VAT=10%
     CIF = 999.99 USD * 4022.5 = 4,022,460 KHR (rounded to whole)
     COP = 4,022,460 * 0.35 = 1,407,861 -> round_to_whole = 1,407,861 -> round_up_to_hundred = 1,407,900
-    SOP = (4,022,460 + 1,407,900) * 0.35 = 1,910,626 -> round_to_whole = 1,910,626 -> round_up_to_hundred = 1,910,700
-    VOP = (4,022,460 + 1,407,900 + 1,910,700) * 0.10 = 734,106 -> round_to_whole = 734,106 -> round_up_to_hundred = 734,200
-    Total = 1,407,900 + 1,910,700 + 734,200 = 4,052,800
+    SOP = (4,022,460 + 1,407,900) * 0.35 = 1,900,626 -> round_to_whole = 1,900,626 -> round_up_to_hundred = 1,900,700
+    VOP = (4,022,460 + 1,407,900 + 1,900,700) * 0.10 = 733,106 -> round_to_whole = 733,106 -> round_up_to_hundred = 733,200
+    Total = 1,407,900 + 1,900,700 + 733,200 = 4,041,800
     """
     db = FakeDBWithOriginRates({
         ("2208.90.10", "XX"): {

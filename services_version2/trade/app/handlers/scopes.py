@@ -122,10 +122,21 @@ def apply_intent_scoping(enriched_plan: EnrichedQueryPlan) -> ScopedQueryPlan:
         has_hs_group = any("HS" in str(g).upper() for g in enriched_plan.group_by)
 
     classification_system = enriched_plan.hs_vs_sitc_suggestion or "HS"
-    if has_sitc_filter or has_sitc_group:
+    if has_hs_group and not has_sitc_group:
+        classification_system = "HS"
+    elif has_sitc_group and not has_hs_group:
         classification_system = "SITC"
+    elif has_hs_filter and not has_sitc_filter:
+        classification_system = "HS"
+    elif has_sitc_filter and not has_hs_filter:
+        classification_system = "SITC"
+    elif enriched_plan.hs_vs_sitc_suggestion:
+        classification_system = enriched_plan.hs_vs_sitc_suggestion
     elif has_hs_filter or has_hs_group:
         classification_system = "HS"
+    elif has_sitc_filter or has_sitc_group:
+        classification_system = "SITC"
+
 
     # Enforce classification constraints on the plan fields
     hs_code = enriched_plan.hs_code
@@ -334,5 +345,6 @@ def apply_intent_scoping(enriched_plan: EnrichedQueryPlan) -> ScopedQueryPlan:
         sort_metric=enriched_plan.sort_metric,
         limit=limit,
         offset=offset,
+        chart_preference=enriched_plan.chart_preference,
         question=enriched_plan.question,
     )

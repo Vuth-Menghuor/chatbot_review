@@ -1,0 +1,18 @@
+{
+  "request_id": "fixture-calculator-failed",
+  "session_id": "fixture-session-calculator-failed",
+  "question": "calculate import tax",
+  "answer": "",
+  "intent": "calculation",
+  "status": "failed",
+  "citations": [],
+  "clarifications": [],
+  "errors": [
+    "Calculator service is unavailable"
+  ],
+  "latency_ms": 0,
+  "metadata": {},
+  "table": null,
+  "visualization": null,
+  "message": "Calculator service is unavailable"
+}

@@ -31,7 +31,7 @@ Copy any file below into Cursor Agent when working on that renderer only.
 | Prediction | `prediction` | [renderers/prediction.md](./renderers/prediction.md) |
 | Report | `report` | [renderers/report.md](./renderers/report.md) |
 | Image | `image` | [renderers/image.md](./renderers/image.md) |
-| Calculator (→ markdown) | `calculator` | [renderers/calculator.md](./renderers/calculator.md) |
+| Calculator | `summary`, `key_value`, `table`, `details`, `references`, `markdown` fallback | [renderers/calculator.md](./renderers/calculator.md) |
 | Math (→ markdown) | `math`, `latex`, `formula` | [renderers/math.md](./renderers/math.md) |
 | Error | `error` | [renderers/error.md](./renderers/error.md) |
 | Interaction (planned) | `interaction` | [renderers/interaction.md](./renderers/interaction.md) |

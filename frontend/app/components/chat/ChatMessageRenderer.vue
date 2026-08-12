@@ -30,7 +30,7 @@ const {
 </script>
 
 <template>
-  <div class="flex flex-col gap-4 w-full">
+  <div class="flex flex-col gap-3 w-full">
     <!-- Image message: routed directly to ImageRenderer via synthetic block -->
     <component
       v-if="message.type === 'image' && imageBlock"
@@ -51,7 +51,7 @@ const {
         v-if="visibleBlocks.length"
         name="block-fade"
         tag="div"
-        class="flex flex-col gap-4"
+        class="flex flex-col gap-3"
       >
         <template v-for="(block, index) in visibleBlocks" :key="block.id">
           <ChatTypingIndicator

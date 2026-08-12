@@ -37,6 +37,13 @@ const requestId = computed(() =>
   String(data.value.requestId ?? data.value.taskId ?? props.block.id),
 );
 
+function safeT(key: string, fallback: string) {
+  const translated = t(key);
+  return translated === key ? fallback : translated;
+}
+
+const answerPlaceholder = computed(() => safeT('interaction.answerPlaceholder', 'Type your answer'));
+
 function fieldInvalid(field: InteractionField) {
   return field.required && submitted.value === false && !values[field.name];
 }
@@ -62,21 +69,21 @@ function handleAction(action: string) {
 
 <template>
   <div
-    class="my-4 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
+    class="my-1 w-full max-w-3xl rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950 sm:p-5"
     :aria-busy="!submitted && block.isComplete === false"
   >
-    <div class="mb-4">
-      <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+    <div class="mb-5 border-b border-zinc-100 pb-4 dark:border-zinc-800">
+      <h3 class="text-sm font-semibold leading-5 text-zinc-950 dark:text-zinc-50">
         {{ data.title || t('interaction.title') }}
       </h3>
-      <p v-if="data.description" class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+      <p v-if="data.description" class="mt-1.5 whitespace-pre-line text-sm leading-6 text-zinc-600 dark:text-zinc-400">
         {{ data.description }}
       </p>
     </div>
 
     <div
       v-if="submitted"
-      class="flex flex-col gap-3"
+      class="flex flex-col gap-4"
       role="status"
       aria-live="polite"
     >
@@ -87,23 +94,25 @@ function handleAction(action: string) {
             : t('interaction.submitted')
         }}
       </p>
-      <div v-if="summaryEntries.length" class="flex flex-wrap gap-2">
-        <v-chip
+      <div v-if="summaryEntries.length" class="space-y-2">
+        <div
           v-for="entry in summaryEntries"
           :key="entry.key"
-          size="small"
-          variant="tonal"
-          class="text-xs"
+          class="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-900/70"
         >
-          <span class="font-semibold">{{ entry.label }}:</span>
-          <span class="ml-1">{{ entry.display }}</span>
-        </v-chip>
+          <div class="font-medium leading-5 text-zinc-800 dark:text-zinc-100">
+            {{ entry.label }}
+          </div>
+          <div class="mt-1 whitespace-pre-wrap break-words leading-6 text-zinc-700 dark:text-zinc-300">
+            {{ entry.display }}
+          </div>
+        </div>
       </div>
     </div>
 
     <v-form
       v-else
-      class="flex flex-col gap-3"
+      class="flex flex-col gap-4"
       @submit.prevent="handleAction('submit')"
     >
       <template v-for="field in fields" :key="field.name">
@@ -131,32 +140,54 @@ function handleAction(action: string) {
             :value="option.value"
           />
         </v-radio-group>
-        <v-select
+        <div
           v-else-if="field.type === 'select' || (kind === 'select' && field.options?.length)"
-          v-model="values[field.name]"
-          :items="field.options || []"
-          item-title="label"
-          item-value="value"
-          :label="field.label || field.name"
-          :placeholder="field.placeholder"
-          :required="field.required"
-          :aria-invalid="fieldInvalid(field)"
-          density="comfortable"
-          variant="outlined"
-          :disabled="submitted"
-        />
-        <v-textarea
-          v-else-if="field.type === 'textarea'"
-          v-model="values[field.name]"
-          :label="field.label || field.name"
-          :placeholder="field.placeholder"
-          :required="field.required"
-          :aria-invalid="fieldInvalid(field)"
-          rows="3"
-          density="comfortable"
-          variant="outlined"
-          :disabled="submitted"
-        />
+          class="space-y-1.5"
+        >
+          <label
+            :for="`${block.id}-${field.name}`"
+            class="block text-sm font-medium leading-5 text-zinc-800 dark:text-zinc-200"
+          >
+            {{ field.label || field.name }}
+          </label>
+          <v-select
+            :id="`${block.id}-${field.name}`"
+            v-model="values[field.name]"
+            :items="field.options || []"
+            item-title="label"
+            item-value="value"
+            :placeholder="field.placeholder"
+            :required="field.required"
+            :aria-label="field.label || field.name"
+            :aria-invalid="fieldInvalid(field)"
+            density="comfortable"
+            variant="outlined"
+            hide-details="auto"
+            :disabled="submitted"
+          />
+        </div>
+        <div v-else-if="field.type === 'textarea'" class="space-y-1.5">
+          <label
+            :for="`${block.id}-${field.name}`"
+            class="block text-sm font-medium leading-5 text-zinc-800 dark:text-zinc-200"
+          >
+            {{ field.label || field.name }}
+          </label>
+          <v-textarea
+            :id="`${block.id}-${field.name}`"
+            v-model="values[field.name]"
+            :placeholder="field.placeholder || answerPlaceholder"
+            :required="field.required"
+            :aria-label="field.label || field.name"
+            :aria-invalid="fieldInvalid(field)"
+            rows="3"
+            density="comfortable"
+            variant="outlined"
+            hide-details="auto"
+            class="interaction-field"
+            :disabled="submitted"
+          />
+        </div>
         <v-file-input
           v-else-if="field.type === 'file' || kind === 'upload'"
           :label="field.label || field.name"
@@ -169,38 +200,63 @@ function handleAction(action: string) {
           show-size
           @update:model-value="(files) => onFileChange(field.name, files)"
         />
-        <v-text-field
-          v-else-if="field.type === 'date'"
-          v-model="values[field.name]"
-          type="date"
-          :label="field.label || field.name"
-          :required="field.required"
-          :aria-invalid="fieldInvalid(field)"
-          density="comfortable"
-          variant="outlined"
-          :disabled="submitted"
-        />
-        <v-text-field
-          v-else
-          v-model="values[field.name]"
-          :type="field.type === 'number' ? 'number' : 'text'"
-          :label="field.label || field.name"
-          :placeholder="field.placeholder"
-          :required="field.required"
-          :aria-invalid="fieldInvalid(field)"
-          density="comfortable"
-          variant="outlined"
-          :disabled="submitted"
-        />
+        <div v-else-if="field.type === 'date'" class="space-y-1.5">
+          <label
+            :for="`${block.id}-${field.name}`"
+            class="block text-sm font-medium leading-5 text-zinc-800 dark:text-zinc-200"
+          >
+            {{ field.label || field.name }}
+          </label>
+          <v-text-field
+            :id="`${block.id}-${field.name}`"
+            v-model="values[field.name]"
+            type="date"
+            :required="field.required"
+            :aria-label="field.label || field.name"
+            :aria-invalid="fieldInvalid(field)"
+            density="comfortable"
+            variant="outlined"
+            hide-details="auto"
+            class="interaction-field"
+            :disabled="submitted"
+          />
+        </div>
+        <div v-else class="space-y-1.5">
+          <label
+            :for="`${block.id}-${field.name}`"
+            class="block text-sm font-medium leading-5 text-zinc-800 dark:text-zinc-200"
+          >
+            {{ field.label || field.name }}
+          </label>
+          <v-text-field
+            :id="`${block.id}-${field.name}`"
+            v-model="values[field.name]"
+            :type="field.type === 'number' ? 'number' : 'text'"
+            :placeholder="field.placeholder || answerPlaceholder"
+            :required="field.required"
+            :aria-label="field.label || field.name"
+            :aria-invalid="fieldInvalid(field)"
+            density="comfortable"
+            variant="outlined"
+            hide-details="auto"
+            class="interaction-field"
+            :disabled="submitted"
+          />
+        </div>
       </template>
 
-      <div class="mt-1 flex flex-wrap gap-2">
+      <div class="flex flex-wrap justify-end gap-2 pt-1">
         <v-btn
           v-for="action in actions"
           :key="action.id"
-          :color="action.primary ? 'primary' : undefined"
           :variant="action.primary ? 'flat' : 'tonal'"
           :disabled="action.primary && action.id !== 'cancel' && !isValid"
+          :class="[
+            'min-w-24 rounded-md text-none font-semibold shadow-none transition-colors [&_.v-btn__overlay]:!opacity-0',
+            action.primary
+              ? 'bg-[#1b5875]! text-white! hover:bg-[#164760]! disabled:bg-zinc-200! disabled:text-zinc-500! dark:bg-sky-400! dark:text-zinc-950! dark:hover:bg-sky-300! dark:disabled:bg-zinc-800! dark:disabled:text-zinc-500!'
+              : 'text-zinc-700! dark:text-zinc-200!',
+          ]"
           @click="handleAction(action.id)"
         >
           {{
@@ -212,3 +268,53 @@ function handleAction(action: string) {
     </v-form>
   </div>
 </template>
+
+<style scoped>
+:deep(.interaction-field .v-field__input) {
+  min-height: 2.5rem;
+  padding-top: 0.45rem;
+  padding-bottom: 0.45rem;
+  font-size: 0.875rem;
+  line-height: 1.35rem;
+}
+
+:deep(.interaction-field input::placeholder),
+:deep(.interaction-field textarea::placeholder) {
+  font-size: 0.875rem;
+  color: rgb(113 113 122);
+  opacity: 1;
+}
+
+:deep(.interaction-field .v-field) {
+  border-radius: 0.5rem;
+}
+
+:global(.dark) :deep(.interaction-field .v-field) {
+  background-color: rgb(24 24 27 / 0.55);
+}
+
+:global(.dark) :deep(.interaction-field .v-field__input) {
+  color: rgb(244 244 245) !important;
+  -webkit-text-fill-color: rgb(244 244 245);
+}
+
+:global(.dark) :deep(.interaction-field input.v-field__input),
+:global(.dark) :deep(.interaction-field textarea.v-field__input) {
+  color: rgb(244 244 245) !important;
+  caret-color: rgb(125 211 252);
+  -webkit-text-fill-color: rgb(244 244 245);
+}
+
+:global(.dark) :deep(.interaction-field input::placeholder),
+:global(.dark) :deep(.interaction-field textarea::placeholder) {
+  color: rgb(161 161 170);
+}
+
+:global(.dark) :deep(.interaction-field .v-field__outline) {
+  color: rgb(63 63 70);
+}
+
+:global(.dark) :deep(.interaction-field .v-field--focused .v-field__outline) {
+  color: rgb(56 189 248);
+}
+</style>

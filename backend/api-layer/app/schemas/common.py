@@ -166,6 +166,8 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=100_000)
     attachments: list[Any] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    presentation: dict[str, Any] | None = None
+    context: dict[str, Any] | None = None
 
     @field_validator("message")
     @classmethod

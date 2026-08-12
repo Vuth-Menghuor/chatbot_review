@@ -71,7 +71,7 @@
 
     "declared_value": {
       "type": "number",
-      "description": "Optional DV override. DV is the fair amount of price used to keep the market in the middle, not too high or too low.",
+      "description": "Optional DV (Deduction Value) override. DV is the fair amount of price used to keep the market in the middle, not too high or too low.",
       "minimum": 0,
       "exclusive_minimum": true,
       "constraints": {
@@ -85,12 +85,12 @@
       "type": "string",
       "enum": ["total", "per_ton"],
       "default": "total",
-      "description": "How declared_value should be interpreted. Use per_ton for petroleum/rubber formulas that calculate DV x Exchange Rate x Net Mass / 1000."
+      "description": "How declared_value should be interpreted. Use per_ton for petroleum/rubber formulas that calculate DV (Deduction Value) x Exchange Rate x Net Mass / 1000."
     },
 
     "dq_factor": {
       "type": "number",
-      "description": "Optional user-provided DQ adjustment factor. No backend registry — user must supply the factor directly.",
+      "description": "Optional user-provided DQ (Deduction Quantity) adjustment factor. No backend registry — user must supply the factor directly.",
       "minimum": 0,
       "exclusive_minimum": true,
       "default": 1,
@@ -103,7 +103,7 @@
     "dq_applicable": {
       "type": "boolean",
       "default": false,
-      "description": "Whether a user-provided DQ adjustment applies."
+      "description": "Whether a user-provided DQ (Deduction Quantity) adjustment applies."
     },
 
     "currency": {

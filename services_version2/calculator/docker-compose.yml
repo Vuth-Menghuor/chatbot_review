@@ -17,8 +17,8 @@ services:
     image: redis:7-alpine
     container_name: gdce-redis
     restart: unless-stopped
-    ports:
-      - "6384:6379"
+    expose:
+      - "6379"
     networks:
       - gdce-network
 

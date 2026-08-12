@@ -1,0 +1,105 @@
+{
+  "api_version": "1.0",
+  "request_id": "fixture-calculator-petroleum",
+  "session_id": "fixture-session-calculator-petroleum",
+  "chat_id": null,
+  "status": "completed",
+  "service": "calculator",
+  "intent": "calculation",
+  "query": "calculate petroleum import tax",
+  "coverage": "unknown",
+  "response": {
+    "type": "markdown",
+    "coverage": "unknown",
+    "content": "Petroleum calculation complete.",
+    "limitations": []
+  },
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "summary",
+        "title": "Import Tax Calculation",
+        "data": {
+          "total_tax": 2500000,
+          "currency": "KHR",
+          "phase_gap": "100,000 KHR"
+        }
+      },
+      {
+        "type": "key_value",
+        "title": "Product Information",
+        "items": [
+          { "key": "hs_code", "value": "2710.12.21" },
+          { "key": "description", "value": "Petroleum" }
+        ]
+      },
+      {
+        "type": "key_value",
+        "title": "Input Parameters",
+        "items": [
+          { "key": "declared_value", "value": "500 USD/MT" },
+          { "key": "quantity", "value": "10 MT" }
+        ]
+      },
+      {
+        "type": "table",
+        "title": "Tax Breakdown",
+        "columns": [
+          { "key": "component", "label": "component" },
+          { "key": "tax_base", "label": "tax_base" },
+          { "key": "rate", "label": "rate" },
+          { "key": "amount", "label": "amount" },
+          { "key": "currency", "label": "currency" }
+        ],
+        "rows": [
+          {
+            "component": "Phase 1",
+            "tax_base": "DV",
+            "rate": "35%",
+            "amount": 1200000,
+            "currency": "KHR"
+          },
+          {
+            "component": "Phase 2",
+            "tax_base": "State charge",
+            "rate": "10%",
+            "amount": 1300000,
+            "currency": "KHR"
+          }
+        ]
+      },
+      {
+        "type": "details",
+        "title": "Calculation Details",
+        "items": [
+          {
+            "title": "Phase 1",
+            "content": "basis: Declared value\ntotal: 1200000\ncurrency: KHR\ncomponent: CPP\namount: 700000"
+          },
+          {
+            "title": "Phase 2",
+            "content": "basis: State charge\ntotal: 1300000\ncurrency: KHR\ncomponent: VPP\namount: 600000"
+          }
+        ],
+        "data": {}
+      },
+      {
+        "type": "details",
+        "title": "Assumptions & Notes",
+        "items": [
+          { "title": "Declared value", "content": "Provided by the user" },
+          { "title": "Notes 2", "content": "Importer pays Phase 1 amount." }
+        ],
+        "data": {}
+      }
+    ]
+  },
+  "citations": [],
+  "suggestions": [],
+  "clarifications": [],
+  "errors": [],
+  "metrics": {
+    "latency_ms": 0
+  }
+}

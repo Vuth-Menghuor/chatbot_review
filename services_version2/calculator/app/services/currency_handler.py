@@ -62,6 +62,14 @@ SUPPORTED_CURRENCIES = {
     "RUB": {"name": "Russian Ruble", "symbol": "₽", "decimals": 2},
     "AED": {"name": "UAE Dirham", "symbol": "د.إ", "decimals": 2},
     "BRL": {"name": "Brazilian Real", "symbol": "R$", "decimals": 2},
+    # Additional NBC currencies (2026-07-31)
+    "CNH": {"name": "Chinese Yuan (Offshore)", "symbol": "¥", "decimals": 2},
+    "SDR": {"name": "Special Drawing Right", "symbol": "SDR", "decimals": 2},
+    "SEK": {"name": "Swedish Krona", "symbol": "kr", "decimals": 2},
+    "ZAR": {"name": "South African Rand", "symbol": "R", "decimals": 2},
+    "NGN": {"name": "Nigerian Naira", "symbol": "₦", "decimals": 2},
+    "DKK": {"name": "Danish Krone", "symbol": "kr", "decimals": 2},
+    "SAR": {"name": "Saudi Riyal", "symbol": "﷼", "decimals": 2},
 }
 
 # Currency symbol to code mapping
@@ -115,6 +123,12 @@ CURRENCY_NAME_TO_CODE = {
     "dirham": "AED", "dirhams": "AED",
     "real": "BRL", "reais": "BRL",
     "ruble": "RUB", "rubles": "RUB", "rouble": "RUB",
+    "krona": "SEK", "kronor": "SEK",
+    "rand": "ZAR", "rands": "ZAR",
+    "naira": "NGN", "nairas": "NGN",
+    "krone": "DKK", "kroner": "DKK",
+    "riyal": "SAR", "riyals": "SAR",
+    "sdr": "SDR", "special drawing right": "SDR",
 }
 
 # Country keyword → default currency code
@@ -150,6 +164,12 @@ COUNTRY_TO_CURRENCY = {
     "brazil": "BRL", "brazilian": "BRL",
     "russia": "RUB", "russian": "RUB",
     "uae": "AED", "united arab emirates": "AED", "dubai": "AED",
+    # Additional countries for NBC currencies
+    "sweden": "SEK", "swedish": "SEK",
+    "south africa": "ZAR", "sa": "ZAR",
+    "nigeria": "NGN", "nigerian": "NGN",
+    "denmark": "DKK", "danish": "DKK",
+    "saudi arabia": "SAR", "saudi": "SAR",
 }
 
 # Pre-sorted multi-char symbols (longest first) for matching
@@ -530,33 +550,43 @@ class CurrencyHandler:
         currency: str,
         calculation_date: Optional[str] = None,
     ) -> Decimal:
-        """Get exchange rate to KHR from Redis (preferred) or database (fallback)."""
+        """Get exchange rate to KHR from Redis (preferred) or database (fallback).
+
+        Priority:
+          1. Redis real-time rate (always checked first)
+          2. In-memory cache (only if Redis is down)
+          3. Database fallback (last resort)
+        """
         if currency == "KHR":
             return Decimal("1.0")
 
-        # Check in-memory cache
         cache_key = f"{currency}_{calculation_date}"
-        if cache_key in self._exchange_rate_cache:
-            return self._exchange_rate_cache[cache_key]
 
-        # 1. Try Redis first (fast, no PostgreSQL connection needed)
+        # 1. ALWAYS try Redis first for real-time rates
         if self.redis_client:
             try:
                 rate = self.redis_client.get_exchange_rate(currency, calculation_date)
                 if rate is not None:
+                    # Update cache with fresh Redis rate (overwrites any stale DB rate)
                     self._exchange_rate_cache[cache_key] = rate
                     logger.debug(f"Redis rate {currency}->{rate} KHR")
                     return rate
             except Exception as e:
                 logger.warning(f"Redis exchange rate lookup failed for {currency}: {e}")
 
-        # 2. Fallback to database (PostgreSQL)
+        # 2. Only use in-memory cache if Redis is unavailable
+        if cache_key in self._exchange_rate_cache:
+            logger.debug(f"Cache fallback rate {currency}->{self._exchange_rate_cache[cache_key]} KHR")
+            return self._exchange_rate_cache[cache_key]
+
+        # 3. Last resort: database fallback
         if self.db:
             try:
                 rate = self.db.get_exchange_rate(currency, calculation_date)
                 if rate is not None:
                     rate_decimal = Decimal(str(rate))
                     self._exchange_rate_cache[cache_key] = rate_decimal
+                    logger.warning(f"Database fallback rate {currency}->{rate_decimal} KHR (Redis unavailable)")
                     return rate_decimal
             except Exception as e:
                 logger.error(f"Database exchange rate lookup failed for {currency}: {e}")

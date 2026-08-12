@@ -496,7 +496,7 @@
       "formula": "fair_market_value",
       "inputs": ["fair_market_value"],
       "output": "dv_amount",
-      "description": "DV (Declared Value) - Fair amount of price used to keep the market in the middle, not too high or too low",
+      "description": "DV (Deduction Value) - Fair amount of price used to keep the market in the middle, not too high or too low",
       "unit": "KHR",
       "notes": "DV is used as the customs valuation basis. Only applies to imports, not exports."
     },
@@ -625,7 +625,7 @@
       "formula": "government_agreed_price - market_price",
       "inputs": ["government_agreed_price", "market_price"],
       "output": "dq_adjustment_amount",
-      "description": "DQ (Deal/Trade Agreement) - Real deal or trade agreement between one company and the government, specific to Cambodia Customs",
+      "description": "DQ (Deduction Quantity) - Cambodia Customs-specific adjustment factor between one company and the government",
       "unit": "KHR",
       "notes": "DQ is a user-provided adjustment factor. No backend registry — the user must supply dq_factor directly when dq_applicable is true."
     },
@@ -794,7 +794,7 @@
       "unit": "KHR",
       "case": "petroleum",
       "phase": 1,
-      "notes": "CPP base for petroleum using Declared Value and net mass in kg"
+      "notes": "CPP base for petroleum using Deduction Value and net mass in kg"
     },
 
     "petroleum_phase1_cpp": {
@@ -890,7 +890,7 @@
       "description": "RUBBER CASE: ETR (Export Tax on Rubber) = (DV × Exchange Rate × Net Mass) / 1000",
       "unit": "KHR",
       "case": "rubber",
-      "notes": "Export tax on rubber based on Declared Value and net mass in kg"
+      "notes": "Export tax on rubber based on Deduction Value and net mass in kg"
     },
 
     "fta_dv_case_cop": {
@@ -1002,7 +1002,7 @@
       "description": "FTA/DV & DQ CASE: SOP = (SOP base + COP base) × Rate × DQ",
       "unit": "KHR",
       "case": "fta_dv_dq",
-      "notes": "SOP with DQ (Deal/Trade Agreement) adjustment applied"
+      "notes": "SOP with DQ (Deduction Quantity) adjustment applied"
     },
 
     "fta_dv_dq_case_vop_base": {
@@ -1148,7 +1148,7 @@
     },
 
     "fta_dv_case": {
-      "description": "Free Trade Agreement with Declared Value (duty typically 0%)",
+      "description": "Free Trade Agreement with Deduction Value (duty typically 0%)",
       "when_to_use": "When goods qualify for FTA preferential treatment with DV valuation",
       "sequence": [
         "0. Currency Conversion: If USD, convert to KHR using MEF exchange rate",
@@ -1171,7 +1171,7 @@
     },
 
     "fta_dv_dq_case": {
-      "description": "FTA with DV and DQ Deal/Trade Agreement adjustment",
+      "description": "FTA with DV and DQ (Deduction Quantity) adjustment",
       "when_to_use": "When goods qualify for FTA and there is a DQ agreement between one company and the government",
       "sequence": [
         "0. Currency Conversion: If USD, convert to KHR using MEF exchange rate",
@@ -1205,8 +1205,8 @@
     "VPP": "VAT Petroleum Payment - VAT for petroleum",
     "DPP": "Difference / Partial subsidy by the state for petroleum products. Informational only — importer always pays Phase 1 total. DPP shows whether the state pays a subsidy (Phase 1 > Phase 2) or collects an additional charge (Phase 2 > Phase 1)",
     "ETR": "Export Tax on Rubber - Export tax for rubber based on mass",
-    "DV": "Declared Value - Fair amount of price that keeps the market in the middle, not too high or too low",
-    "DQ": "Deal/Trade Agreement - Cambodia Customs-specific agreement between one company and the government",
+    "DV": "Deduction Value - Fair amount of price that keeps the market in the middle, not too high or too low",
+    "DQ": "Deduction Quantity - Cambodia Customs-specific adjustment factor between one company and the government",
     "FTA": "Free Trade Agreement - Preferential trade agreement with 0% or reduced duty",
     "ATIGA": "ASEAN Trade in Goods Agreement - Intra-ASEAN FTA (Form D) - Most commonly used in Cambodia",
     "ACFTA": "ASEAN-China Free Trade Agreement (Form E)",
@@ -1233,9 +1233,9 @@
   ],
 
   "cambodia_specific_rules": {
-    "dv": "Declared Value is the fair amount of price used as the customs valuation basis to keep the market in the middle, not too high or too low",
+    "dv": "Deduction Value is the fair amount of price used as the customs valuation basis to keep the market in the middle, not too high or too low",
     "acfta": "ASEAN-China FTA makes duty rate 0% for eligible goods",
-    "dq": "DQ is a Cambodia Customs-specific real deal or trade agreement between one company and the government; it is not a formal customs term used in other countries. Each company can have a different DQ factor/agreement.",
+    "dq": "DQ (Deduction Quantity) is a Cambodia Customs-specific adjustment factor between one company and the government; it is not a formal customs term used in other countries. Each company can have a different DQ factor/agreement.",
     "sop_vs_cop": "SOP/SPP/ETR can be adjusted by company-specific DQ when applicable; COP includes customs duty rate calculation",
     "commodity_units": "Rubber and petroleum are most common cases requiring net mass (kg) and/or volume (LTR) based calculations",
     "rounding": "All amounts round UP to nearest 100 (12345.04 → 12400, 12345.05 → 12400).",
@@ -1322,7 +1322,7 @@
   },
 
   "notes": [
-    "All calculations use CIF value or DV (Declared Value) as the customs valuation basis",
+    "All calculations use CIF value or DV (Deduction Value) as the customs valuation basis",
     "VAT is calculated on the aggregate of CIF + Duty + Excise",
     "Preferential rates require valid Certificate of Origin",
     "Exemptions require proper authorization and documentation",
@@ -1339,7 +1339,7 @@
     "  6. AANZFTA (Form AANZ) - ASEAN-Australia-NZ trade, preferential rates",
     "All FTAs require valid Certificate of Origin and commodity eligibility verification",
     "Even with 0% customs duty under FTA, SOP (excise) and VOP (VAT) still apply to most goods",
-    "DQ (Deal/Trade Agreement) is Cambodia Customs-specific and represents a real deal or trade agreement between one company and the government; different companies can have different DQ factors",
+    "DQ (Deduction Quantity) is Cambodia Customs-specific and represents an adjustment factor between one company and the government; different companies can have different DQ factors",
     "SOP/SPP/ETR Amount = calculation with company-specific DQ adjustment when applicable (rounded UP to 100 when ready to pay)",
     "COP Amount = calculation with customs duty rate applied (rounded UP to 100 when ready to pay)",
     "Rubber and petroleum commonly require calculations based on Net Mass (kg) and/or Volume (LTR)",
@@ -1351,7 +1351,7 @@
     "PETROLEUM CASE: Requires two-phase calculation with DPP = Phase1 - Phase2",
     "RUBBER CASE: Uses ETR (Export Tax on Rubber) formula based on DV, exchange rate, and net mass",
     "FTA/DV CASE: Free trade agreement with 0% duty but SOP and VOP still apply",
-    "FTA/DV & DQ CASE: FTA with Deal/Trade Agreement adjustment affecting SOP calculation",
+    "FTA/DV & DQ CASE: FTA with Deduction Quantity adjustment affecting SOP calculation",
     "See 'acronym_definitions' for meaning of COP, SOP, VOP, CPP, ATP, SPP, VPP, DPP, ETR",
     "See 'exchange_rate_policy.json' for currency conversion rules, rate selection, and data source specifications",
     "See 'rounding_rules.json' for all rounding policies (quantities, rates, amounts, and conversions)"

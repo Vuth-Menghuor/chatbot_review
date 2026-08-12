@@ -51,12 +51,28 @@ class DynamicPromptManager:
         self.prompts: Dict[str, PromptConfig] = {}
         self.fallback_schema : Dict[str, Any] = {}
         self.orchestrator_pipeline: Dict[str, Any] = {}
+        self.fragments: Dict[str, str] = {}
         
         self.section_registry: Dict[str, SystemPromptSection] = {}
         self.section_cache: Dict[str, str] = {}
         self._register_default_sections()
 
+        self._load_fragments()
         self._load_prompts()
+
+    def _load_fragments(self) -> None:
+        """Load shared prompt fragments from formatting/templates.yaml."""
+        self.fragments = {}
+        fragments_file = self.prompts_dir / "formatting" / "templates.yaml"
+        if fragments_file.exists():
+            try:
+                with open(fragments_file, 'r', encoding='utf-8') as f:
+                    data = yaml.safe_load(f)
+                    if data and "fragments" in data:
+                        self.fragments = data["fragments"]
+            except Exception as e:
+                import logging
+                logging.error(f"Failed to load shared fragments from {fragments_file}: {e}")
 
     def register_section(self, name: str, compute_fn: Callable[[], str], cache_break: bool = False) -> None:
         """Register a dynamic context provider section (e.g. system time)."""
@@ -157,7 +173,7 @@ class DynamicPromptManager:
             return
         
         # Case 2: Each top-level key (except special keys) is a prompt config
-        special_keys = {"fallback_schema", "orchestrator_pipeline", "metadata", "version", "config"}
+        special_keys = {"fallback_schema", "orchestrator_pipeline", "metadata", "version", "config", "fragments"}
         for key, value in doc.items():
             if key not in special_keys and isinstance(value, dict):
                 # Check if this value looks like a prompt config
@@ -267,6 +283,11 @@ class DynamicPromptManager:
         prompt = self.get_system_prompt(prompt_name)
         if not prompt:
             return ""
+
+        # Merge shared fragments first
+        for k, v in self.fragments.items():
+            if k not in variables:
+                variables[k] = v
 
         import datetime
         now = datetime.datetime.now()
@@ -380,6 +401,8 @@ class DynamicPromptManager:
         self.prompts.clear()
         self.fallback_schema.clear()
         self.orchestrator_pipeline.clear()
+        self.fragments.clear()
+        self._load_fragments()
         self._load_prompts()
     
     def get_summary(self) -> str:

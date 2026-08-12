@@ -12,12 +12,14 @@ const props = withDefaults(
 const rootRef = ref<HTMLDivElement | null>(null);
 const chartRef = shallowRef<ReturnType<typeof echarts.init> | null>(null);
 const theme = useTheme();
+const hasOption = ref(false);
 
 let resizeObserver: ResizeObserver | null = null;
 let removeWindowResize: (() => void) | null = null;
 
 function applyOption(opt: EChartsCoreOption | null | undefined) {
   const ch = chartRef.value;
+  hasOption.value = Boolean(opt);
   if (!ch) {
     return;
   }
@@ -88,5 +90,37 @@ defineExpose({ downloadPng });
 </script>
 
 <template>
-  <div ref="rootRef" class="w-full min-h-0" :style="{ height: `${height}px` }" />
+  <div
+    class="echarts-panel relative w-full overflow-hidden rounded-md bg-white dark:bg-zinc-950"
+    :style="{ minHeight: `${height}px` }"
+  >
+    <div
+      ref="rootRef"
+      class="relative z-10 w-full"
+      :style="{ height: `${height}px` }"
+      role="img"
+      aria-label="Chart visualization"
+    />
+    <div
+      v-if="!hasOption"
+      class="absolute inset-0 flex items-center justify-center px-4 text-center text-sm text-neutral-500 dark:text-neutral-400"
+    >
+      Chart data is not available.
+    </div>
+  </div>
 </template>
+
+<style scoped>
+.echarts-panel {
+  background-image:
+    linear-gradient(to right, rgb(229 229 229 / 0.35) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(229 229 229 / 0.35) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+:global(.dark) .echarts-panel {
+  background-image:
+    linear-gradient(to right, rgb(63 63 70 / 0.35) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(63 63 70 / 0.35) 1px, transparent 1px);
+}
+</style>

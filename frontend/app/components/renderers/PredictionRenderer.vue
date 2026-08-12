@@ -18,8 +18,6 @@ const {
   isHsMode,
   genericMetrics,
   genericTitle,
-  shownConfidencePercent,
-  isHighConfidence,
 } = usePredictionRenderer(props);
 
 const headerTitle = computed(() =>
@@ -37,7 +35,6 @@ const selectedItem = computed(() => {
       hsCode: data.value?.hsCode || '—',
       productName: data.value?.productName || '—',
       category: data.value?.category || '—',
-      confidence: data.value?.confidence ?? 0,
       reason: data.value?.reason || '',
       importDuty: data.value?.importDuty,
       specialTax: data.value?.specialTax,
@@ -51,7 +48,6 @@ const selectedItem = computed(() => {
       hsCode: '—',
       productName: '—',
       category: '—',
-      confidence: 0,
       reason: '',
     };
   }
@@ -59,7 +55,6 @@ const selectedItem = computed(() => {
     hsCode: alt.hsCode,
     productName: alt.productName,
     category: alt.category || data.value.category || '—',
-    confidence: alt.confidence,
     reason: alt.reason || '',
     importDuty: alt.importDuty,
     specialTax: alt.specialTax,
@@ -119,15 +114,6 @@ const tariffSectionTitle = computed(
               {{ genericMetrics[0].label }}
             </p>
           </div>
-          <div class="flex shrink-0 items-center justify-center self-center sm:self-auto">
-            <v-progress-circular :model-value="(data.confidence ?? 0) * 100" :size="50" :width="6"
-              :color="isHighConfidence ? 'success' : 'primary'" class="transition-all duration-300">
-              <span class="text-sm font-black leading-none"
-                :class="isHighConfidence ? 'text-emerald-600 dark:text-emerald-400' : 'text-primary'">
-                {{ shownConfidencePercent }}%
-              </span>
-            </v-progress-circular>
-          </div>
         </div>
 
         <div v-if="genericMetrics.length > 1" class="grid gap-3 sm:grid-cols-2">
@@ -150,7 +136,7 @@ const tariffSectionTitle = computed(
               ? 'bg-emerald-600 text-white shadow-sm'
               : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
             " @click="activeItemIndex = -1">
-            {{ t('prediction.primaryMatch', { percent: Math.round((data.confidence ?? 0) * 100) }) }}
+            {{ t('prediction.primaryMatch') }}
           </button>
           <button v-for="(alt, idx) in data.alternatives" :key="idx"
             class="px-3 py-1.5 rounded-full text-xs font-bold transition-all shrink-0" :class="activeItemIndex === idx
@@ -161,7 +147,6 @@ const tariffSectionTitle = computed(
               t('prediction.alternative', {
                 index: idx + 1,
                 hsCode: alt.hsCode,
-                percent: Math.round((alt.confidence ?? 0) * 100),
               })
             }}
           </button>
@@ -178,19 +163,6 @@ const tariffSectionTitle = computed(
             </p>
           </div>
 
-          <!-- Circular Confidence Meter -->
-          <div class="flex items-center justify-center shrink-0 self-center sm:self-auto">
-            <v-progress-circular :model-value="selectedItem.confidence * 100" :size="50" :width="6"
-              bg-color="surface-light" class="transition-all duration-300"
-              :color="isHighConfidence ? 'success' : 'primary'">
-              <div class="flex flex-col items-center justify-center">
-                <span class="text-sm -mr-1 font-black leading-none"
-                  :class="isHighConfidence ? 'text-emerald-600 dark:text-emerald-400' : 'text-primary'">
-                  {{ Math.round(selectedItem.confidence * 100) }}%
-                </span>
-              </div>
-            </v-progress-circular>
-          </div>
         </div>
       </template>
 

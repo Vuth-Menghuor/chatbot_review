@@ -4,6 +4,7 @@ import { ChevronDownIcon, ChevronUpIcon } from 'lucide-vue-next';
 import type { Message } from '~/types/message';
 import ChatAction from '~/components/common/ChatAction.vue';
 import FilePreview from '~/components/common/FilePreview.vue';
+import { parseUserContinuation } from '~/utils/chat/parseUserContinuation';
 
 const props = defineProps<{
   message: Message;
@@ -18,6 +19,7 @@ const { theme } = useAppTheme();
 const activeThemeName = computed(() => theme.value);
 
 const showUserActions = computed(() => props.message.role === 'user' && !props.loading);
+const displayContent = computed(() => parseUserContinuation(props.message.content || '').displayText);
 
 /** Max visible height before clamping (matches ~9–10 lines at leading-7). */
 const MAX_COLLAPSED_PX = 260;
@@ -56,7 +58,7 @@ onBeforeUnmount(() => {
 });
 
 watch(
-  () => props.message.content,
+  displayContent,
   async () => {
     expanded.value = false;
     await nextTick();
@@ -88,7 +90,7 @@ function toggleExpanded() {
             needsClamp && !expanded && 'max-h-[260px] overflow-hidden',
           ]"
         >
-          {{ message.content }}
+          {{ displayContent }}
         </div>
         <div
           v-if="needsClamp && !expanded"

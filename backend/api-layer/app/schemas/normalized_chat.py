@@ -55,6 +55,15 @@ class ReferencesBlock(BaseModel):
     items: list[dict[str, str | int | float | bool | None]] = Field(default_factory=list)
 
 
+class OfficialReferenceBlock(BaseModel):
+    type: Literal["official_reference"] = "official_reference"
+    title: str
+    label: str
+    url: str
+    agency: str | None = None
+    source_type: str | None = None
+
+
 class ClarificationBlock(BaseModel):
     type: Literal["clarification"] = "clarification"
     title: str | None = None
@@ -66,10 +75,22 @@ class ErrorBlock(BaseModel):
     message: str
 
 
+class PublicError(BaseModel):
+    code: str
+    message: str
+    retryable: bool = False
+
+
 class ChartBlock(BaseModel):
     type: Literal["chart"] = "chart"
     title: str | None = None
     data: dict[str, Any] = Field(default_factory=dict)
+
+
+class PredictionBlock(BaseModel):
+    type: Literal["prediction"] = "prediction"
+    title: str
+    data: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
 
 
 class SuggestionsBlock(BaseModel):
@@ -93,9 +114,11 @@ ChatContentBlock = (
     | TableBlock
     | DetailsBlock
     | ReferencesBlock
+    | OfficialReferenceBlock
     | ClarificationBlock
     | ErrorBlock
     | ChartBlock
+    | PredictionBlock
     | SuggestionsBlock
     | CoverageBlock
 )
@@ -117,6 +140,7 @@ class NormalizedResponseBody(BaseModel):
 
 class Citation(BaseModel):
     id: str
+    marker: int | None = None
     label: str | None = None
     title: str | None = None
     snippet: str | None = None
@@ -151,11 +175,12 @@ class NormalizedChatDebug(BaseModel):
 class NormalizedChatResponse(BaseModel):
     """Frontend-safe chat response envelope produced by the API layer."""
 
+    api_version: Literal["1.0"] = "1.0"
     request_id: str
     session_id: str
     chat_id: str | None = None
     project_id: str | None = None
-    status: Literal["completed", "processing", "failed"]
+    status: Literal["completed", "clarification_required", "partial", "failed", "processing"]
     service: str | None = None
     intent: str
     query: str | None = None
@@ -166,5 +191,7 @@ class NormalizedChatResponse(BaseModel):
     message: NormalizedAssistantMessage
     citations: list[Citation] = Field(default_factory=list)
     suggestions: list[str] = Field(default_factory=list)
+    clarifications: list[str] = Field(default_factory=list)
+    errors: list[str | PublicError] = Field(default_factory=list)
     metrics: dict[str, float | int | str | bool | None] = Field(default_factory=dict)
     debug: NormalizedChatDebug | None = None

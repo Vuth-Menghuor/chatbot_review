@@ -153,7 +153,7 @@
       "method": "NONE",
       "applies_to": ["quantity", "net_mass_kg", "gross_mass_kg", "volume_ltr"],
       "priority": "CRITICAL",
-      "rule": "NO ROUNDING - use exact declared values",
+      "rule": "NO ROUNDING - use exact deduction values",
       "applies_when": "All quantity fields from customs declaration",
       "formula": "Use value as-is; do not round",
       "examples": [

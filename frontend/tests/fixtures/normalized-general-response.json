@@ -1,0 +1,40 @@
+{
+  "api_version": "1.0",
+  "request_id": "frontend-contract",
+  "session_id": "session-1",
+  "status": "completed",
+  "service": "general",
+  "intent": "general",
+  "coverage": "unknown",
+  "response": {
+    "type": "markdown",
+    "coverage": "unknown",
+    "content": "Customs valuation is the process of determining the value of imported goods.",
+    "limitations": []
+  },
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "markdown",
+        "text": "Customs valuation is the process of determining the value of imported goods."
+      },
+      {
+        "type": "suggestions",
+        "title": "Suggested follow-ups",
+        "items": [
+          "How do I classify my goods?",
+          "How is customs duty calculated?"
+        ]
+      }
+    ]
+  },
+  "citations": [],
+  "suggestions": [
+    "How do I classify my goods?",
+    "How is customs duty calculated?"
+  ],
+  "metrics": {
+    "latency_ms": 125
+  }
+}

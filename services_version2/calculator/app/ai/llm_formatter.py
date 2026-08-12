@@ -52,6 +52,13 @@ def format_human_readable(
     is_fta = _get_flag(request, "fta_applicable", False)
     is_export = (regime or "").lower() == "export"
 
+    # --- Capture original input currency / value for accurate display ---
+    input_currency = getattr(request, "currency", "USD") or "USD"
+    try:
+        input_value = float(getattr(request, "customs_value", 0))
+    except (ValueError, TypeError):
+        input_value = 0.0
+
     # --- HEADER ---
     title = "EXPORT TAX CALCULATION" if is_export else "IMPORT TAX CALCULATION"
     lines = [
@@ -64,44 +71,63 @@ def format_human_readable(
         f"* Origin Country: {origin or 'General rates'}",
         f"* Incoterm: CIF (Cost, Insurance, Freight)",
         "",
-        "INPUT PARAMETERS:",
-        f"* CIF Value: {_fmt_num(cif_value_usd)} USD",
-        f"* Exchange Rate: 1 USD = {_fmt_num(exchange_rate)} KHR",
-        f"* Customs Regime: {_regime_label(regime, is_fta, is_petroleum)}",
-        f"* Calculation Date: {calc_date}",
-        "",
     ]
+
+    if input_currency == "KHR":
+        lines.extend([
+            "INPUT PARAMETERS:",
+            f"* CIF Value: {_fmt_whole(input_value)} KHR",
+            f"* Exchange Rate: N/A (already in local currency)",
+            f"* Customs Regime: {_regime_label(regime, is_fta, is_petroleum)}",
+            f"* Calculation Date: {calc_date}",
+            "",
+        ])
+    else:
+        lines.extend([
+            "INPUT PARAMETERS:",
+            f"* CIF Value: {_fmt_num(cif_value_usd)} USD",
+            f"* Exchange Rate: 1 USD = {_fmt_num(exchange_rate)} KHR",
+            f"* Customs Regime: {_regime_label(regime, is_fta, is_petroleum)}",
+            f"* Calculation Date: {calc_date}",
+            "",
+        ])
 
     cif_khr = bd.get("cif_value", 0)
     is_dq = float(bd.get("dq_factor", 0)) > 0
 
     # --- PETROLEUM CASE ---
     if is_petroleum:
-        lines.extend(_format_petroleum(bd, exchange_rate, total, currency, cif_khr, li))
+        lines.extend(_format_petroleum(bd, exchange_rate, total, currency, cif_khr, li, input_currency, input_value))
     # --- RUBBER CASE ---
     elif is_rubber and is_export:
-        lines.extend(_format_rubber(bd, exchange_rate, total, currency, cif_khr))
+        lines.extend(_format_rubber(bd, exchange_rate, total, currency, cif_khr, input_currency, input_value))
     # --- FTA/DV + DQ CASE ---
     elif is_dq:
-        lines.extend(_format_fta_dq(bd, exchange_rate, total, currency, cif_khr, li))
+        lines.extend(_format_fta_dq(bd, exchange_rate, total, currency, cif_khr, li, input_currency, input_value))
     # --- NORMAL / FTA CASE ---
     else:
-        lines.extend(_format_normal(bd, exchange_rate, total, currency, cif_khr, is_fta, li))
+        lines.extend(_format_normal(bd, exchange_rate, total, currency, cif_khr, is_fta, li, input_currency, input_value))
 
     # --- TABLE ---
     lines.extend(_build_table(li, total, currency, exchange_rate))
 
     # --- SUMMARY ---
-    lines.extend(_build_summary(hs_code, description, cif_value_usd, origin, total, currency, li, is_export, is_petroleum, bd))
+    lines.extend(_build_summary(hs_code, description, cif_value_usd, origin, total, currency, li, is_export, is_petroleum, bd, input_currency, input_value))
+
+    # --- APPLICABLE RATES (rendered from structured line_items, not assumptions) ---
+    lines.extend(_build_rates_section(li))
 
     # --- ASSUMPTIONS & NOTES ---
     if assumptions:
-        lines.append("-----------------------------------------------------------------")
-        lines.append("ASSUMPTIONS & NOTES")
-        lines.append("-----------------------------------------------------------------")
-        for a in assumptions:
-            lines.append(f"  + {a}")
-        lines.append("")
+        # Filter out empty strings and pure formatting artifacts before rendering
+        clean_assumptions = [a for a in assumptions if a and str(a).strip()]
+        if clean_assumptions:
+            lines.append("-----------------------------------------------------------------")
+            lines.append("ASSUMPTIONS & NOTES")
+            lines.append("-----------------------------------------------------------------")
+            for a in clean_assumptions:
+                lines.append(f"  + {a}")
+            lines.append("")
 
     # --- REFERENCES & CITATIONS ---
     references = result_dict.get("references", [])
@@ -135,7 +161,7 @@ def format_human_readable(
     lines.append(f"* Duty Rates (CD, ST, VAT, ET): PostgreSQL ({_DB_NAME}.duty_rates)")
     lines.append(f"* ATP Rates (Petroleum): PostgreSQL ({_DB_NAME}.duty_rates.atp_rate)")
     lines.append(f"* Exchange Rates: PostgreSQL ({_DB_NAME}.exchange_rates)")
-    lines.append(f"* Declared Values (DV): PostgreSQL ({_DB_NAME}.declared_values)")
+    lines.append(f"* Deduction Values (DV): PostgreSQL ({_DB_NAME}.declared_values)")
     lines.append(f"* Dynamic Rules (Formulas, Rounding, Policies): PostgreSQL ({_DB_NAME})")
     lines.append(f"* Calculation History: PostgreSQL ({_DB_NAME}.calculation_history)")
     lines.append("* Official Tariff Lookup: https://gdce.gov.kh/tariff-search")
@@ -215,7 +241,36 @@ def _find_line_item(li, tax_type: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _format_petroleum(bd, exchange_rate, total, currency, cif_khr, li) -> List[str]:
+def _build_rates_section(li: List[Dict[str, Any]]) -> List[str]:
+    """Build an 'APPLICABLE RATES' section from structured line_items instead of assumptions."""
+    rate_lines: List[str] = []
+    for item in li:
+        tax_type = item.get("tax_type", "")
+        name = item.get("name", "")
+        rate = item.get("rate")
+        if rate is None:
+            continue
+        try:
+            rate_val = float(rate)
+        except (ValueError, TypeError):
+            continue
+        # Skip DPP/BUR/VVF fixed-fee rows in the rates summary
+        if tax_type in ("DPP", "BUR", "VVF"):
+            continue
+        # ATP rate is stored in KHR/L; skip generic rate display here
+        if tax_type == "ATP":
+            continue
+        rate_lines.append(f"  + {name}: {rate_val:.2f}%")
+    if not rate_lines:
+        return []
+    return [
+        "-----------------------------------------------------------------",
+        "APPLICABLE RATES",
+        "-----------------------------------------------------------------",
+    ] + rate_lines + [""]
+
+
+def _format_petroleum(bd, exchange_rate, total, currency, cif_khr, li, input_currency="USD", input_value=0.0) -> List[str]:
     cpp_base = bd.get("cpp_base", 0)
     cpp = bd.get("cpp_amount", 0)
     atp = bd.get("atp_amount", 0)
@@ -240,16 +295,28 @@ def _format_petroleum(bd, exchange_rate, total, currency, cif_khr, li) -> List[s
             atp_rate_usd = None
     atp_rate_str = f"{_fmt_num(atp_rate_usd)}" if atp_rate_usd is not None else "0.02"
 
-    lines = [
+    if input_currency == "KHR":
+        step1 = [
+            "-----------------------------------------------------------------",
+            "STEP 1: CURRENCY CONFIRMATION (KHR)",
+            "-----------------------------------------------------------------",
+            f"CIF Value = {_fmt_whole(cif_khr)} KHR (already in local currency)",
+            "",
+        ]
+    else:
+        step1 = [
+            "-----------------------------------------------------------------",
+            "STEP 1: CURRENCY CONVERSION (USD -> KHR)",
+            "-----------------------------------------------------------------",
+            f"Formula: CIF Value (USD) x Exchange Rate",
+            f"= {_fmt_num(cif_khr / exchange_rate if exchange_rate else 0)} x {_fmt_num(exchange_rate)} KHR/USD",
+            f"= {_fmt_whole(cif_khr)} KHR",
+            "",
+        ]
+
+    lines = step1 + [
         "-----------------------------------------------------------------",
-        "STEP 1: CURRENCY CONVERSION (USD -> KHR)",
-        "-----------------------------------------------------------------",
-        f"Formula: CIF Value (USD) x Exchange Rate",
-        f"= {_fmt_num(cif_khr / exchange_rate if exchange_rate else 0)} x {_fmt_num(exchange_rate)} KHR/USD",
-        f"= {_fmt_whole(cif_khr)} KHR",
-        "",
-        "-----------------------------------------------------------------",
-        "STEP 2: PHASE 1 -- PETROLEUM TAX (Declared Value Basis)",
+        "STEP 2: PHASE 1 -- PETROLEUM TAX (Deduction Value Basis)",
         "-----------------------------------------------------------------",
         f"CPP base  = DV/ton x exchange_rate x net_mass_kg / 1000",
         f"          = {_fmt_whole(cpp_base)} KHR",
@@ -280,16 +347,27 @@ def _format_petroleum(bd, exchange_rate, total, currency, cif_khr, li) -> List[s
     return lines
 
 
-def _format_rubber(bd, exchange_rate, total, currency, cif_khr) -> List[str]:
+def _format_rubber(bd, exchange_rate, total, currency, cif_khr, input_currency="USD", input_value=0.0) -> List[str]:
     etr = bd.get("etr_amount", 0)
-    lines = [
-        "-----------------------------------------------------------------",
-        "STEP 1: CURRENCY CONVERSION (USD -> KHR)",
-        "-----------------------------------------------------------------",
-        f"Formula: CIF Value (USD) x Exchange Rate",
-        f"= {_fmt_num(cif_khr / exchange_rate if exchange_rate else 0)} x {_fmt_num(exchange_rate)} KHR/USD",
-        f"= {_fmt_whole(cif_khr)} KHR",
-        "",
+    if input_currency == "KHR":
+        step1 = [
+            "-----------------------------------------------------------------",
+            "STEP 1: CURRENCY CONFIRMATION (KHR)",
+            "-----------------------------------------------------------------",
+            f"CIF Value = {_fmt_whole(cif_khr)} KHR (already in local currency)",
+            "",
+        ]
+    else:
+        step1 = [
+            "-----------------------------------------------------------------",
+            "STEP 1: CURRENCY CONVERSION (USD -> KHR)",
+            "-----------------------------------------------------------------",
+            f"Formula: CIF Value (USD) x Exchange Rate",
+            f"= {_fmt_num(cif_khr / exchange_rate if exchange_rate else 0)} x {_fmt_num(exchange_rate)} KHR/USD",
+            f"= {_fmt_whole(cif_khr)} KHR",
+            "",
+        ]
+    lines = step1 + [
         "-----------------------------------------------------------------",
         "STEP 2: EXPORT TAX ON RUBBER (ETR)",
         "-----------------------------------------------------------------",
@@ -300,7 +378,7 @@ def _format_rubber(bd, exchange_rate, total, currency, cif_khr) -> List[str]:
     return lines
 
 
-def _format_normal(bd, exchange_rate, total, currency, cif_khr, is_fta, li) -> List[str]:
+def _format_normal(bd, exchange_rate, total, currency, cif_khr, is_fta, li, input_currency="USD", input_value=0.0) -> List[str]:
     cop = bd.get("cop_amount", 0)
     sop = bd.get("sop_amount", 0)
     vop = bd.get("vop_amount", 0)
@@ -313,14 +391,26 @@ def _format_normal(bd, exchange_rate, total, currency, cif_khr, is_fta, li) -> L
     st_rate = float(st_item.get("rate", 0)) if st_item else 0
     vat_rate = float(vat_item.get("rate", 0)) if vat_item else 0
 
-    lines = [
-        "-----------------------------------------------------------------",
-        "STEP 1: CURRENCY CONVERSION (USD -> KHR)",
-        "-----------------------------------------------------------------",
-        f"Formula: CIF Value (USD) x Exchange Rate",
-        f"= {_fmt_num(cif_khr / exchange_rate if exchange_rate else 0)} x {_fmt_num(exchange_rate)} KHR/USD",
-        f"= {_fmt_whole(cif_khr)} KHR",
-        "",
+    if input_currency == "KHR":
+        step1 = [
+            "-----------------------------------------------------------------",
+            "STEP 1: CURRENCY CONFIRMATION (KHR)",
+            "-----------------------------------------------------------------",
+            f"CIF Value = {_fmt_whole(cif_khr)} KHR (already in local currency)",
+            "",
+        ]
+    else:
+        step1 = [
+            "-----------------------------------------------------------------",
+            "STEP 1: CURRENCY CONVERSION (USD -> KHR)",
+            "-----------------------------------------------------------------",
+            f"Formula: CIF Value (USD) x Exchange Rate",
+            f"= {_fmt_num(cif_khr / exchange_rate if exchange_rate else 0)} x {_fmt_num(exchange_rate)} KHR/USD",
+            f"= {_fmt_whole(cif_khr)} KHR",
+            "",
+        ]
+
+    lines = step1 + [
         "-----------------------------------------------------------------",
         "STEP 2: IMPORT TAXES (COP)",
         "-----------------------------------------------------------------",
@@ -347,35 +437,35 @@ def _format_normal(bd, exchange_rate, total, currency, cif_khr, is_fta, li) -> L
         "-----------------------------------------------------------------",
     ])
     if sop == 0:
-        lines.append(f"VOP = (Customs Value + Import Tax) x 10% (For non-taxable goods)")
+        lines.append(f"VOP = (Customs Value + Import Tax) x {vat_rate:.2f}% (For non-taxable goods)")
         lines.append(f"= ({_fmt_whole(cif_khr)} + {_fmt_whole(cop)}) x {vat_rate:.2f}%")
     else:
-        lines.append(f"VOP = (Customs Value + Import Tax + Special Tariff) x 10% (For general taxable goods)")
+        lines.append(f"VOP = (Customs Value + Import Tax + Special Tariff) x {vat_rate:.2f}% (For general taxable goods)")
         lines.append(f"= ({_fmt_whole(cif_khr)} + {_fmt_whole(cop)} + {_fmt_whole(sop)}) x {vat_rate:.2f}%")
     lines.append(f"= {_fmt_whole(vop)} KHR")
     lines.append("")
 
     # Total Duties and Taxes
     if sop == 0:
-        lines.extend([
-            "-----------------------------------------------------------------",
-            "STEP 5: TOTAL DUTIES AND TAXES",
-            "-----------------------------------------------------------------",
-            f"Total Duties and Taxes = Import Taxes (COP) + VOP (For non-taxable goods)",
-            f"= {_fmt_whole(cop)} + {_fmt_whole(vop)}",
-            f"= {_fmt_whole(total)} KHR",
-            "",
-        ])
+        formula_parts = "Import Taxes (COP) + VOP (For non-taxable goods)"
+        math_parts = f"{_fmt_whole(cop)} + {_fmt_whole(vop)}"
     else:
-        lines.extend([
-            "-----------------------------------------------------------------",
-            "STEP 5: TOTAL DUTIES AND TAXES",
-            "-----------------------------------------------------------------",
-            f"Total Duties and Taxes = Import Taxes (COP) + Special Tariff (SOP) + VOP (For general taxable goods)",
-            f"= {_fmt_whole(cop)} + {_fmt_whole(sop)} + {_fmt_whole(vop)}",
-            f"= {_fmt_whole(total)} KHR",
-            "",
-        ])
+        formula_parts = "Import Taxes (COP) + Special Tariff (SOP) + VOP (For general taxable goods)"
+        math_parts = f"{_fmt_whole(cop)} + {_fmt_whole(sop)} + {_fmt_whole(vop)}"
+
+    if vvf > 0:
+        formula_parts += " + Vehicle Valuation Fee (VVF)"
+        math_parts += f" + {_fmt_whole(vvf)}"
+
+    lines.extend([
+        "-----------------------------------------------------------------",
+        "STEP 5: TOTAL DUTIES AND TAXES",
+        "-----------------------------------------------------------------",
+        f"Total Duties and Taxes = {formula_parts}",
+        f"= {math_parts}",
+        f"= {_fmt_whole(total)} KHR",
+        "",
+    ])
 
     if vvf > 0:
         lines.extend([
@@ -390,7 +480,7 @@ def _format_normal(bd, exchange_rate, total, currency, cif_khr, is_fta, li) -> L
     return lines
 
 
-def _format_fta_dq(bd, exchange_rate, total, currency, cif_khr, li) -> List[str]:
+def _format_fta_dq(bd, exchange_rate, total, currency, cif_khr, li, input_currency="USD", input_value=0.0) -> List[str]:
     customs_basis = bd.get("customs_basis", cif_khr)
     original_cop = bd.get("original_cop_amount", 0)
     before_dq_cop = bd.get("before_dq_cop", 0)
@@ -421,14 +511,26 @@ def _format_fta_dq(bd, exchange_rate, total, currency, cif_khr, li) -> List[str]
     st_rate_normal = float(bd.get("st_rate_normal", st_rate))
     vat_rate_normal = float(bd.get("vat_rate_normal", vat_rate))
 
-    lines = [
-        "-----------------------------------------------------------------",
-        "STEP 1: CURRENCY CONVERSION (USD -> KHR)",
-        "-----------------------------------------------------------------",
-        f"Formula: CIF Value (USD) x Exchange Rate",
-        f"= {_fmt_num(cif_khr / exchange_rate if exchange_rate else 0)} x {_fmt_num(exchange_rate)} KHR/USD",
-        f"= {_fmt_whole(cif_khr)} KHR",
-        "",
+    if input_currency == "KHR":
+        step1 = [
+            "-----------------------------------------------------------------",
+            "STEP 1: CURRENCY CONFIRMATION (KHR)",
+            "-----------------------------------------------------------------",
+            f"CIF Value = {_fmt_whole(cif_khr)} KHR (already in local currency)",
+            "",
+        ]
+    else:
+        step1 = [
+            "-----------------------------------------------------------------",
+            "STEP 1: CURRENCY CONVERSION (USD -> KHR)",
+            "-----------------------------------------------------------------",
+            f"Formula: CIF Value (USD) x Exchange Rate",
+            f"= {_fmt_num(cif_khr / exchange_rate if exchange_rate else 0)} x {_fmt_num(exchange_rate)} KHR/USD",
+            f"= {_fmt_whole(cif_khr)} KHR",
+            "",
+        ]
+
+    lines = step1 + [
         "-----------------------------------------------------------------",
         "STEP 2: IMPORT TAXES (COP)",
         "-----------------------------------------------------------------",
@@ -508,7 +610,7 @@ def _format_fta_dq(bd, exchange_rate, total, currency, cif_khr, li) -> List[str]
         f"Before-DQ SOP = SOP Base x Preferential ST Rate = {_fmt_whole(before_dq_sop)} KHR",
         f"Before-DQ VOP = VOP Base x Preferential VAT Rate = {_fmt_whole(before_dq_vop)} KHR",
         f"",
-        f"BUR = (Before-DQ COP + Before-DQ SOP + Before-DQ VOP) x DQ Factor",
+        f"BUR = (Before-DQ COP + Before-DQ SOP + Before-DQ VOP) x DQ (Deduction Quantity) Factor",
         f"= ({_fmt_whole(before_dq_cop)} + {_fmt_whole(before_dq_sop)} + {_fmt_whole(before_dq_vop)}) x {dq_pct:.0f}%",
         f"= {_fmt_whole(bur)} KHR",
         "",
@@ -581,7 +683,7 @@ def _build_table(li, total, currency, exchange_rate=None) -> List[str]:
     return lines
 
 
-def _build_summary(hs_code, description, cif_value_usd, origin, total, currency, li, is_export=False, is_petroleum=False, bd=None) -> List[str]:
+def _build_summary(hs_code, description, cif_value_usd, origin, total, currency, li, is_export=False, is_petroleum=False, bd=None, input_currency="USD", input_value=0.0) -> List[str]:
     # Find VOP amount for percentage calculation
     vop_item = _find_line_item(li, "VAT")
     vop_amount = vop_item.get("amount", 0) if vop_item else 0
@@ -591,11 +693,18 @@ def _build_summary(hs_code, description, cif_value_usd, origin, total, currency,
     action = "export" if is_export else "import"
     tax_word = "export taxes" if is_export else "import taxes"
 
-    lines = [
-        "SUMMARY:",
-        f"To {action} 1 consignment of {description or 'goods'} ({hs_code or 'N/A'}) valued at",
-        f"{_fmt_num(cif_value_usd)} USD CIF from {origin or 'Unknown'}, you must pay {_fmt_whole(total)} KHR in {tax_word}.",
-    ]
+    if input_currency == "KHR":
+        lines = [
+            "SUMMARY:",
+            f"To {action} 1 consignment of {description or 'goods'} ({hs_code or 'N/A'}) valued at",
+            f"{_fmt_whole(input_value)} KHR CIF from {origin or 'Unknown'}, you must pay {_fmt_whole(total)} KHR in {tax_word}.",
+        ]
+    else:
+        lines = [
+            "SUMMARY:",
+            f"To {action} 1 consignment of {description or 'goods'} ({hs_code or 'N/A'}) valued at",
+            f"{_fmt_num(cif_value_usd)} USD CIF from {origin or 'Unknown'}, you must pay {_fmt_whole(total)} KHR in {tax_word}.",
+        ]
     if is_petroleum and bd:
         p1 = float(bd.get("cpp_amount", 0)) + float(bd.get("atp_amount", 0)) + float(bd.get("spp_amount", 0)) + float(bd.get("vpp_amount", 0))
         p2 = float(bd.get("phase2_total", 0))

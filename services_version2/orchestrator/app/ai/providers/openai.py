@@ -27,6 +27,7 @@ class OpenAIProvider(BaseLLMProvider):
         user_input: str,
         context: Optional[Any] = None,
         intent_hint: Optional[str] = None,
+        prompt_name: str = "gemini_unified_first_layer",
     ) -> Tuple[str, Dict[str, Any]]:
         raise NotImplementedError("OpenAI provider is not implemented in this workspace")
 

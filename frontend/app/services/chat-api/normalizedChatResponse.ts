@@ -11,10 +11,22 @@ import type {
   NormalizedCoverageBlock,
   NormalizedErrorBlock,
   NormalizedMarkdownBlock,
+  NormalizedOfficialReferenceBlock,
+  NormalizedPredictionBlock,
   NormalizedSuggestionsBlock,
   NormalizedTableBlock,
 } from '~/types/message';
+import {
+  isUnreliableServiceFallbackText,
+  normalizeAssistantContentForUi,
+  UNRELIABLE_SERVICE_FALLBACK_MESSAGE,
+} from '~/utils/chat';
 import { blocksToMarkerText } from '~/utils/message';
+import { filterVisibleTableColumns, stripHiddenTableValues } from '~/utils/table';
+import {
+  parseNormalizedChatResponse,
+  type ValidatedNormalizedChatResponse,
+} from './normalizedChatResponseSchema';
 
 export interface NormalizedChatMessageParts {
   content: string;
@@ -32,19 +44,25 @@ export function legacyChatResponseToMessageParts(
 ): NormalizedChatMessageParts | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const obj = value as Record<string, unknown>;
-  const text = firstString(obj, 'answer', 'final_answer', 'message', 'content', 'summary');
+  const text = normalizeAssistantContentForUi(
+    firstString(obj, 'answer', 'final_answer', 'message', 'content', 'summary'),
+  );
   const errors = normalizeLegacyErrors(obj.errors ?? obj.error);
 
   if (!text && !errors.length) return null;
 
   const blocks: MessageBlock[] = [];
   if (text) {
-    blocks.push({
-      id: `${fallbackId}-legacy-markdown`,
-      type: 'markdown',
-      content: text,
-      isComplete: true,
-    });
+    blocks.push(
+      isUnreliableServiceFallbackText(text)
+        ? unreliableServiceFallbackErrorBlock(`${fallbackId}-legacy-unreliable-fallback`)
+        : {
+            id: `${fallbackId}-legacy-markdown`,
+            type: 'markdown',
+            content: text,
+            isComplete: true,
+          },
+    );
   }
   errors.forEach((message, index) => {
     blocks.push({
@@ -62,48 +80,118 @@ export function legacyChatResponseToMessageParts(
     content: blocksToMarkerText(blocks) || text || errors.join('\n'),
     blocks,
     sources: normalizedCitationsToSources(normalizeLegacyCitations(obj.citations ?? obj.references)),
-    status: String(obj.status ?? '').toLowerCase() === 'failed' || errors.length ? 'failed' : 'completed',
+    status: String(obj.status ?? '').toLowerCase() === 'failed' || errors.length || blocks.some(isUnreliableFallbackErrorBlock)
+      ? 'failed'
+      : 'completed',
     coverage: normalizeCoverage(obj.coverage ?? obj.answer_coverage ?? obj.status),
     confidence: normalizeConfidence(obj.confidence ?? obj.candidate_confidence),
   };
 }
 
 export function isNormalizedChatResponse(value: unknown): value is NormalizedChatResponse {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const obj = value as Partial<NormalizedChatResponse>;
-  const content = normalizedMessageBlocks(obj);
-  return (
-    typeof obj.request_id === 'string' &&
-    typeof obj.session_id === 'string' &&
-    typeof obj.intent === 'string' &&
-    Boolean(obj.message) &&
-    Boolean(content)
-  );
+  return parseNormalizedChatResponse(value) !== null;
 }
 
 export function normalizedChatResponseToMessageParts(
-  response: NormalizedChatResponse,
+  response: NormalizedChatResponse | ValidatedNormalizedChatResponse,
+  fallbackId: string,
+): NormalizedChatMessageParts {
+  const parsed = parseNormalizedChatResponse(response);
+  return parsed
+    ? validatedNormalizedChatResponseToMessageParts(parsed, fallbackId)
+    : invalidNormalizedResponseToMessageParts(fallbackId);
+}
+
+export function handleNormalizedChatResponse(
+  response: unknown,
+  fallbackId: string,
+): NormalizedChatMessageParts | null {
+  const parsed = parseNormalizedChatResponse(response);
+  if (parsed) {
+    return validatedNormalizedChatResponseToMessageParts(parsed, fallbackId);
+  }
+  if (isNormalizedContractEnvelope(response)) {
+    if (import.meta.dev) {
+      console.warn('Invalid normalized chat response', response);
+    }
+    return invalidNormalizedResponseToMessageParts(fallbackId);
+  }
+  return null;
+}
+
+function validatedNormalizedChatResponseToMessageParts(
+  response: ValidatedNormalizedChatResponse,
   fallbackId: string,
 ): NormalizedChatMessageParts {
   const normalizedBlocks = normalizedMessageBlocks(response) ?? [];
-  const blocks = normalizedBlocks.map((block, index) =>
-    normalizedBlockToMessageBlock(block, `${response.request_id || fallbackId}-${index}`),
-  );
-  const content = blocksToMarkerText(blocks) || response.message.text || markdownTextFromBlocks(normalizedBlocks);
+  const blocks = normalizedBlocks.length
+    ? normalizedBlocks.map((block, index) =>
+        normalizedBlockToMessageBlock(block, `${response.request_id || fallbackId}-${index}`),
+      )
+    : fallbackResponseContentBlocks(response, fallbackId);
+  const hasUnreliableFallback = blocks.some(isUnreliableFallbackErrorBlock);
+  // Visual rendering uses `blocks`; keep `response.content` as the canonical
+  // copy/export/accessibility fallback when the backend provides it.
+  const content =
+    (hasUnreliableFallback ? '' : response.response?.content) ||
+    blocksToMarkerText(blocks) ||
+    markdownTextFromBlocks(normalizedBlocks);
 
   return {
     content,
     blocks,
     sources: normalizedCitationsToSources(response.citations),
-    status: response.status === 'failed' ? 'failed' : 'completed',
+    status: hasUnreliableFallback ? 'failed' : response.status,
     coverage: response.coverage ?? response.response?.coverage,
     confidence: response.confidence ?? response.response?.confidence,
     latencyMs: numberValue(response.metrics?.latency_ms),
   };
 }
 
+function fallbackResponseContentBlocks(
+  response: ValidatedNormalizedChatResponse,
+  fallbackId: string,
+): MessageBlock[] {
+  const text = response.response?.content;
+  if (!text) return [];
+  if (isUnreliableServiceFallbackText(text)) {
+    return [unreliableServiceFallbackErrorBlock(`${response.request_id || fallbackId}-response-unreliable-fallback`)];
+  }
+  return [{
+    id: `${response.request_id || fallbackId}-response-fallback`,
+    type: 'markdown',
+    content: text,
+    isComplete: true,
+  }];
+}
+
+function isNormalizedContractEnvelope(value: unknown): boolean {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value) && 'api_version' in value);
+}
+
+function invalidNormalizedResponseToMessageParts(fallbackId: string): NormalizedChatMessageParts {
+  const blocks: MessageBlock[] = [{
+    id: `${fallbackId}-invalid-normalized-response`,
+    type: 'error',
+    content: {
+      title: 'Response unavailable',
+      message: 'The response format was not supported.',
+    },
+    isComplete: true,
+  }];
+
+  return {
+    content: blocksToMarkerText(blocks),
+    blocks,
+    sources: [],
+    status: 'failed',
+  };
+}
+
+type SafeNormalizedChatContentBlock = ValidatedNormalizedChatResponse['message']['content'][number];
+
 function normalizedBlockToMessageBlock(
-  block: unknown,
+  block: unknown | SafeNormalizedChatContentBlock,
   id: string,
 ): MessageBlock {
   if (!isRecord(block) || typeof block.type !== 'string') return fallbackBlockToMessageBlock(block, id);
@@ -113,15 +201,17 @@ function normalizedBlockToMessageBlock(
   if (block.type === 'table') return tableBlockToMessageBlock(block, id);
   if (block.type === 'details') return passthroughBlockToMessageBlock(block, id);
   if (block.type === 'references') return passthroughBlockToMessageBlock(block, id);
+  if (block.type === 'official_reference') return officialReferenceBlockToMessageBlock(block, id);
   if (block.type === 'clarification') return clarificationBlockToMessageBlock(block, id);
   if (block.type === 'error') return errorBlockToMessageBlock(block, id);
   if (block.type === 'chart') return chartBlockToMessageBlock(block, id);
+  if (block.type === 'prediction') return predictionBlockToMessageBlock(block, id);
   if (block.type === 'suggestions') return suggestionsBlockToMessageBlock(block, id);
   if (block.type === 'coverage') return coverageBlockToMessageBlock(block, id);
   return {
     id,
     type: 'fallback',
-    content: stringifyFallbackBlock(block),
+    content: 'Unsupported response content',
     isComplete: true,
   };
 }
@@ -137,17 +227,45 @@ function passthroughBlockToMessageBlock(block: NormalizedChatContentBlock, id: s
 }
 
 function markdownBlockToMessageBlock(block: NormalizedMarkdownBlock, id: string): MessageBlock {
+  const content = normalizeAssistantContentForUi(typeof block.text === 'string' ? block.text : '');
+  if (isUnreliableServiceFallbackText(content)) {
+    return unreliableServiceFallbackErrorBlock(`${id}-unreliable-fallback`);
+  }
+
   return {
     id,
     type: 'markdown',
-    content: typeof block.text === 'string' ? block.text : '',
+    content,
     isComplete: true,
   };
 }
 
+function unreliableServiceFallbackErrorBlock(id: string): MessageBlock {
+  return {
+    id,
+    type: 'error',
+    content: {
+      title: 'Response unavailable',
+      message: UNRELIABLE_SERVICE_FALLBACK_MESSAGE,
+    },
+    isComplete: true,
+  };
+}
+
+function isUnreliableFallbackErrorBlock(block: MessageBlock): boolean {
+  return block.type === 'error' &&
+    typeof block.content === 'object' &&
+    block.content !== null &&
+    'message' in block.content &&
+    block.content.message === UNRELIABLE_SERVICE_FALLBACK_MESSAGE;
+}
+
 function tableBlockToMessageBlock(block: NormalizedTableBlock, id: string): MessageBlock {
-  const columns = Array.isArray(block.columns) ? block.columns : [];
-  const rows = Array.isArray(block.rows) ? block.rows : [];
+  const rawColumns = Array.isArray(block.columns) ? block.columns : [];
+  const columns = filterVisibleTableColumns(rawColumns);
+  const rows = Array.isArray(block.rows)
+    ? block.rows.map((row) => stripHiddenTableValues(row, rawColumns))
+    : [];
   return {
     id,
     type: 'table',
@@ -160,18 +278,43 @@ function tableBlockToMessageBlock(block: NormalizedTableBlock, id: string): Mess
   };
 }
 
+function officialReferenceBlockToMessageBlock(block: NormalizedOfficialReferenceBlock, id: string): MessageBlock {
+  return {
+    id,
+    type: 'official_reference',
+    title: block.title,
+    content: {
+      title: block.title,
+      label: block.label,
+      url: block.url,
+      agency: block.agency,
+      sourceType: block.source_type,
+    },
+    isComplete: true,
+  };
+}
+
 function clarificationBlockToMessageBlock(
   block: NormalizedClarificationBlock,
   id: string,
 ): MessageBlock {
   const title = block.title || 'More information is needed';
   const questionItems = Array.isArray(block.questions) ? block.questions : [];
-  const questions = questionItems.map((question) => `- ${question}`).join('\n');
   return {
     id,
-    type: 'markdown',
+    type: 'clarification',
     title,
-    content: `**${title}**\n\n${questions}`,
+    content: {
+      kind: 'form',
+      title,
+      fields: questionItems.map((question, index) => ({
+        name: `clarification_${index + 1}`,
+        label: question,
+        type: 'text',
+        required: true,
+      })),
+      actions: [{ id: 'submit', label: 'Submit', primary: true }],
+    },
     isComplete: true,
   };
 }
@@ -206,6 +349,48 @@ function chartBlockToMessageBlock(block: NormalizedChartBlock, id: string): Mess
   };
 }
 
+function predictionBlockToMessageBlock(block: NormalizedPredictionBlock, id: string): MessageBlock {
+  const data = block.data && typeof block.data === 'object' && !Array.isArray(block.data) ? block.data : {};
+  const displayData = withoutPredictionConfidence(data);
+  return {
+    id,
+    type: 'prediction',
+    title: block.title,
+    content: {
+      ...displayData,
+      title: block.title,
+      hsCode: stringValue(data.hsCode),
+      productName: stringValue(data.description),
+    },
+    isComplete: true,
+  };
+}
+
+function withoutPredictionConfidence(data: Record<string, unknown>): Record<string, unknown> {
+  const {
+    confidence: _confidence,
+    confidenceLabel: _confidenceLabel,
+    candidate_confidence: _candidateConfidence,
+    alternatives,
+    ...displayData
+  } = data;
+
+  if (Array.isArray(alternatives)) {
+    displayData.alternatives = alternatives.map((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
+      const {
+        confidence: _altConfidence,
+        confidenceLabel: _altConfidenceLabel,
+        candidate_confidence: _altCandidateConfidence,
+        ...displayItem
+      } = item as Record<string, unknown>;
+      return displayItem;
+    });
+  }
+
+  return displayData;
+}
+
 function suggestionsBlockToMessageBlock(block: NormalizedSuggestionsBlock, id: string): MessageBlock {
   return {
     id,
@@ -233,6 +418,7 @@ function coverageBlockToMessageBlock(block: NormalizedCoverageBlock, id: string)
 
 function normalizedCitationsToSources(citations: NormalizedChatResponse['citations']): MessageSource[] {
   return (citations ?? []).map((citation, index) => ({
+    marker: citation.marker,
     title: citation.title || citation.filename || citation.document_id || citation.label || `Source ${index + 1}`,
     url: citation.url,
     snippet: citation.snippet,
@@ -259,7 +445,7 @@ function markdownTextFromBlocks(blocks: unknown[]): string {
     .join('\n\n');
 }
 
-function normalizedMessageBlocks(response: Partial<NormalizedChatResponse>): unknown[] | null {
+function normalizedMessageBlocks(response: { message?: { content?: unknown; blocks?: unknown } | null }): unknown[] | null {
   const message = response.message;
   if (!message || typeof message !== 'object' || Array.isArray(message)) return null;
   const value = Array.isArray(message.content) ? message.content : message.blocks;

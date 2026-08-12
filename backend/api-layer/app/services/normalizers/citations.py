@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from uuid import UUID
 from typing import Any
 
 from app.schemas.normalized_chat import Citation
@@ -8,6 +9,19 @@ from app.schemas.normalized_chat import Citation
 
 # Citation normalization is shared across retrieval/general responses and calculator citations.
 # Keeping it separate avoids mixing source parsing with response block construction.
+
+PUBLIC_CITATION_METADATA_KEYS = {
+    "document_title",
+    "filename",
+    "file_name",
+    "page",
+    "page_number",
+    "section",
+    "heading",
+    "language",
+    "published_at",
+    "effective_date",
+}
 
 
 def normalize_citations(value: Any) -> list[Citation]:
@@ -17,39 +31,69 @@ def normalize_citations(value: Any) -> list[Citation]:
     citations: list[Citation] = []
     for index, item in enumerate(value, start=1):
         if isinstance(item, str):
-            citations.append(Citation(id=str(index), label=f"Source {index}", title=item))
+            title = item.strip()
+            if title:
+                citations.append(Citation(id=str(index), label=f"Source {index}", title=title))
             continue
         if not isinstance(item, dict):
             continue
 
         metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+        public_metadata = public_citation_metadata(metadata)
+        explicit_citation_id = first_scalar_value(item, "citation_id", "citationId")
+        document_id = first_scalar_value(
+            item,
+            "document_id",
+            "documentId",
+            "doc_id",
+            "docId",
+            "source_id",
+            "sourceId",
+        ) or first_scalar_value(
+            metadata,
+            "document_id",
+            "documentId",
+            "doc_id",
+            "docId",
+            "source_id",
+            "sourceId",
+        )
         citation_id = (
-            item.get("id")
-            or item.get("citation_id")
-            or item.get("doc_id")
-            or item.get("source_id")
-            or item.get("reference_id")
-            or item.get("document_id")
+            first_scalar_value(
+                item,
+                "id",
+                "doc_id",
+                "docId",
+                "document_id",
+                "documentId",
+                "citation_id",
+                "citationId",
+                "source_id",
+                "sourceId",
+            )
+            or first_scalar_value(
+                metadata,
+                "id",
+                "doc_id",
+                "docId",
+                "document_id",
+                "documentId",
+                "citation_id",
+                "citationId",
+                "source_id",
+                "sourceId",
+            )
             or index
         )
-        document_id = item.get("document_id") or item.get("documentId") or metadata.get("document_id") or metadata.get("doc_id")
         filename = item.get("filename") or metadata.get("filename") or metadata.get("file_name")
         chunk_index = item.get("chunk_index") or item.get("chunk_idx") or metadata.get("chunk_index") or metadata.get("chunk_idx")
         snippet = item.get("snippet") or item.get("content") or item.get("description")
-        title = (
-            item.get("title")
-            or item.get("source")
-            or item.get("section_title")
-            or metadata.get("title")
-            or metadata.get("source")
-            or citation_title_from_snippet(snippet)
-            or generated_citation_title(document_id, filename)
-            or generated_citation_title(item.get("doc_id") or citation_id, None)
-        )
+        title = citation_title(item, metadata, snippet)
         citations.append(
             Citation(
                 id=str(citation_id),
-                citation_id=str(citation_id),
+                marker=index,
+                citation_id=str(explicit_citation_id) if explicit_citation_id else None,
                 label=item.get("label") or f"Source {index}",
                 title=title,
                 snippet=snippet,
@@ -59,7 +103,7 @@ def normalize_citations(value: Any) -> list[Citation]:
                 filename=str(filename) if filename else None,
                 chunk_index=coerce_int(chunk_index),
                 retrieval_method=item.get("retrieval_method") or item.get("retrievalMethod") or metadata.get("retrieval_method"),
-                metadata=metadata,
+                metadata=public_metadata,
             )
         )
     return citations
@@ -69,24 +113,79 @@ def dedupe_citations(citations: list[Citation]) -> list[Citation]:
     deduped: list[Citation] = []
     seen: set[str] = set()
     for citation in citations:
-        key = (
-            (citation.url or "").strip().lower()
-            or (citation.document_id or "").strip().lower()
-            or (citation.title or "").strip().lower()
-        )
+        key = citation_dedupe_key(citation)
         if not key or key in seen:
             continue
         seen.add(key)
         deduped.append(citation)
+    for index, citation in enumerate(deduped, start=1):
+        citation.marker = index
+        citation.label = citation.label or f"Source {index}"
     return deduped
 
 
-def generated_citation_title(document_id: Any, filename: Any) -> str | None:
-    if document_id:
-        return f"Document {document_id}"
-    if filename:
-        return str(filename)
+def citation_dedupe_key(citation: Citation) -> str:
+    if citation.url:
+        return f"url:{citation.url.strip().lower()}"
+    if citation.document_id:
+        chunk = citation.chunk_index if citation.chunk_index is not None else ""
+        return f"document:{citation.document_id.strip().lower()}:{chunk}"
+    if citation.citation_id:
+        return f"citation:{citation.citation_id.strip().lower()}"
+    return f"title-snippet:{(citation.title or '').strip().lower()}:{(citation.snippet or '').strip().lower()}"
+
+
+def first_scalar_value(source: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        value = source.get(key)
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        if isinstance(value, (str, int, float, bool)):
+            return value
     return None
+
+
+def public_citation_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    public_metadata: dict[str, Any] = {}
+    for key, value in metadata.items():
+        normalized_key = str(key)
+        if normalized_key.lower() not in PUBLIC_CITATION_METADATA_KEYS:
+            continue
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            public_metadata[normalized_key] = value
+    return public_metadata
+
+
+def citation_title(item: dict[str, Any], metadata: dict[str, Any], snippet: Any) -> str:
+    for value in (
+        item.get("title"),
+        metadata.get("document_title"),
+        metadata.get("filename"),
+        item.get("filename"),
+    ):
+        title = clean_title_value(value)
+        if title:
+            return title
+    return citation_title_from_snippet(snippet) or "Customs reference"
+
+
+def clean_title_value(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    title = value.strip()
+    if not title or is_uuid_like(title):
+        return None
+    return title
+
+
+def is_uuid_like(value: str) -> bool:
+    try:
+        UUID(value)
+        return True
+    except ValueError:
+        return False
 
 
 def citation_title_from_snippet(value: Any) -> str | None:

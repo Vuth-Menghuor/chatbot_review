@@ -1,23 +1,34 @@
 import type { EChartsOption, ExtendedChartOutput, ExtendedChartSeries } from './types';
 
+const ADAPTIVE_BAR_LIMIT = 12;
+const CROWDED_CATEGORY_COUNT = 8;
+const LONG_LABEL_LENGTH = 18;
+const MAX_AXIS_LABEL_LENGTH = 34;
+
 export function buildBaseOption(out: ExtendedChartOutput, isDark: boolean): EChartsOption {
   const textColor = isDark ? '#e4e4e7' : '#27272a';
   const gridLineColor = isDark ? '#27272a' : '#e4e4e7';
 
-  const categories = out.data?.map((item) => String(item[out.xKey] ?? '')) || [];
   const chartType = String(out.chartType || 'bar').toLowerCase();
+  const sourceData = out.data || [];
+  const shouldAdapt = shouldUseAdaptiveHorizontalBar(out, chartType);
+  const displayData = shouldAdapt ? topRowsForBarDisplay(out, ADAPTIVE_BAR_LIMIT) : sourceData;
+  const categories = displayData.map((item) => String(item[out.xKey] ?? ''));
 
   const isHorizontal =
-    out.horizontal === true || chartType === 'horizontal-bar' || chartType === 'horizontalbar';
-  const hasDataZoom = out.dataZoom === true;
+    shouldAdapt ||
+    out.horizontal === true ||
+    chartType === 'horizontal-bar' ||
+    chartType === 'horizontalbar';
+  const hasDataZoom = out.dataZoom === true && !shouldAdapt;
 
   const seriesList =
     out.series?.map((s) => {
       const seriesData =
-        out.data?.map((item) => {
+        displayData.map((item) => {
           const val = item[s.key];
           return typeof val === 'number' ? val : parseFloat(String(val || '0')) || 0;
-        }) || [];
+        });
 
       const type =
         s.type || (chartType === 'area' ? 'line' : chartType === 'line' ? 'line' : 'bar');
@@ -71,7 +82,12 @@ export function buildBaseOption(out: ExtendedChartOutput, isDark: boolean): ECha
     type: 'category' as const,
     data: categories,
     axisLine: { lineStyle: { color: gridLineColor } },
-    axisLabel: { color: textColor, interval: 0, rotate: categories.length > 6 ? 30 : 0 },
+    axisLabel: {
+      color: textColor,
+      interval: 0,
+      rotate: isHorizontal ? 0 : categories.length > 6 ? 30 : 0,
+      formatter: (value: string) => truncateAxisLabel(value, isHorizontal ? 46 : MAX_AXIS_LABEL_LENGTH),
+    },
   };
 
   const valueAxis = {
@@ -84,9 +100,14 @@ export function buildBaseOption(out: ExtendedChartOutput, isDark: boolean): ECha
   return {
     title: {
       text: out.title || '',
+      subtext:
+        shouldAdapt && sourceData.length > displayData.length
+          ? `Showing top ${displayData.length} of ${sourceData.length}`
+          : undefined,
       left: 'center',
       top: '4%',
       textStyle: { color: textColor, fontSize: 16, fontWeight: 'bold' },
+      subtextStyle: { color: isDark ? '#a1a1aa' : '#71717a', fontSize: 12 },
     },
     tooltip: {
       trigger: 'axis',
@@ -103,10 +124,10 @@ export function buildBaseOption(out: ExtendedChartOutput, isDark: boolean): ECha
       textStyle: { color: textColor },
     },
     grid: {
-      left: '3%',
+      left: isHorizontal ? '4%' : '3%',
       right: '4%',
       bottom: hasDataZoom ? '20%' : '12%',
-      top: '15%',
+      top: shouldAdapt ? '18%' : '15%',
       containLabel: true,
     },
     xAxis: [isHorizontal ? valueAxis : categoryAxis],
@@ -126,4 +147,51 @@ export function buildBaseOption(out: ExtendedChartOutput, isDark: boolean): ECha
       : undefined,
     series: seriesList,
   };
+}
+
+function shouldUseAdaptiveHorizontalBar(out: ExtendedChartOutput, chartType: string): boolean {
+  if (out.horizontal === true || chartType === 'horizontal-bar' || chartType === 'horizontalbar') {
+    return false;
+  }
+
+  const data = out.data || [];
+  if (!data.length || !out.series?.length || !out.xKey) return false;
+
+  const seriesTypes = out.series.map((series) => String(series.type || chartType || 'bar').toLowerCase());
+  const isBarLike = seriesTypes.every((type) => type === 'bar' || type === 'column');
+  if (!isBarLike) return false;
+
+  const labels = data.map((item) => String(item[out.xKey] ?? ''));
+  const averageLabelLength = labels.reduce((sum, label) => sum + label.length, 0) / Math.max(labels.length, 1);
+  const maxLabelLength = Math.max(...labels.map((label) => label.length));
+
+  return (
+    labels.length > CROWDED_CATEGORY_COUNT ||
+    averageLabelLength > LONG_LABEL_LENGTH ||
+    maxLabelLength > MAX_AXIS_LABEL_LENGTH
+  );
+}
+
+function topRowsForBarDisplay(out: ExtendedChartOutput, limit: number) {
+  const data = out.data || [];
+  if (data.length <= limit) return data;
+
+  const seriesKeys = out.series?.map((series) => series.key).filter(Boolean) || [];
+  if (!seriesKeys.length) return data.slice(0, limit);
+
+  return [...data]
+    .sort((a, b) => rowSeriesTotal(b, seriesKeys) - rowSeriesTotal(a, seriesKeys))
+    .slice(0, limit);
+}
+
+function rowSeriesTotal(row: Record<string, string | number>, keys: string[]) {
+  return keys.reduce((sum, key) => {
+    const value = row[key];
+    return sum + (typeof value === 'number' ? value : parseFloat(String(value || '0')) || 0);
+  }, 0);
+}
+
+function truncateAxisLabel(value: string, maxLength: number) {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, Math.max(maxLength - 1, 1))}…`;
 }

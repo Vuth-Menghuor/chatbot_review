@@ -5,6 +5,13 @@ from app.services.normalizers.calculator.citations import (
     dedupe_reference_items,
     reference_item_from_value,
 )
+from app.services.normalizers.calculator.adapter import (
+    CalculatorResponseAdapter,
+    build_calculator_blocks,
+    calculator_response_adapter,
+    is_calculator_response,
+)
+from app.services.normalizers.calculator.details import details_items_from_list
 from app.services.normalizers.calculator.extraction import (
     ExtractedTable,
     extract_final_tax_breakdown_table,
@@ -34,12 +41,9 @@ from app.services.normalizers.calculator.formatting import (
     title_case_preserving_step,
 )
 from app.services.normalizers.calculator.legacy import (
-    assumption_line_value,
     assumptions_block_from_sections,
     calculator_report_title,
     calculator_summary_data,
-    declared_value_assumption,
-    details_items_from_list,
     details_items_from_sections,
     is_rate_line,
     is_rates_heading,
@@ -47,12 +51,9 @@ from app.services.normalizers.calculator.legacy import (
     key_value_from_lines,
     normalized_calculator_section_title,
     parse_calculator_text_sections,
-    rate_applied_from_line,
-    rate_code_from_label,
     regex_group,
     section_key_value_map,
     split_hs_code_description,
-    structured_assumptions_data,
 )
 from app.services.normalizers.calculator.normalizer import CalculatorNormalizer, normalize_calculator_response
 from app.services.normalizers.calculator.structured import (
@@ -64,17 +65,18 @@ from app.services.normalizers.calculator.structured import (
 __all__ = [
     "ExtractedTable",
     "append_blank_once",
-    "assumption_line_value",
     "assumptions_block_from_sections",
     "blocks_from_structured_calculator_result",
+    "build_calculator_blocks",
     "calculator_report_title",
+    "calculator_response_adapter",
     "calculator_source_citation",
     "calculator_source_citations",
     "calculator_summary_data",
     "calculator_title_case",
     "clean_reference_title",
+    "CalculatorResponseAdapter",
     "CalculatorNormalizer",
-    "declared_value_assumption",
     "dedupe_reference_items",
     "details_items_from_list",
     "details_items_from_sections",
@@ -87,6 +89,7 @@ __all__ = [
     "is_ascii_table_rule_line",
     "is_calculator_label_heading",
     "is_calculator_markdown_text",
+    "is_calculator_response",
     "is_calculator_section_title",
     "is_rate_line",
     "is_rates_heading",
@@ -104,15 +107,12 @@ __all__ = [
     "normalized_calculator_section_title",
     "parse_calculator_text_sections",
     "parse_pipe_table_lines",
-    "rate_applied_from_line",
-    "rate_code_from_label",
     "reference_item_from_value",
     "regex_group",
     "scalar_to_cell",
     "section_key_value_map",
     "split_hs_code_description",
     "split_pipe_row",
-    "structured_assumptions_data",
     "table_header_key",
     "title_case_preserving_step",
 ]

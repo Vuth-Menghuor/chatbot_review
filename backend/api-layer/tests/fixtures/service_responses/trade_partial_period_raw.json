@@ -1,0 +1,50 @@
+{
+  "request_id": "b1badfdc-f0d1-42ad-9a35-722d78c7c2eb",
+  "session_id": "trade_partial_period_raw",
+  "question": "Show Cambodia trade statistics for 2026.",
+  "answer": "### Temporary Service Interruption\n\nI apologize, but I am currently unable to retrieve the trade statistics for Cambodia for 2026. \n\nOur trade data service is experiencing a brief connectivity issue and is currently offline for maintenance. This is a temporary measure, and the system is scheduled to be back online in about 30 seconds.\n\n**How we can help you once the service is back:**\n\nTo provide you with the most accurate and useful data, it helps if you can provide a bit more detail when you resubmit your request. Trade statistics are often vast, so narrowing your focus can lead to better results:\n\n*   **Specify a Product or Sector:** Instead of general trade data, try asking for statistics on specific goods (e.g., \"textiles,\" \"garments,\" or \"agricultural products\").\n*   **Provide an HS Code:** If you know the Harmonized System (HS) code for the specific commodity you are interested in, including it will help me provide precise figures.\n*   **Clarify Trade Direction:** Are you looking for import data, export data, or total trade volume? \n*   **Compare Periods:** If you are analyzing trends, you might also find it helpful to compare the 2026 projections with previous years (e.g., 2024 or 2025).\n\n**Please feel free to try your request again in a few moments.** If you would like me to assist you with data from a different year or a different region in the meantime, I would be happy to help!",
+  "intent": "trade_query",
+  "status": "failed",
+  "citations": [],
+  "clarifications": [],
+  "errors": [
+    "Trade data service error: Circuit breaker is OPEN for CircuitBreaker[trade-service:8004]. Service unavailable. Recovery in 31.3s"
+  ],
+  "latency_ms": 4070.4128742218018,
+  "metadata": {
+    "normalized_input": "show cambodia trade statistics for 2026.",
+    "validation_passed": true,
+    "scope_keywords_detected": [],
+    "llm_confidence": 0.95,
+    "nlu_unified_result": {
+      "reason": "User is requesting trade statistics for a specific year.",
+      "is_safe": true,
+      "is_on_topic": true,
+      "intent": "trade_query",
+      "rewritten_query": "Cambodia trade statistics 2025",
+      "requested_language": null,
+      "is_language_explicitly_requested": false,
+      "is_ambiguous": false,
+      "suggested_clarification_prompt": null,
+      "confidence": 0.95,
+      "entity": null,
+      "entity_confidence": "explicit_none",
+      "query_nature": "specific",
+      "query": "show cambodia trade statistics for 2026."
+    },
+    "nlu_entity": null,
+    "nlu_entity_confidence": "explicit_none",
+    "has_nlu_entity": true,
+    "language": "en",
+    "intent_query": "Show Cambodia trade statistics for 2026.",
+    "service_query": "Show Cambodia trade statistics for 2026.",
+    "query_strategy": "original_for_no_rewrite_or_skipped",
+    "slot_extraction_source": "layer1_structured"
+  },
+  "table": null,
+  "visualization": null,
+  "message": "### Temporary Service Interruption\n\nI apologize, but I am currently unable to retrieve the trade statistics for Cambodia for 2026. \n\nOur trade data service is experiencing a brief connectivity issue and is currently offline for maintenance. This is a temporary measure, and the system is scheduled to be back online in about 30 seconds.\n\n**How we can help you once the service is back:**\n\nTo provide you with the most accurate and useful data, it helps if you can provide a bit more detail when you resubmit your request. Trade statistics are often vast, so narrowing your focus can lead to better results:\n\n*   **Specify a Product or Sector:** Instead of general trade data, try asking for statistics on specific goods (e.g., \"textiles,\" \"garments,\" or \"agricultural products\").\n*   **Provide an HS Code:** If you know the Harmonized System (HS) code for the specific commodity you are interested in, including it will help me provide precise figures.\n*   **Clarify Trade Direction:** Are you looking for import data, export data, or total trade volume? \n*   **Compare Periods:** If you are analyzing trends, you might also find it helpful to compare the 2026 projections with previous years (e.g., 2024 or 2025).\n\n**Please feel free to try your request again in a few moments.** If you would like me to assist you with data from a different year or a different region in the meantime, I would be happy to help!",
+  "suggestion": [],
+  "summary": null,
+  "summary_metrics": null
+}

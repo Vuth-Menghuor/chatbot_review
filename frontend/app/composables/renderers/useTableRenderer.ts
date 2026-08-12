@@ -1,5 +1,6 @@
 import { computed } from 'vue';
 import type { MessageBlock, TableData } from '~/types/message';
+import { filterVisibleTableColumns, stripHiddenTableValues } from '~/utils/table';
 import { useAnimStaggerReveal } from '../common/useAnimStaggerReveal';
 import { useRenderAnimation } from '../common/useRenderAnimation';
 
@@ -25,8 +26,11 @@ export function useTableRenderer(props: {
     return { columns: [], rows: [] };
   });
 
-  const columns = computed(() => data.value.columns ?? []);
-  const rows = computed(() => data.value.rows ?? []);
+  const rawColumns = computed(() => data.value.columns ?? []);
+  const columns = computed(() => filterVisibleTableColumns(rawColumns.value));
+  const rows = computed(() =>
+    (data.value.rows ?? []).map((row) => stripHiddenTableValues(row, rawColumns.value)),
+  );
 
   /** SSE / LM Studio: fence closed but table JSON still filling in. */
   const isStreamingLayout = computed(

@@ -1,0 +1,72 @@
+# ================================================================
+# Calculator Service - Docker Build Context Exclusions
+# ================================================================
+# Prevents unnecessary files from bloating the Docker image and
+# invalidating the build cache.
+#
+# Usage: Place next to Dockerfile; Docker reads it automatically.
+# ================================================================
+
+# --- Version control ---
+.git
+.gitignore
+.gitattributes
+
+# --- Python compiled artifacts ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# --- Virtual environments ---
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+
+# --- Environment / secrets ---
+.env
+.env.*
+*.pem
+*.key
+
+# --- IDEs & editors ---
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# --- Test / coverage artifacts ---
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.tox/
+nosetests.xml
+coverage.xml
+
+# --- Documentation ---
+docs/_build/
+*.md
+
+# --- Archives ---
+*.zip
+*.tar.gz
+*.rar
+
+# --- Node / frontend (if any) ---
+node_modules/
+npm-debug.log*
+
+# --- OS metadata ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Build artifacts ---
+*.egg-info/
+dist/
+build/

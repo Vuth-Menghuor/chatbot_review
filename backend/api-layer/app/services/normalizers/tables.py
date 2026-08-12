@@ -31,11 +31,26 @@ def normalize_table(value: Any) -> TableBlock | None:
     if not normalized_columns and rows and isinstance(rows[0], dict):
         normalized_columns = [ChatTableColumn(key=str(key), label=str(key).replace("_", " ").title()) for key in rows[0]]
 
-    normalized_rows = [row for row in rows if isinstance(row, dict)]
+    normalized_rows = normalize_table_rows(rows, normalized_columns)
     if not normalized_columns and not normalized_rows:
         return None
 
     return TableBlock(title=value.get("title") or value.get("name"), columns=normalized_columns, rows=normalized_rows)
+
+
+def normalize_table_rows(rows: list[Any], columns: list[ChatTableColumn]) -> list[dict[str, str | int | float | bool | None]]:
+    normalized_rows: list[dict[str, str | int | float | bool | None]] = []
+    for row in rows:
+        if isinstance(row, dict):
+            normalized_rows.append(row)
+        elif isinstance(row, list | tuple) and columns:
+            normalized_rows.append(
+                {
+                    column.key: scalar_to_cell(row[index]) if index < len(row) else None
+                    for index, column in enumerate(columns)
+                }
+            )
+    return normalized_rows
 
 
 # Collect every table-like payload shape the orchestrator may send before converting each one into a TableBlock.

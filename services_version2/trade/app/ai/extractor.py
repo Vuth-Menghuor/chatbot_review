@@ -378,7 +378,16 @@ def parse_and_resolve_parameters(raw: Dict[str, Any], question: str) -> Dict[str
     if sort_metric is not None:
         params["sort_metric"] = str(sort_metric).upper()
 
+    # Chart Preference
+    chart_pref = raw.get("chart_preference")
+    if chart_pref is not None:
+        chart_pref_str = str(chart_pref).strip().lower()
+        chart_pref_str = chart_pref_str.replace("chart", "").replace("graph", "").replace("plot", "").strip()
+        if chart_pref_str in ("bar", "line", "pie", "table", "kpi"):
+            params["chart_preference"] = chart_pref_str
+
     # Metrics
+
     metrics = raw.get("metrics")
     if isinstance(metrics, list):
         params["metrics"] = [str(m).upper() for m in metrics if m]

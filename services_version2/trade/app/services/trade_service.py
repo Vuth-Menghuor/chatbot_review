@@ -68,6 +68,10 @@ class TradeService:
         }
 
         # Flatten helper keys for downstream consumption
+        dal_params["year"] = scoped.year or (int(final.period) if final.period and final.period.isdigit() else None)
+        dal_params["years"] = scoped.years
+        dal_params["origin_country"] = scoped.origin_country
+        dal_params["destination_country"] = scoped.destination_country
         dal_params["trade_direction"] = final.filters.get("FLOW")
         partners = final.filters.get("PARTNER_COUNTRY")
         dal_params["partner_countries"] = partners if isinstance(partners, list) else None
@@ -77,6 +81,7 @@ class TradeService:
         dal_params["hs_chapter"] = final.filters.get("HS_CHAPTER")
         dal_params["sitc_section"] = final.filters.get("SITC_SECTION")
         dal_params["sitc_division"] = final.filters.get("SITC_DIVISION")
+
 
         # Execute via DALClient
         logger.info(f"[TradeService] Executing trade database lookup via DALClient for sub-intent '{final.intent}'...")
@@ -355,6 +360,7 @@ class TradeService:
             "sitc_division": final.filters.get("SITC_DIVISION"),
             "origin_country": scoped.origin_country,
             "destination_country": scoped.destination_country,
+            "chart_preference": scoped.chart_preference,
         }
 
         # Flatten partner countries so the test script can easily read them
@@ -436,6 +442,7 @@ class TradeService:
                 raw_offset=llm_params.get("offset"),
                 raw_sitc_section=llm_params.get("sitc_section"),
                 raw_sitc_division=llm_params.get("sitc_division"),
+                raw_chart_preference=llm_params.get("chart_preference"),
                 version=llm_params.get("version", "trade_volume_1.0"),
                 question=question,
             )
@@ -506,6 +513,7 @@ def post_resolve_parameters(llm_params: dict[str, Any], question: str) -> dict[s
         raw_sort_metric=raw_params.get("sort_metric"),
         raw_limit=raw_params.get("limit"),
         raw_offset=raw_params.get("offset"),
+        raw_chart_preference=raw_params.get("chart_preference"),
         version=raw_params.get("version", "trade_volume_1.0"),
         question=question,
     )
@@ -625,6 +633,7 @@ def post_resolve_parameters(llm_params: dict[str, Any], question: str) -> dict[s
 
     res["sitc_section"] = final.filters.get("SITC_SECTION")
     res["sitc_division"] = final.filters.get("SITC_DIVISION")
+    res["chart_preference"] = final.extra.get("chart_preference")
 
     return res
 

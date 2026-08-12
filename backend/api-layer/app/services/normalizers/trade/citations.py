@@ -21,6 +21,7 @@ def trade_reference_item(value: Any, index: int) -> dict[str, str | int | float 
             "url": scalar_to_cell(value.get("url") or value.get("source_url")),
             "dataset": scalar_to_cell(value.get("dataset")),
             "period": scalar_to_cell(value.get("period")),
+            "chunk_index": scalar_to_cell(value.get("chunk_index") or value.get("chunk_idx")),
             "source_id": scalar_to_cell(value.get("source_id") or value.get("doc_id") or value.get("id")),
         }
 
@@ -30,6 +31,7 @@ def trade_reference_item(value: Any, index: int) -> dict[str, str | int | float 
         "url": None,
         "dataset": None,
         "period": None,
+        "chunk_index": None,
         "source_id": None,
     }
 
@@ -39,21 +41,42 @@ def dedupe_trade_references(
     items: list[dict[str, str | int | float | bool | None]],
 ) -> list[dict[str, str | int | float | bool | None]]:
     deduped: list[dict[str, str | int | float | bool | None]] = []
-    seen_source_ids: set[str] = set()
-    seen_urls: set[str] = set()
-    seen_titles: set[str] = set()
+    seen_keys: set[str] = set()
     for item in items:
-        source_id = str(item.get("source_id") or "").strip().lower()
-        url = str(item.get("url") or "").strip().lower()
-        title = str(item.get("title") or "").strip().lower()
-        if (source_id and source_id in seen_source_ids) or (url and url in seen_urls) or (title and title in seen_titles):
+        key = trade_reference_dedupe_key(item)
+        if key and key in seen_keys:
             continue
-        if source_id:
-            seen_source_ids.add(source_id)
-        if url:
-            seen_urls.add(url)
-        if title:
-            seen_titles.add(title)
+        if key:
+            seen_keys.add(key)
         item["id"] = len(deduped) + 1
         deduped.append(item)
     return deduped
+
+
+def trade_reference_dedupe_key(item: dict[str, str | int | float | bool | None]) -> str:
+    url = normalized_reference_value(item.get("url"))
+    if url:
+        return f"url:{url}"
+
+    source_id = normalized_reference_value(item.get("source_id"))
+    if source_id:
+        chunk_index = normalized_reference_value(item.get("chunk_index"))
+        return f"source:{source_id}:{chunk_index}"
+
+    dataset = normalized_reference_value(item.get("dataset"))
+    period = normalized_reference_value(item.get("period"))
+    chunk_index = normalized_reference_value(item.get("chunk_index"))
+    if dataset or period or chunk_index:
+        return f"metadata:{dataset}:{period}:{chunk_index}"
+
+    title = normalized_reference_value(item.get("title"))
+    if title:
+        return f"title:{title}"
+
+    return ""
+
+
+def normalized_reference_value(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip().lower()

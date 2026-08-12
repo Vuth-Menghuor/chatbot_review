@@ -58,6 +58,31 @@ function countDirectOptionSeries(option: unknown): number {
   return Array.isArray(series) ? series.length : 0;
 }
 
+function adaptiveBarChartHeight(output: ChartOutput | undefined): number {
+  if (!output?.data?.length || !output.series?.length) return 320;
+  if (output.horizontal === true) {
+    return Math.min(Math.max(300, output.data.length * 34 + 150), 620);
+  }
+
+  const chartType = String(output.chartType || 'bar').toLowerCase();
+  if (chartType === 'horizontal-bar' || chartType === 'horizontalbar') {
+    return Math.min(Math.max(300, output.data.length * 34 + 150), 620);
+  }
+
+  const seriesTypes = output.series.map((series) => String(series.type || chartType || 'bar').toLowerCase());
+  const isBarLike = seriesTypes.every((type) => type === 'bar' || type === 'column');
+  if (!isBarLike) return 320;
+
+  const labels = output.data.map((item) => String(item[output.xKey] ?? ''));
+  const averageLabelLength = labels.reduce((sum, label) => sum + label.length, 0) / Math.max(labels.length, 1);
+  const maxLabelLength = Math.max(...labels.map((label) => label.length));
+  const isCrowded = labels.length > 8 || averageLabelLength > 18 || maxLabelLength > 34;
+  if (!isCrowded) return 320;
+
+  const visibleRows = Math.min(labels.length, 12);
+  return Math.min(Math.max(360, visibleRows * 36 + 150), 620);
+}
+
 function normalizeStatus(raw: ChartTaskContent, block: MessageBlock): string {
   const status = String(raw.status ?? raw.toolStatus ?? '').toLowerCase();
   if (status === 'success' || status === 'completed') return 'completed';
@@ -164,6 +189,8 @@ export function useChartRenderer(blockSource: MaybeRefOrGetter<MessageBlock>) {
     return null;
   });
 
+  const chartHeight = computed(() => adaptiveBarChartHeight(chartOutput.value));
+
   const title = computed(() => {
     const fromOutput = chartOutput.value?.title;
     if (fromOutput) return fromOutput;
@@ -252,6 +279,7 @@ export function useChartRenderer(blockSource: MaybeRefOrGetter<MessageBlock>) {
     status,
     hasChartData,
     echartsOption,
+    chartHeight,
     isStreaming,
     isLoading,
     isError,

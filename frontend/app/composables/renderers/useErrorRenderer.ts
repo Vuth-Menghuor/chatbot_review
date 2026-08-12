@@ -13,23 +13,23 @@ export type ErrorDisplayKind = 'network' | 'timeout' | 'rate_limit' | 'server' |
 
 const KIND_SHELL: Record<ErrorDisplayKind, string> = {
   network:
-    'border-amber-200/90 bg-gradient-to-br from-amber-50 to-amber-100/70 dark:border-amber-900/50 dark:from-amber-950/40 dark:to-amber-900/20',
+    'border-amber-200 bg-amber-50/80 text-amber-600 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-300',
   timeout:
-    'border-orange-200/90 bg-gradient-to-br from-orange-50 to-orange-100/70 dark:border-orange-900/50 dark:from-orange-950/40 dark:to-orange-900/20',
+    'border-orange-200 bg-orange-50/80 text-orange-600 dark:border-orange-900/60 dark:bg-orange-950/25 dark:text-orange-300',
   rate_limit:
-    'border-violet-200/90 bg-gradient-to-br from-violet-50 to-violet-100/70 dark:border-violet-900/50 dark:from-violet-950/40 dark:to-violet-900/20',
+    'border-sky-200 bg-sky-50/80 text-sky-600 dark:border-sky-900/60 dark:bg-sky-950/25 dark:text-sky-300',
   server:
-    'border-red-200/90 bg-gradient-to-br from-red-50 to-red-100/70 dark:border-red-900/50 dark:from-red-950/40 dark:to-red-900/20',
+    'border-rose-200 bg-rose-50/80 text-rose-600 dark:border-rose-900/60 dark:bg-rose-950/25 dark:text-rose-300',
   generic:
-    'border-slate-200/90 bg-gradient-to-br from-slate-50 to-slate-100/80 dark:border-slate-600 dark:from-slate-900/60 dark:to-slate-950/40',
+    'border-slate-200 bg-slate-50/80 text-slate-500 dark:border-slate-700 dark:bg-slate-900/35 dark:text-slate-300',
 };
 
 const KIND_ICON_WRAP: Record<ErrorDisplayKind, string> = {
-  network: 'bg-amber-200/80 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200',
-  timeout: 'bg-orange-200/80 text-orange-800 dark:bg-orange-900/50 dark:text-orange-200',
-  rate_limit: 'bg-violet-200/80 text-violet-800 dark:bg-violet-900/50 dark:text-violet-200',
-  server: 'bg-red-200/80 text-red-800 dark:bg-red-900/50 dark:text-red-200',
-  generic: 'bg-slate-200/80 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
+  network: 'bg-amber-100 text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/70 dark:text-amber-200 dark:ring-amber-900/70',
+  timeout: 'bg-orange-100 text-orange-700 ring-1 ring-orange-200 dark:bg-orange-950/70 dark:text-orange-200 dark:ring-orange-900/70',
+  rate_limit: 'bg-sky-100 text-sky-700 ring-1 ring-sky-200 dark:bg-sky-950/70 dark:text-sky-200 dark:ring-sky-900/70',
+  server: 'bg-rose-100 text-rose-700 ring-1 ring-rose-200 dark:bg-rose-950/70 dark:text-rose-200 dark:ring-rose-900/70',
+  generic: 'bg-slate-100 text-slate-700 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-700',
 };
 
 const KIND_ICONS: Record<ErrorDisplayKind, Component> = {

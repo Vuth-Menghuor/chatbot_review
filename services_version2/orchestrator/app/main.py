@@ -93,9 +93,18 @@ def create_app() -> FastAPI:
         for name, logger_obj in logging.root.manager.loggerDict.items():
             if isinstance(logger_obj, logging.Logger):
                 logger_obj.disabled = False
-                logger_obj.propagate = True
+                # Do not enable propagation for uvicorn loggers or loggers that already have handlers
+                # to prevent duplicate logging on the console.
+                if name.startswith("uvicorn") or logger_obj.handlers:
+                    logger_obj.propagate = False
+                else:
+                    logger_obj.propagate = True
 
         logger.info("Starting orchestrator service v2...")
+        logger.info(f"Root logger handlers: {logging.getLogger().handlers}")
+        for name, logger_obj in logging.root.manager.loggerDict.items():
+            if isinstance(logger_obj, logging.Logger) and logger_obj.handlers:
+                logger.info(f"Logger '{name}' has handlers: {logger_obj.handlers} (propagate={logger_obj.propagate})")
         logger.info("=" * 60)
         
         try:

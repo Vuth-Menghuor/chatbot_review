@@ -180,7 +180,7 @@ def key_value_items_from_mapping(value: dict[str, Any]) -> list[KeyValueItem]:
             continue
         cell = scalar_to_cell(item)
         if cell is not None:
-            items.append(KeyValueItem(key=str(key).replace("_", " ").title(), value=cell))
+            items.append(KeyValueItem(key=str(key), value=cell))
     return items
 
 

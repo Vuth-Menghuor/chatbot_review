@@ -9,11 +9,8 @@ from app.handlers.scopes import (
     ScopeConfig,
     get_scope_config,
 )
-from app.registry.strategies import STRATEGIES, IntentStrategy
 
 __all__ = [
-    "IntentStrategy",
-    "STRATEGIES",
     "ScopeConfig",
     "get_scope_config",
     "QUERY_INTENTS",
@@ -22,3 +19,4 @@ __all__ = [
     "CAPABILITIES",
     "VISUALIZATION_TYPES",
 ]
+

@@ -118,7 +118,7 @@ async def process_query(
     session_id_var.set(effective_session_id)
     
     try:
-        question = req.question.strip()
+        question = req.question.strip().strip("`'\" \t\n\r")
         logger.info(f"[{request_id}] [QUERY] Processing query: {question[:80]}...")
         
         # Record user message in DB
@@ -400,7 +400,7 @@ async def stream_query(
     async def event_generator():
         # ── 1. Capture ContextVar cache so it survives await boundaries ──────
         from ..ai.analyzer import unified_result_var
-        question = req.question.strip()
+        question = req.question.strip().strip("`'\" \t\n\r")
 
         # Record user message in DB
         user_msg_id = None
@@ -519,11 +519,11 @@ async def stream_query(
                 yield f"event: done\ndata: {json.dumps({'status': result_status, 'session_id': effective_session_id})}\n\n"
                 return
 
-            if result_status == "completed" and context_result.get("intent") in ("small_talk",):
+            if result_status == "completed" and (context_result.get("intent") in ("small_talk",) or context_result.get("metadata", {}).get("skip_formatting")):
                 answer_text = context_result.get("answer", "")
                 yield f"data: {json.dumps({'chunk': answer_text})}\n\n"
                 yield f"event: done\ndata: {json.dumps({'status': 'completed', 'session_id': effective_session_id})}\n\n"
-                # Persist small-talk turn
+                # Persist small-talk or direct translation turn
                 session_ctx = context_result.get("_session_context")
                 if session_ctx is not None:
                     try:

@@ -10,17 +10,19 @@ import asyncio
 from typing import Optional, Dict, Any, List
 import uuid
 import re
+from difflib import get_close_matches
 from datetime import datetime, timezone
 
 from ..utils import extract_entity, strip_clarification_questions_from_prose
 
+
 from ..infrastructure.cache_service import get_cache_service
-from ..ai import OrchestratorLLMService, LLMServiceConfig, get_llm_service
-from ..ai.shims.intent_service import OrchestratorIntentService, IntentServiceConfig
+from ..ai import get_llm_service, LLMServiceConfig
 from ..ai import get_llm_first_layer_service as get_intent_service
-from ..ai.summarizer import OrchestratorFormatterService, get_formatter_service
+from ..ai.shims.intent_service import IntentServiceConfig
+from ..ai.summarizer import get_formatter_service
 from ..core.config import FormatterServiceConfig
-from ..ai.shims.rewriter_service import RewriterService, RewriterServiceConfig, get_rewriter_service
+from ..ai.shims.rewriter_service import get_rewriter_service, RewriterServiceConfig
 from ..ai.analyzer import RELATIVE_PREFIXES
 
 from prompts.dynamic_prompt_manager import DynamicPromptManager
@@ -47,20 +49,18 @@ from ..ai.shims.validator_service import (
     ValidationDecision,
 )
 
-from .hs_classifier import detect_simple_product_category
-
 logger = logging.getLogger(__name__)
 
 # Imported heuristics and constants
 from .heuristics import (
-    _TRADE_COUNTRIES,
-    _NON_PRODUCT_PREFIXES,
-    _CLARIFY_STOP_WORDS,
-    _CLARIFY_GENERIC_NOUNS,
-    _SPEC_DISCRIMINATORS,
-    ALL_ESCAPE_HATCH_TERMS,
-    MAX_PRODUCT_ASK_BACK_RETRIES,
     Heuristics,
+    _TRADE_COUNTRIES,
+    _TYPO_CORRECTION_TERMS,
+    _TYPO_CORRECTION_GREETINGS,
+    _TYPO_PROTECTED_TERMS,
+    _TYPO_GAZETTEER_COUNTRIES,
+    _TYPO_GAZETTEER_DOMAIN,
+    _TYPO_GAZETTEER_BRANDS,
 )
 from .clarification_manager import ClarificationManager
 from .handlers.small_talk import SmallTalkHandler, generate_small_talk_response
@@ -169,10 +169,10 @@ class ServiceCoordinator:
         use_input_rewriter: bool = True,
         timeout_config: Optional[TimeoutConfig] = None,
         gemini_api_key: Optional[str] = None,
-        llm_service: Optional[OrchestratorLLMService] = None,
-        intent_service: Optional[OrchestratorIntentService] = None,
-        formatter_service: Optional[OrchestratorFormatterService] = None,
-        rewriter_service: Optional[RewriterService] = None,
+        llm_service: Optional[Any] = None,
+        intent_service: Optional[Any] = None,
+        formatter_service: Optional[Any] = None,
+        rewriter_service: Optional[Any] = None,
         first_layer_service: Optional[Any] = None,
         suggestion_service: Optional[SuggestionService] = None,
     ):
@@ -217,6 +217,40 @@ class ServiceCoordinator:
         self.timeout_config = timeout_config or get_timeout_config()
         self.use_input_rewriter = use_input_rewriter
         logger.info(f" LLM abstraction layer initialized (input rewrite enabled: {use_input_rewriter})")
+
+    def _is_pure_language_request(self, query: str) -> bool:
+        low = (query or "").strip().lower()
+        if not low:
+            return False
+        # Strip common punctuation
+        low = re.sub(r"[.,?!'\"-]", " ", low)
+        tokens = [t for t in low.split() if t]
+        if not tokens:
+            return False
+        
+        lang_terms = {
+            "in", "please", "pleas", "khmer", "english", "translate", "change", 
+            "language", "output", "to", "into", "as", "switch", "prefer", "want",
+            "ខ្មែរ", "ភាសាខ្មែរ", "ភាសា", "បកប្រែ", "បកប្រែជា", "ជា", "សុំ", "សូម",
+            "និយាយ", "សរសេរ", "អក្សរ", "ខ្មែរ"
+        }
+        return all(t in lang_terms for t in tokens)
+
+    def _is_language_auto_request(self, query: str) -> bool:
+        low = (query or "").strip().lower()
+        if not low:
+            return False
+
+        auto_patterns = [
+            r"\b(auto|automatic)\s+(?:language|mode)\b",
+            r"\b(?:default|reset|clear|unpin)\s+(?:language|pin|preference)\b",
+            r"\bfollow\s+(?:the\s+)?(?:current|query|input)\s+language\b",
+            r"\bno\s+language\s+preference\b",
+            r"\bturn\s+off\s+language\s+pin\b",
+            r"\buse\s+auto\s+language\b",
+            r"\bswitch\s+to\s+auto\b",
+        ]
+        return any(re.search(pattern, low) for pattern in auto_patterns)
 
     async def _detect_small_talk(self, query: str, llm_service=None, force_llm_fallback: bool = False) -> Optional[str]:
         return await detect_small_talk(query, llm_service, force_llm_fallback)
@@ -267,10 +301,17 @@ class ServiceCoordinator:
         # For streaming mode, Khmer translation is handled by the endpoint after
         # the stream completes so we skip it here.
         target_lang = response.get("metadata", {}).get("language")
-        if not target_lang and hasattr(response.get("context"), "session_context"):
-            target_lang = getattr(response["context"].session_context, "target_language", "en")
+        if not target_lang:
+            session_ctx = response.get("_session_context")
+            if not session_ctx and session_id:
+                try:
+                    session_ctx = self.rewriter_service.get_session_readonly(session_id)
+                except Exception as _e:
+                    logger.warning(f"Failed to retrieve readonly session {session_id} for target language fallback: {_e}")
+            if session_ctx:
+                target_lang = getattr(session_ctx, "target_language", "en")
 
-        if not stream and (is_km or target_lang == "km"):
+        if not stream and (is_km or target_lang == "km") and not response.get("metadata", {}).get("skip_formatting"):
             if "metadata" not in response:
                 response["metadata"] = {}
             response["metadata"]["language"] = "km"
@@ -288,6 +329,85 @@ class ServiceCoordinator:
                         response[text_key] = khmer_text
                     except Exception as e:
                         logger.error(f"Failed to translate response to Khmer: {e}")
+
+            # Collect suggestions and clarifications that need translation
+            to_batch_translate = []
+            suggestions = response.get("suggestion") or []
+            for sug in suggestions:
+                if sug and isinstance(sug, str) and sug.strip() and not translator.is_khmer(sug):
+                    to_batch_translate.append(sug)
+
+            clarifications = response.get("clarifications") or []
+            for clar in clarifications:
+                if clar and isinstance(clar, str) and clar.strip() and not translator.is_khmer(clar):
+                    to_batch_translate.append(clar)
+
+            # Perform batch translation
+            translated_map = {}
+            if to_batch_translate:
+                delimiter = " |###| "
+                joined_text = delimiter.join(to_batch_translate)
+                try:
+                    translated_joined = await translator.translate_to_khmer(joined_text)
+                    translated_parts = translated_joined.split(delimiter)
+                    
+                    if len(translated_parts) == len(to_batch_translate):
+                        for orig, trans in zip(to_batch_translate, translated_parts):
+                            translated_map[orig] = trans.strip()
+                    else:
+                        logger.warning(
+                            f"Batch translation delimiter count mismatch (expected {len(to_batch_translate)}, got {len(translated_parts)}). "
+                            f"Falling back to individual translations to ensure correctness."
+                        )
+                        for orig in to_batch_translate:
+                            try:
+                                trans = await translator.translate_to_khmer(orig)
+                                translated_map[orig] = trans.strip()
+                            except Exception as fallback_err:
+                                logger.error(f"Fallback translation for suggestion/clarification '{orig}' failed: {fallback_err}")
+                except Exception as batch_err:
+                    logger.error(f"Batch translation for suggestions/clarifications failed: {batch_err}")
+
+            # Hydrate suggestions list, dropping items that fail to translate to Khmer
+            if suggestions:
+                khmer_suggestions = []
+                for sug in suggestions:
+                    if sug and isinstance(sug, str) and sug.strip():
+                        if translator.is_khmer(sug):
+                            khmer_suggestions.append(sug)
+                        else:
+                            trans_val = translated_map.get(sug)
+                            if trans_val and translator.is_khmer(trans_val):
+                                khmer_suggestions.append(trans_val)
+                            else:
+                                logger.warning(f"Failed to translate suggestion chip '{sug}' to Khmer. Dropping to prevent mixed-language output.")
+                    else:
+                        khmer_suggestions.append(sug)
+                response["suggestion"] = khmer_suggestions
+
+            # Hydrate clarifications list, dropping items that fail to translate to Khmer
+            if clarifications:
+                khmer_clarifications = []
+                for clar in clarifications:
+                    if clar and isinstance(clar, str) and clar.strip():
+                        if translator.is_khmer(clar):
+                            khmer_clarifications.append(clar)
+                        else:
+                            trans_val = translated_map.get(clar)
+                            if trans_val and translator.is_khmer(trans_val):
+                                khmer_clarifications.append(trans_val)
+                            else:
+                                logger.warning(f"Failed to translate clarification question '{clar}' to Khmer. Dropping to prevent mixed-language output.")
+                    else:
+                        khmer_clarifications.append(clar)
+                response["clarifications"] = khmer_clarifications
+
+        session_ctx = response.get("_session_context")
+        if not stream:
+            response.pop("_session_context", None)
+            if session_ctx and session_ctx.turns:
+                session_ctx.turns[-1]["bot"] = response.get("answer") or response.get("error") or ""
+                session_ctx._trigger_change()
 
         return response
 
@@ -328,6 +448,7 @@ class ServiceCoordinator:
         )
         if is_km:
             context.metadata["detected_language"] = "km"
+            context.metadata["language"] = "km"
             context.metadata["original_question"] = original_question
 
          
@@ -336,13 +457,110 @@ class ServiceCoordinator:
             normalized_question = self._light_normalize_query(question)
             context.metadata["normalized_input"] = normalized_question
             
+            # Detect currency early to prevent context sync race conditions
+            det_currency, det_conf = self.workflow_executor.detect_currency(normalized_question)
+            if det_currency and det_conf > 0.0:
+                context.detected_currency = det_currency
+                context.currency_confidence = det_conf
+                logger.info(f"[{request_id}] [Currency Detection] Detected currency early: {det_currency} (confidence: {det_conf:.2f})")
+            
             # Load session history context early if session tracking and rewriter are enabled
             if self.use_input_rewriter and session_id:
                 try:
                     session_context = self.rewriter_service.get_or_create_session(session_id)
                     context.session_context = session_context
+                    if is_km:
+                        session_context.target_language = "km"
+                    
+                    if self._is_pure_language_request(question) and getattr(session_context, 'turns', []):
+                        last_turn = session_context.turns[-1]
+                        last_bot_response = last_turn.get("bot") or last_turn.get("bot_response")
+                        if last_bot_response:
+                            logger.info(f"[{request_id}] Pure language request detected. Translating last bot response directly.")
+                            
+                            has_khmer_directive = bool(re.search(
+                                r"\b(in\s+khmer|translate\s+in\s+khmer|translate\s+into\s+khmer|translate\s+to\s+khmer|khmer\s+output|khmer\s+language|as\s+khmer|to\s+khmer|into\s+khmer|ជាភាសាខ្មែរ|បកប្រែជាភាសាខ្មែរ|ជាខ្មែរ)\b",
+                                question.lower()
+                            ))
+                            has_english_directive = bool(re.search(
+                                r"\b(in\s+english|translate\s+in\s+english|translate\s+into\s+english|translate\s+to\s+english|english\s+output|english\s+language|as\s+english|to\s+english|into\s+english|ជាភាសាអង់គ្លេស|បកប្រែជាភាសាអង់គ្លេស|ជាអង់គ្លេស)\b",
+                                question.lower()
+                            ))
+                            
+                            resolved_lang = "en"
+                            if has_khmer_directive:
+                                resolved_lang = "km"
+                            elif has_english_directive:
+                                resolved_lang = "en"
+                            else:
+                                resolved_lang = session_context.target_language or "en"
+                                
+                            session_context.target_language = resolved_lang
+                            session_context.language = resolved_lang
+                            session_context.is_language_pinned = True
+                            
+                            context.metadata["language"] = resolved_lang
+                            setattr(context, "language", resolved_lang)
+                            
+                            final_answer = last_bot_response
+                            if resolved_lang == "km":
+                                from .translator import QueryTranslator
+                                translator = QueryTranslator(self.llm_service)
+                                if not translator.is_khmer(last_bot_response):
+                                    final_answer = await translator.translate_to_khmer(last_bot_response)
+                            elif resolved_lang == "en":
+                                from .translator import QueryTranslator
+                                translator = QueryTranslator(self.llm_service)
+                                if translator.is_khmer(last_bot_response):
+                                    final_answer = await translator.translate_to_english(last_bot_response)
+                                    
+                            context.metadata["skip_formatting"] = True
+                            context.status = WorkflowStatus.COMPLETED
+                            context.intent = WorkflowIntent(session_context.last_intent) if session_context.last_intent else WorkflowIntent.GENERAL
+                            
+                            if context.intent == WorkflowIntent.CALCULATION:
+                                context.set_result("calculation", {"answer": final_answer, "status": "completed"})
+                            elif context.intent == WorkflowIntent.TRADE_QUERY:
+                                context.set_result("trade_query", {"answer": final_answer, "status": "completed"})
+                            else:
+                                context.set_result("retrieval", {"final_answer": final_answer, "status": "completed"})
+                                
+                            context.skip_intent_detection = True
+                            context.finalize()
+                            return await self._build_response(context)
                 except Exception as e:
                     logger.warning(f"[{request_id}] Session context unavailable: {e}")
+
+            # Conservative typo correction: only accept changes that preserve the
+            # deterministic intent path and a compatible entity signal.
+            typo_correction = self._normalize_query_typos(question, context.session_context)
+            context.metadata["typo_correction"] = typo_correction
+            if typo_correction.get("applied"):
+                question = typo_correction.get("corrected_query", question)
+                normalized_question = self._light_normalize_query(question)
+                context.metadata["normalized_input"] = normalized_question
+                logger.info(
+                    f"[{request_id}] [TYPO] Accepted correction: '{typo_correction.get('original_query')}' "
+                    f"-> '{question}' | replacements={typo_correction.get('replacements', [])}"
+                )
+
+                if self.first_layer_service:
+                    cached_nlu = self.first_layer_service.get_request_unified_result()
+                    if cached_nlu and self.first_layer_service._normalize_key(cached_nlu.get("query", "")) == self.first_layer_service._normalize_key(typo_correction.get("original_query", "")):
+                        cached_nlu["query"] = question
+                        corrected_entity = typo_correction.get("corrected_entity")
+                        if corrected_entity:
+                            cached_nlu["entity"] = corrected_entity
+                        context.metadata["nlu_unified_result"] = cached_nlu
+                        context.metadata["nlu_entity"] = cached_nlu.get("entity")
+                        context.metadata["nlu_entity_confidence"] = cached_nlu.get("entity_confidence")
+                        context.metadata["has_nlu_entity"] = bool(cached_nlu.get("entity_confidence") in ("high", "medium") or cached_nlu.get("entity"))
+            elif typo_correction.get("reason") not in {"no_confident_correction", "non_latin_script", "empty"}:
+                logger.info(
+                    f"[{request_id}] [TYPO] Correction rejected: reason={typo_correction.get('reason')} "
+                    f"raw_intent={typo_correction.get('raw_intent')} corrected_intent={typo_correction.get('corrected_intent')} "
+                    f"raw_entity={typo_correction.get('raw_entity')} corrected_entity={typo_correction.get('corrected_entity')}"
+                )
 
             # Step 2c: Product-spec clarification merge.
             # When retrieval previously flagged a response as is_generic=True and stored
@@ -573,23 +791,45 @@ class ServiceCoordinator:
                                         context.session_context.clarification_intents = []
                                         context.session_context.ask_back_count = 0
                                     else:
-                                        # Re-prompt the user to clarify with candidates
-                                        context.session_context.set_pending_clarification(
-                                            candidate_intents=context.session_context.clarification_intents,
-                                            rewritten_query=context.session_context.pending_rewritten_query,
+                                        clar_q = (
+                                            "I still wasn't sure which option you meant. "
+                                            + ask_back_svc._template.generate(
+                                                query=question,
+                                                candidate_intents=context.session_context.clarification_intents,
+                                                session=context.session_context,
+                                            )
                                         )
+                                        # Update session with extracted entity/intent BEFORE early return so
+                                        # last_entity is never lost on the retry ask-back path.
+                                        # Read entity directly from the live NLU cache — context.metadata is not
+                                        # yet populated at Step 7 time (that happens at line ~884).
+                                        _step7_nlu = self.first_layer_service.get_request_unified_result() if self.first_layer_service else None
+                                        _step7_entity = _step7_nlu.get("entity") if _step7_nlu else None
+                                        _step7_has_entity = bool(_step7_nlu and "entity_confidence" in _step7_nlu)
+                                        _step7_conf = _step7_nlu.get("entity_confidence") if _step7_nlu else None
+                                        if context.session_context:
+                                            self._save_session_before_early_return(
+                                                context=context,
+                                                session_id=session_id,
+                                                question=question,
+                                                normalized_question=question,
+                                                nlu_entity=_step7_entity,
+                                                has_nlu_entity=_step7_has_entity,
+                                                nlu_entity_confidence=_step7_conf,
+                                            )
+                                            context.session_context.set_pending_clarification(
+                                                candidate_intents=context.session_context.clarification_intents,
+                                                rewritten_query=context.session_context.pending_rewritten_query,
+                                            )
+                                            context.session_context.add_turn(
+                                                user_input=context.original_input or question,
+                                                bot_response=clar_q,
+                                            )
                                         context.finalize()
                                         return self._build_ask_back_response(
                                             context,
                                             question=context.session_context.pending_rewritten_query or question,
-                                            clarification_question=(
-                                                "I still wasn't sure which option you meant. "
-                                                + ask_back_svc._template.generate(
-                                                    query=question,
-                                                    candidate_intents=context.session_context.clarification_intents,
-                                                    session=context.session_context,
-                                                )
-                                            ),
+                                            clarification_question=clar_q,
                                             candidate_intents=context.session_context.clarification_intents,
                                             trigger_reason="unresolved_retry",
                                         )
@@ -699,54 +939,80 @@ class ServiceCoordinator:
                 # returns the default 1.0, rendering any confidence-based guard ineffective.
                 context.metadata["llm_confidence"] = _intent_confidence
 
-                # ===== MULTILINGUAL LANGUAGE RESOLUTION & NORMALIZATION =====
-                SUPPORTED_SUGGESTION_LANGUAGES = {"en", "km"}
-                resolved_lang = "en"
-                
-                # Fetch structured NLU result from Gemini unified first-layer
-                nlu_cache = self.first_layer_service.get_request_unified_result() if self.first_layer_service else None
-                if nlu_cache:
-                    context.metadata["nlu_unified_result"] = nlu_cache
-                req_lang = nlu_cache.get("requested_language") if nlu_cache else None
-                is_explicit_lang = nlu_cache.get("is_language_explicitly_requested", False) if nlu_cache else False
+            # ===== MULTILINGUAL LANGUAGE RESOLUTION & NORMALIZATION =====
+            SUPPORTED_SUGGESTION_LANGUAGES = {"en", "km"}
+            resolved_lang = "en"
+            auto_language_request = self._is_language_auto_request(question)
+            
+            # Fetch structured NLU result from Gemini unified first-layer
+            nlu_cache = self.first_layer_service.get_request_unified_result() if self.first_layer_service else None
+            if nlu_cache:
+                context.metadata["nlu_unified_result"] = nlu_cache
+            req_lang = nlu_cache.get("requested_language") if nlu_cache else None
+            is_explicit_lang = nlu_cache.get("is_language_explicitly_requested", False) if nlu_cache else False
 
-                has_nlu_entity = nlu_cache is not None and "entity_confidence" in nlu_cache
-                if has_nlu_entity:
-                    context.metadata["nlu_entity"] = nlu_cache.get("entity")
-                    context.metadata["nlu_entity_confidence"] = nlu_cache.get("entity_confidence")
-                    context.metadata["has_nlu_entity"] = True
-                else:
-                    context.metadata["nlu_entity"] = None
-                    context.metadata["nlu_entity_confidence"] = None
-                    context.metadata["has_nlu_entity"] = False
+            has_nlu_entity = nlu_cache is not None and "entity_confidence" in nlu_cache
+            if has_nlu_entity:
+                context.metadata["nlu_entity"] = nlu_cache.get("entity")
+                context.metadata["nlu_entity_confidence"] = nlu_cache.get("entity_confidence")
+                context.metadata["has_nlu_entity"] = True
+            else:
+                context.metadata["nlu_entity"] = None
+                context.metadata["nlu_entity_confidence"] = None
+                context.metadata["has_nlu_entity"] = False
 
-                has_khmer_directive = bool(re.search(
-                    r"\b(in\s+khmer|translate\s+in\s+khmer|translate\s+into\s+khmer|translate\s+to\s+khmer|khmer\s+output|khmer\s+language|as\s+khmer|to\s+khmer|into\s+khmer|ជាភាសាខ្មែរ|បកប្រែជាភាសាខ្មែរ|ជាខ្មែរ)\b",
-                    question.lower()
-                ))
+            has_khmer_directive = bool(re.search(
+                r"\b(in\s+khmer|translate\s+in\s+khmer|translate\s+into\s+khmer|translate\s+to\s+khmer|khmer\s+output|khmer\s+language|as\s+khmer|to\s+khmer|into\s+khmer|ជាភាសាខ្មែរ|បកប្រែជាភាសាខ្មែរ|ជាខ្មែរ)\b",
+                question.lower()
+            ))
 
-                if (is_explicit_lang and req_lang in SUPPORTED_SUGGESTION_LANGUAGES) or has_khmer_directive:
-                    resolved_lang = req_lang if (is_explicit_lang and req_lang in SUPPORTED_SUGGESTION_LANGUAGES) else "km"
-                    if context.session_context:
-                        context.session_context.target_language = resolved_lang
-                        context.session_context.is_language_pinned = True
-                elif context.session_context and getattr(context.session_context, "is_language_pinned", False):
-                    resolved_lang = getattr(context.session_context, "target_language", "en")
-                else:
-                    from .translator import QueryTranslator
-                    if QueryTranslator.is_khmer(question):
-                        resolved_lang = "km"
-                    elif context.session_context and getattr(context.session_context, "target_language", None) in SUPPORTED_SUGGESTION_LANGUAGES:
-                        resolved_lang = context.session_context.target_language
-                    else:
-                        resolved_lang = "en"
+            # === TEMP DEBUG: language resolution tracing ===
+            logger.info(
+                f"[{request_id}] [LANG-DEBUG] is_explicit_lang={is_explicit_lang} "
+                f"req_lang={req_lang} has_khmer_directive={has_khmer_directive} "
+                f"auto_language_request={auto_language_request} "
+                f"is_pinned_before={getattr(context.session_context, 'is_language_pinned', None)} "
+                f"session.target_language_before={getattr(context.session_context, 'target_language', None)} "
+                f"is_km={is_km} nlu_cache={nlu_cache}"
+            )
+            # === END TEMP DEBUG ===
 
-                context.metadata["language"] = resolved_lang
-                setattr(context, "language", resolved_lang)
+            if auto_language_request:
+                resolved_lang = "km" if is_km else "en"
                 if context.session_context:
                     context.session_context.target_language = resolved_lang
                     context.session_context.language = resolved_lang
+                    context.session_context.is_language_pinned = False
+            elif (is_explicit_lang and req_lang in SUPPORTED_SUGGESTION_LANGUAGES) or has_khmer_directive:
+                resolved_lang = req_lang if (is_explicit_lang and req_lang in SUPPORTED_SUGGESTION_LANGUAGES) else "km"
+                if context.session_context:
+                    context.session_context.target_language = resolved_lang
+                    context.session_context.is_language_pinned = True
+            elif context.session_context and getattr(context.session_context, "is_language_pinned", False):
+                resolved_lang = getattr(context.session_context, "target_language", "en")
+            elif (
+                context.session_context
+                and (
+                    getattr(context.session_context, "pending_clarification", False)
+                    or getattr(context.session_context, "product_clarification_needed", False)
+                    or bool(context.metadata.get("clarification_resolved"))
+                    or bool(context.metadata.get("_spec_merge_done"))
+                )
+                and is_km
+            ):
+                resolved_lang = "km"
+            elif is_km:
+                resolved_lang = "km"
+            else:
+                resolved_lang = "en"
 
+            context.metadata["language"] = resolved_lang
+            setattr(context, "language", resolved_lang)
+            if context.session_context:
+                context.session_context.target_language = resolved_lang
+                context.session_context.language = resolved_lang
+
+            if not context.skip_intent_detection:
                 # Run security check safety gate to prevent malformed or risky intent transitions
                 context.intent = self._apply_intent_safety_gate(context, original_query)
 
@@ -828,11 +1094,11 @@ class ServiceCoordinator:
                     should_ask_back = True
                     trigger_reason = "turn2_not_self_sufficient"
 
-            if should_ask_back:
+            if should_ask_back and context.intent != WorkflowIntent.CALCULATION:
                 try:
                     from ..ai import get_llm_first_layer_service as get_ask_back_service
                     ask_back_svc = get_ask_back_service()
-                    candidate_scores = self.workflow_executor._estimate_candidate_scores(normalized_question)
+                    candidate_scores = {}
                     ask_back_result = await ask_back_svc.get_clarification_async(
                         query=normalized_question,
                         intent_label=context.intent.value,
@@ -844,9 +1110,24 @@ class ServiceCoordinator:
                     if ask_back_result.should_ask_back or _intent_confidence < 0.60:
                         # Set session state to await clarification from user
                         if context.session_context:
+                            # Update session with extracted entity/intent BEFORE early return so
+                            # last_entity is never lost on the ask-back path.
+                            self._save_session_before_early_return(
+                                context=context,
+                                session_id=session_id,
+                                question=question,
+                                normalized_question=normalized_question,
+                                nlu_entity=context.metadata.get("nlu_entity"),
+                                has_nlu_entity=context.metadata.get("has_nlu_entity", False),
+                                nlu_entity_confidence=context.metadata.get("nlu_entity_confidence"),
+                            )
                             context.session_context.set_pending_clarification(
                                 candidate_intents=ask_back_result.candidate_intents,
                                 rewritten_query=normalized_question,
+                            )
+                            context.session_context.add_turn(
+                                user_input=context.original_input or question,
+                                bot_response=ask_back_result.question,
                             )
                         context.finalize()
                         return self._build_ask_back_response(
@@ -899,9 +1180,7 @@ class ServiceCoordinator:
 
             # Step 11: Context-Aware Query Rewriting
             # Use conversation history to resolve pronouns or implied context in the query.
-            # Skipping rewriting for TRADE_QUERY, HS_CODE_LOOKUP, and CALCULATION so their
-            # downstream services receive the raw query for structured parsing / keyword matching.
-            # Only GENERAL (the catch-all NLU intent) goes through the LLM rewrite step.
+            # Rewriting is run for all intents except SMALL_TALK (controlled by self.use_input_rewriter).
             context.rewritten_input = original_query
             rewrite_status = "skipped"
             rewrite_skip_reason = self._get_rewrite_skip_reason(intent=context.intent, rewriter_enabled=self.use_input_rewriter)
@@ -924,46 +1203,116 @@ class ServiceCoordinator:
                 self.use_input_rewriter
                 and raw_detected_intent != WorkflowIntent.SMALL_TALK
             ):
+                # Topic / Entity switch detection to prevent context pollution (e.g. from iphone to engine)
+                if context.session_context and len(getattr(context.session_context, 'turns', [])) > 0:
+                    is_different_entity = False
+                    nlu_cache = self.first_layer_service.get_request_unified_result() if self.first_layer_service else None
+                    if nlu_cache:
+                        entity = nlu_cache.get("entity")
+                        entity_conf = nlu_cache.get("entity_confidence")
+                        if entity and entity_conf in ("high", "medium"):
+                            saved_entity = (context.session_context.last_entity or context.session_context.product_category or context.session_context.commercial_description or "").lower()
+                            new_entity = entity.lower()
+                            saved_tokens = set(re.findall(r"[a-z0-9]+", saved_entity))
+                            new_tokens = set(re.findall(r"[a-z0-9]+", new_entity))
+                            if saved_tokens and new_tokens and not (saved_tokens & new_tokens):
+                                is_different_entity = True
+
+                    is_intent_changed = context.session_context.last_intent and context.intent and context.session_context.last_intent != context.intent.value
+                    
+                    q_lower_check = original_query.lower().strip()
+                    correction_words = [
+                        r"\bactually\b", r"\bno\b", r"\bnot\b", r"\bsorry\b", r"\bmean\b", r"\bmeant\b", r"\bnever\s+mind\b",
+                        r"សុំទោស", r"អត់ទេ", r"ចង់និយាយថា", r"មានន័យថា", r"មិនមែនទេ", r"តាមពិត"
+                    ]
+                    is_correction_or_negation = any(re.search(pat, q_lower_check) for pat in correction_words)
+
+                    # Fallback token-based overlap check using low-confidence NLU entity.
+                    # We intentionally do NOT use extract_entity() here — the regex extractor
+                    # is too permissive (e.g. it returns 'used one' for the bare follow-up
+                    # 'used one'), which would falsely trigger a topic switch and wipe
+                    # last_entity right before the rewriter needs it.  If the NLU cache
+                    # returned no entity at all, there is nothing to compare against, so
+                    # we conservatively leave last_entity intact.
+                    if not is_different_entity and not is_correction_or_negation:
+                        prev_entity = context.session_context.last_entity or ""
+                        new_entity = nlu_cache.get("entity") if nlu_cache else None
+                        if prev_entity and new_entity:
+                            prev_tokens = set(re.findall(r"[a-z0-9]+", prev_entity.lower()))
+                            new_tokens = set(re.findall(r"[a-z0-9]+", new_entity.lower()))
+                            if prev_tokens and new_tokens and not (prev_tokens & new_tokens):
+                                is_different_entity = True
+
+                    if not is_correction_or_negation:
+                        if (not is_ambiguous and (is_different_entity or is_intent_changed)) or is_different_entity:
+                            logger.info(f"[{request_id}] [TOPIC-SWITCH] Topic or entity switch detected. Clearing legacy slot values to prevent pollution.")
+                            context.session_context.clear_context_slots()
+
                 intent_hint = context.intent.value if context.intent else None
-                try:
-                    rewritten_question, rewrite_metadata = await self.rewriter_service.rewrite_input(
-                        original_query,
-                        context=context.session_context,
-                        intent_hint=intent_hint,
-                    )
+
+                # When intent is already locked from a clarification merge, the merge
+                # step has already produced a clean, normalized query. Skip the LLM
+                # rewrite entirely — it would cost a full Gemini round-trip (~1-2s) to
+                # produce only a marginal improvement over what the merge already did.
+                if context.skip_intent_detection:
+                    rewritten_question = original_query
+                    rewrite_metadata = {
+                        "rewrite_reason": "skipped_merge_clean",
+                        "confidence": 1.0,
+                        "intent_changed": False,
+                        "topic_switch": False,
+                        "rewritten": False,
+                        "validation_status": "skipped",
+                    }
                     context.rewritten_input = rewritten_question
                     context.rewrite_metadata = rewrite_metadata
-                    rewrite_status = "applied"
-                    rewrite_skip_reason = None
-                    
+                    rewrite_status = "skipped_merge_clean"
+                    rewrite_skip_reason = "intent_locked_post_clarification"
                     logger.info(
-                        f"[{request_id}] [REWRITE] Input Rewriter: original='{original_query}' "
-                        f"-> rewritten='{rewritten_question}' | metadata={rewrite_metadata}"
+                        f"[{request_id}] [REWRITE] Skipped LLM rewrite (intent locked from clarification merge). "
+                        f"Using merged query as-is: '{original_query}'"
                     )
+                else:
+                    try:
+                        rewritten_question, rewrite_metadata = await self.rewriter_service.rewrite_input(
+                            original_query,
+                            context=context.session_context,
+                            intent_hint=intent_hint,
+                            prompt_name="gemini_unified_first_layer",
+                        )
+                        context.rewritten_input = rewritten_question
+                        context.rewrite_metadata = rewrite_metadata
+                        rewrite_status = "applied"
+                        rewrite_skip_reason = None
 
-                    # If rewriter flags that the original query is better, fallback to original query
-                    if isinstance(rewrite_metadata, dict) and rewrite_metadata.get("rewritten") is False:
-                        context.rewritten_input = original_query
-                        context.rewrite_metadata = {**(rewrite_metadata or {}), "rewrite_reason": "original_better", "validation_status": "skipped_original_better"}
-                        rewrite_status = "skipped"
-                        rewrite_skip_reason = "original_better"
+                        logger.info(
+                            f"[{request_id}] [REWRITE] Input Rewriter: original='{original_query}' "
+                            f"-> rewritten='{rewritten_question}' | metadata={rewrite_metadata}"
+                        )
 
-                    # Validate that rewriting hasn't corrupted or injected hallucinations/bad info into the query.
-                    # For GENERAL intent, use a relaxed check — short follow-ups legitimately expand a lot.
-                    if not self._is_rewrite_valid(original_query, rewritten_question, intent=context.intent):
+                        # If rewriter flags that the original query is better, fallback to original query
+                        if isinstance(rewrite_metadata, dict) and rewrite_metadata.get("rewritten") is False:
+                            context.rewritten_input = original_query
+                            context.rewrite_metadata = {**(rewrite_metadata or {}), "rewrite_reason": "original_better", "validation_status": "skipped_original_better"}
+                            rewrite_status = "skipped"
+                            rewrite_skip_reason = "original_better"
+
+                        # Validate that rewriting hasn't corrupted or injected hallucinations/bad info into the query.
+                        # For GENERAL intent, use a relaxed check — short follow-ups legitimately expand a lot.
+                        if not self._is_rewrite_valid(original_query, rewritten_question, intent=context.intent, context=context):
+                            context.rewritten_input = original_query
+                            context.rewrite_metadata = {**(rewrite_metadata or {}), "rewrite_reason": "validation_rejected", "validation_status": "rejected"}
+                            rewrite_status = "skipped"
+                            rewrite_skip_reason = "rewrite_validation_failed"
+                            logger.info(f"[{request_id}] [WARN] Input Rewriter validation rejected. Reverting to original query.")
+                        else:
+                            context.rewrite_metadata = {**rewrite_metadata, "validation_status": "accepted"}
+                    except Exception as e:
+                        logger.warning(f"[{request_id}] Input rewriting failed: {e}")
                         context.rewritten_input = original_query
-                        context.rewrite_metadata = {**(rewrite_metadata or {}), "rewrite_reason": "validation_rejected", "validation_status": "rejected"}
+                        context.rewrite_metadata = {"error": str(e), "rewrite_reason": "rewrite_failed"}
                         rewrite_status = "skipped"
-                        rewrite_skip_reason = "rewrite_validation_failed"
-                        logger.info(f"[{request_id}] [WARN] Input Rewriter validation rejected. Reverting to original query.")
-                    else:
-                        context.rewrite_metadata = {**rewrite_metadata, "validation_status": "accepted"}
-                except Exception as e:
-                    logger.warning(f"[{request_id}] Input rewriting failed: {e}")
-                    context.rewritten_input = original_query
-                    context.rewrite_metadata = {"error": str(e), "rewrite_reason": "rewrite_failed"}
-                    rewrite_status = "skipped"
-                    rewrite_skip_reason = "rewrite_error"
+                        rewrite_skip_reason = "rewrite_error"
             else:
                 context.rewrite_metadata = {
                     "rewrite_reason": "not_applied",
@@ -1025,9 +1374,18 @@ class ServiceCoordinator:
                             docs = context.retrieval_result.get("documents", [])
                             if docs:
                                 answer_summary = f"Found {len(docs)} relevant documents"
-                        context.session_context.add_turn(user_input=context.original_input, bot_response=answer_summary[:200])
-                    # In stream mode, add_turn is called by the endpoint after the full streamed
-                    # response is assembled, so we skip it here.
+                        if context.status == WorkflowStatus.CLARIFICATION_REQUIRED:
+                            clar_bot_response = " | ".join(context.clarifications) if getattr(context, "clarifications", None) else "Please clarify."
+                            context.session_context.add_turn(user_input=context.original_input, bot_response=clar_bot_response)
+                        else:
+                            context.session_context.add_turn(user_input=context.original_input, bot_response=answer_summary[:200])
+                    elif context.status == WorkflowStatus.CLARIFICATION_REQUIRED:
+                        # Stream mode: clarification turns are not persisted by the endpoint,
+                        # so we save them here synchronously before yielding SSE events.
+                        clar_bot_response = " | ".join(context.clarifications) if getattr(context, "clarifications", None) else "Please clarify."
+                        context.session_context.add_turn(user_input=context.original_input, bot_response=clar_bot_response)
+                    # In stream mode for completed turns, add_turn is called by the endpoint after the
+                    # full streamed response is assembled, so we skip it here.
 
                 except Exception as e:
                     logger.warning(f"[{request_id}] Failed to update session: {e}")
@@ -1068,7 +1426,9 @@ class ServiceCoordinator:
                 raw["_original_input"] = context.original_input
                 return raw
 
-            return await self._build_response(context)
+            res = await self._build_response(context)
+            res["_session_context"] = context.session_context
+            return res
 
         except Exception as e:
             # Handle unexpected orchestration pipeline errors cleanly
@@ -1141,6 +1501,39 @@ class ServiceCoordinator:
         ]
         return any(re.match(pat, cleaned) for pat in negation_patterns)
 
+    def _save_session_before_early_return(
+        self,
+        context,
+        session_id: Optional[str],
+        question: str,
+        normalized_question: str,
+        nlu_entity: Optional[str],
+        has_nlu_entity: bool,
+        nlu_entity_confidence: Optional[str],
+    ) -> None:
+        """
+        Persist extracted entity/intent into the session before any early return.
+        Called from Step 7 and Step 10 ask-back paths to ensure last_entity is never
+        lost when the coordinator exits before reaching Step 13.
+        """
+        if not (self.use_input_rewriter and session_id and context.session_context):
+            return
+        try:
+            update_kwargs = self._build_session_update_payload(
+                raw_query=question,
+                normalized_query=normalized_question,
+                intent_value=context.intent.value if context.intent else None,
+                detected_currency=context.detected_currency,
+                session_context=context.session_context,
+                nlu_entity=nlu_entity,
+                has_nlu_entity=has_nlu_entity,
+                nlu_entity_confidence=nlu_entity_confidence,
+            )
+            self.rewriter_service.update_session_context(session_id, **update_kwargs)
+        except Exception as _e:
+            logger.warning(f"[{context.request_id}] Failed to update session before early return: {_e}")
+
+
     def _build_session_update_payload(
         self,
         raw_query: str,
@@ -1153,8 +1546,6 @@ class ServiceCoordinator:
         nlu_entity_confidence: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Helper to build standardized session state kwargs across turns."""
-        from .hs_classifier import detect_simple_product_category
-        category = detect_simple_product_category(normalized_query)
         q_lower = normalized_query.lower()
         mode = "import" if "import" in q_lower else "export" if "export" in q_lower else None
 
@@ -1162,8 +1553,10 @@ class ServiceCoordinator:
         last_entity_val = prev_entity
         entity_state_log = "fallback_preserved"
 
-        # State 1: High-confidence NLU entity found
-        if has_nlu_entity and nlu_entity and nlu_entity_confidence == "high":
+        # State 1: High- or medium-confidence NLU entity found.
+        # Medium is included because HS-lookup queries (often short, bare nouns) reliably
+        # produce medium-confidence extractions and must still update last_entity.
+        if has_nlu_entity and nlu_entity and nlu_entity_confidence in ("high", "medium"):
             last_entity_val = nlu_entity
             entity_state_log = "found"
 
@@ -1191,6 +1584,10 @@ class ServiceCoordinator:
             f"prev_entity: '{prev_entity}' -> last_entity: '{last_entity_val}'"
         )
 
+        from .hs_classifier import detect_simple_product_category
+        category_target = last_entity_val or normalized_query
+        category = detect_simple_product_category(category_target)
+
         update_kwargs = {
             "last_intent": intent_value,
             "last_raw_query": raw_query,
@@ -1199,8 +1596,17 @@ class ServiceCoordinator:
         }
         if detected_currency:
             update_kwargs["currency"] = detected_currency
-        if category and category != "other":
-            update_kwargs["product_category"] = category
+
+        from app.utils.entity_utils import is_entity_changed
+        if is_entity_changed(prev_entity, last_entity_val):
+            update_kwargs["product_category"] = category if category != "other" else None
+            update_kwargs["hs_code"] = None
+            update_kwargs["cif_value"] = None
+            update_kwargs["origin_country"] = None
+        else:
+            if category and category != "other":
+                update_kwargs["product_category"] = category
+
         if mode:
             update_kwargs["import_export_mode"] = mode
         return update_kwargs
@@ -1300,20 +1706,65 @@ class ServiceCoordinator:
         detected_intent = context.intent
 
         if detected_intent == WorkflowIntent.HS_CODE_LOOKUP:
+            # Check if this is a generic/conceptual/illustrative query about classification
+            nlu_result = context.metadata.get("nlu_unified_result") or {}
+            query_nature = nlu_result.get("query_nature")
+            confidence = nlu_result.get("confidence", 1.0)
+            if query_nature == "procedural" and confidence >= 0.60:
+                logger.info(
+                    f"[{context.request_id}] [SAFETY-GATE] Downgrading HS_CODE_LOOKUP to GENERAL. "
+                    f"Reason: query_nature == 'procedural' and confidence >= 0.60 | query: '{context.original_input[:50]}'"
+                )
+                if context.session_context:
+                    # Clear all spec and intent clarification states on the session
+                    context.session_context.product_clarification_needed = False
+                    context.session_context.clarification_entity = None
+                    context.session_context.clarification_last_query = None
+                    context.session_context.product_ask_back_count = 0
+                    context.session_context.clarification_expected_terms = []
+                    context.session_context.pending_clarification = False
+                    context.session_context.clarification_intents = []
+                    context.session_context.ask_back_count = 0
+                    context.session_context.pending_rewritten_query = None
+                    context.session_context._trigger_change()
+                return WorkflowIntent.GENERAL
+
             # Even when LLM classifies as HS_CODE_LOOKUP, run a sanity check:
             # if the query looks like a greeting/typo (not a product description),
             # downgrade it to SMALL_TALK to avoid routing gibberish into the retrieval pipeline.
             candidate_query = original_query or context.cleaned_input
-            if not self._looks_like_short_product_lookup(candidate_query) and not self._looks_like_commercial_description(candidate_query):
+
+            # [ONCE-AND-FOR-ALL FIX] If the primary NLU layer successfully classified the query
+            # as on-topic and extracted a product entity, treat it as a valid HS lookup request.
+            has_nlu_entity = False
+            if self.first_layer_service:
+                cache = self.first_layer_service.get_request_unified_result()
+                if cache:
+                    is_on_topic = cache.get("is_on_topic", False)
+                    entity = cache.get("entity")
+                    entity_conf = cache.get("entity_confidence")
+                    if is_on_topic and entity and entity_conf in ("high", "medium"):
+                        has_nlu_entity = True
+
+            if not has_nlu_entity and not self._looks_like_short_product_lookup(candidate_query) and not self._looks_like_commercial_description(candidate_query):
                 # Check if it contains any HS-specific keywords that make it genuinely an HS query.
                 # IMPORTANT: use `context.question` (the raw, unmodified user input from WorkflowContext),
                 # NOT `context.cleaned_input` or `original_query` — cleanup_query() intentionally strips
                 # "hs code" suffix patterns via FILLER_PATTERNS, so those variables lose the keyword signal.
                 # e.g. "can you help me with hs code" → cleaned: "can you help me with" (keyword gone).
+                #
+                # ARCHITECTURE NOTE: This safety gate runs on the hot-path and duplicates intent checks as a backstop.
+                # Keep these keywords and the related Heuristics.looks_like_commercial_description aligned with NLU
+                # classification rules in tasks.yaml to prevent intent drift.
                 raw_lower = (original_query if not postpone_allowed else (context.question or original_query or "")).strip().lower()
                 has_hs_keyword = any(
                     re.search(rf"\b{re.escape(kw)}\b", raw_lower)
-                    for kw in ["hs", "code", "tariff", "classify", "classification", "hts", "import", "export", "duty", "tax", "cbu", "ckd", "skd"]
+                    for kw in [
+                        "hs", "code", "codes", "tariff", "tariffs", 
+                        "classify", "classifying", "classification", "hts", 
+                        "import", "importing", "imported", "export", "exporting", "exported", 
+                        "duty", "duties", "tax", "taxes", "taxation", "cbu", "ckd", "skd"
+                    ]
                 )
                 if not has_hs_keyword:
                     is_follow_up = self.use_input_rewriter and context.session_context and len(getattr(context.session_context, 'turns', [])) > 0
@@ -1343,13 +1794,14 @@ class ServiceCoordinator:
             # Primary path: utilize the LLM-classified query_nature (multilingual ready)
             nlu_result = context.metadata.get("nlu_unified_result") or {}
             query_nature = nlu_result.get("query_nature")
+            confidence = nlu_result.get("confidence", 1.0)
             
             should_downgrade = False
             downgrade_reason = ""
             
-            if query_nature == "procedural":
+            if query_nature == "procedural" and confidence >= 0.60:
                 should_downgrade = True
-                downgrade_reason = "LLM query_nature == 'procedural'"
+                downgrade_reason = "LLM query_nature == 'procedural' and confidence >= 0.60"
             else:
                 # Fallback path: regex matching if query_nature is unavailable
                 procedural_patterns = [
@@ -1400,6 +1852,13 @@ class ServiceCoordinator:
         # bug where "but which one more costly??" was forced into HS_CODE_LOOKUP
         # even though Gemini returned GENERAL at 0.98 confidence.
         if detected_intent in {WorkflowIntent.GENERAL, WorkflowIntent.UNCLASSIFIED}:
+            query_to_check = original_query or context.cleaned_input or context.question
+            if self._is_genuine_conversational_small_talk(query_to_check):
+                logger.info(
+                    f"[{context.request_id}] [SAFETY-GATE] Downgrading {detected_intent.value} to SMALL_TALK. "
+                    f"Reason: matched genuine conversational small talk heuristics: '{query_to_check}'"
+                )
+                return WorkflowIntent.SMALL_TALK
             return detected_intent
 
         # No reclassification needed; return the original detected intent
@@ -1535,7 +1994,13 @@ class ServiceCoordinator:
                 return True
         return False
 
-    def _is_rewrite_valid(self, original_query: str, rewritten_query: str, intent: Optional[WorkflowIntent] = None) -> bool:
+    def _is_rewrite_valid(
+        self,
+        original_query: str,
+        rewritten_query: str,
+        intent: Optional[WorkflowIntent] = None,
+        context: Optional[WorkflowContext] = None,
+    ) -> bool:
         """
         Validates that a rewritten query preserves essential structured tokens (codes, specs, numbers)
         from the original query while trusting the LLM rewriter to decide semantic phrasing.
@@ -1552,17 +2017,225 @@ class ServiceCoordinator:
         if structured_tokens and not structured_tokens.issubset(set(rewritten_tokens)):
             return False
 
+        # Dynamic Entity-Swapping validation check
+        if context and context.session_context:
+            new_entity = context.metadata.get("nlu_entity")
+            last_entity = getattr(context.session_context, "last_entity", None)
+            if new_entity and last_entity:
+                new_ent_clean = str(new_entity).lower().strip()
+                last_ent_clean = str(last_entity).lower().strip()
+                
+                # If they are different, verify that the LLM did not swap/leak the previous entity
+                if new_ent_clean != last_ent_clean:
+                    original_lower = original_query.lower()
+                    rewritten_lower = rewritten_query.lower()
+                    
+                    # Check if the original query contains the new entity (or its component words)
+                    # but the rewritten query has removed it and instead contains the old entity.
+                    new_words = [w for w in re.findall(r"[a-z0-9]+", new_ent_clean) if len(w) > 2]
+                    last_words = [w for w in re.findall(r"[a-z0-9]+", last_ent_clean) if len(w) > 2]
+                    
+                    # If we don't have enough long words, just fallback to full string check
+                    if not new_words:
+                        new_words = [new_ent_clean]
+                    if not last_words:
+                        last_words = [last_ent_clean]
+                        
+                    has_new_in_orig = any(w in original_lower for w in new_words)
+                    has_new_in_rewritten = any(w in rewritten_lower for w in new_words)
+                    has_last_in_rewritten = any(w in rewritten_lower for w in last_words)
+                    
+                    if has_new_in_orig and not has_new_in_rewritten and has_last_in_rewritten:
+                        logger.warning(
+                            f"[{context.request_id}] [REWRITE_VALIDATION] Stale entity '{last_entity}' "
+                            f"overwrote new entity '{new_entity}' in rewrite. Rejecting rewrite."
+                        )
+                        return False
+
         # Trust the LLM rewriter decision for semantic query reconstruction
         return True
     
     # Tokenizes text into a list of word/number/identifier tokens.(for sematic purpose)
     def _rewrite_tokens(self, text: str) -> list[str]:
-        return re.findall(r"[a-z0-9][a-z0-9\.-]*", text.lower())
+        # Strip commas between digits (e.g., 40,000 -> 40000) to align number formats
+        normalized = re.sub(r"(\d),(\d)", r"\1\2", text.lower())
+        return re.findall(r"[a-z0-9][a-z0-9\.-]*", normalized)
 
     def _light_normalize_query(self, user_input: str) -> str:
         normalized = user_input.strip().lower()
         normalized = re.sub(r"\s+", " ", normalized)
         return normalized
+
+    @staticmethod
+    def _preserve_token_case(source: str, replacement: str) -> str:
+        if source.isupper():
+            return replacement.upper()
+        if source[:1].isupper() and source[1:].islower():
+            return replacement.capitalize()
+        return replacement
+
+    @staticmethod
+    def _contains_khmer(text: str) -> bool:
+        return bool(re.search(r"[\u1780-\u17FF]", text or ""))
+
+    def _iter_typo_gazetteer_groups(self):
+        return (
+            ("countries", _TYPO_GAZETTEER_COUNTRIES),
+            ("domain", _TYPO_GAZETTEER_DOMAIN),
+            ("brands", _TYPO_GAZETTEER_BRANDS),
+        )
+
+    @staticmethod
+    def _is_structurally_protected_token(token: str) -> bool:
+        low = (token or "").lower().strip()
+        if not low:
+            return True
+        if any(char.isdigit() for char in low) or "." in low or "-" in low:
+            return True
+        return False
+
+    def _is_gazetteer_protected_token(self, token: str) -> bool:
+        low = (token or "").lower().strip()
+        if not low:
+            return False
+        return any(low in terms for _, terms in self._iter_typo_gazetteer_groups())
+
+    def _build_typo_candidate_terms(self) -> List[str]:
+        return sorted(_TYPO_CORRECTION_TERMS)
+
+    def _is_token_protected_from_typo_correction(self, token: str) -> bool:
+        return self._is_structurally_protected_token(token) or self._is_gazetteer_protected_token(token)
+
+    def _is_greeting_typo_correction(self, raw_query: str, corrected_query: str) -> bool:
+        raw_tokens = re.findall(r"[a-z]+", (raw_query or "").lower())
+        return len(raw_tokens) <= 2 and (corrected_query or "").lower().strip() in _TYPO_CORRECTION_GREETINGS
+
+    def _validate_typo_correction_pipeline(
+        self,
+        raw_intent: str,
+        corrected_intent: str,
+        raw_entity: str,
+        corrected_entity: str,
+    ) -> tuple[bool, str]:
+        """Final pipeline gate for typo corrections.
+
+        The stages are intentionally ordered from cheapest to most specific:
+        1. Intent must stay stable.
+        2. Entity changes are allowed only when the new entity is still a known
+           correction target and the original entity was not already protected.
+        """
+        if corrected_intent != raw_intent:
+            return False, "intent_changed"
+
+        if corrected_entity and corrected_entity != raw_entity:
+            if raw_entity and raw_entity.lower() in _TYPO_PROTECTED_TERMS:
+                return False, "protected_entity"
+
+            if corrected_entity not in _TYPO_CORRECTION_TERMS:
+                return False, "entity_changed"
+
+        return True, "confidence_passed"
+
+    def _normalize_query_typos(self, query: str, session_context: Optional[Any] = None) -> Dict[str, Any]:
+        """Apply conservative typo correction without changing query meaning."""
+        raw_query = query or ""
+        result: Dict[str, Any] = {
+            "applied": False,
+            "reason": "not_attempted",
+            "original_query": raw_query,
+            "corrected_query": raw_query,
+            "replacements": [],
+        }
+
+        if not raw_query.strip():
+            result["reason"] = "empty"
+            return result
+
+        if self._contains_khmer(raw_query):
+            result["reason"] = "non_latin_script"
+            return result
+
+        if not self.workflow_executor:
+            result["reason"] = "workflow_unavailable"
+            return result
+
+        candidate_terms = self._build_typo_candidate_terms()
+        raw_intent = self.workflow_executor._keyword_based_intent_detection(raw_query).value
+        raw_entity = extract_entity(raw_query) or ""
+
+        def replace_token(match: re.Match[str]) -> str:
+            token = match.group(0)
+            low = token.lower()
+
+            if self._is_token_protected_from_typo_correction(token):
+                return token
+
+            if len(low) < 3 or not low.isalpha():
+                return token
+
+            if low in _TYPO_CORRECTION_TERMS:
+                return token
+
+            close_matches = [
+                candidate
+                for candidate in get_close_matches(low, candidate_terms, n=3, cutoff=0.60)
+                if candidate != low and self._tokens_match(low, candidate)
+            ]
+
+            if len(close_matches) != 1:
+                return token
+
+            candidate = close_matches[0]
+            if low in _TYPO_PROTECTED_TERMS and candidate not in _TYPO_PROTECTED_TERMS:
+                return token
+
+            result["replacements"].append({"from": token, "to": candidate})
+            return self._preserve_token_case(token, candidate)
+
+        corrected_query = re.sub(r"\b[A-Za-z][A-Za-z'-]*\b", replace_token, raw_query)
+
+        if corrected_query == raw_query:
+            result["reason"] = "no_confident_correction"
+            return result
+
+        corrected_intent = self.workflow_executor._keyword_based_intent_detection(corrected_query).value
+        corrected_entity = extract_entity(corrected_query) or ""
+        is_greeting_correction = self._is_greeting_typo_correction(raw_query, corrected_query)
+
+        accepted, reason = self._validate_typo_correction_pipeline(
+            raw_intent=raw_intent,
+            corrected_intent=corrected_intent,
+            raw_entity=raw_entity,
+            corrected_entity=corrected_entity,
+        )
+        if not accepted and is_greeting_correction:
+            accepted = True
+            reason = "greeting_correction"
+        if not accepted:
+            result.update(
+                {
+                    "reason": reason,
+                    "corrected_query": raw_query,
+                    "corrected_intent": corrected_intent,
+                    "raw_intent": raw_intent,
+                    "raw_entity": raw_entity,
+                    "corrected_entity": corrected_entity,
+                }
+            )
+            return result
+
+        result.update(
+            {
+                "applied": True,
+                "reason": reason,
+                "corrected_query": corrected_query,
+                "raw_intent": raw_intent,
+                "corrected_intent": corrected_intent,
+                "raw_entity": raw_entity,
+                "corrected_entity": corrected_entity,
+            }
+        )
+        return result
 
     # Determines which query text to send to downstream retrieval/calculation services.
     def _get_service_query(self, context: WorkflowContext) -> str:
@@ -1635,27 +2308,11 @@ class ServiceCoordinator:
                 logger.error(f"Failed to log failed_request '{service_name}' to DB: {db_err}")
             raise
 
-    def _enrich_calculation_query_from_context(self, service_query: str, session_context: Optional[Any]) -> str:
-        return CalculationHandler.enrich_calculation_query_from_context(self, service_query, session_context)
-
     async def _handle_calculation(self, context: WorkflowContext):
         await CalculationHandler.handle(self, context)
     
     def _is_slot_fragment_reply(self, user_text: str, clarification_intents: list) -> bool:
         return Heuristics.is_slot_fragment_reply(user_text, clarification_intents)
-
-    async def _generate_trade_clarification_message(
-        self,
-        query: str,
-        missing_slots: List[str],
-        product_name: str
-    ) -> str:
-        return await TradeQueryHandler.generate_trade_clarification_message(
-            self,
-            query,
-            missing_slots,
-            product_name,
-        )
 
     async def _handle_trade_query(self, context: WorkflowContext):
         await TradeQueryHandler.handle(self, context)
@@ -1664,7 +2321,6 @@ class ServiceCoordinator:
         await HsCodeLookupHandler.handle(self, context)
     
     def _is_rag_no_info_response(self, answer_text: str, result_dict: dict) -> bool:
-        """Determines if the RAG response indicates no information was found in official documents."""
         if not result_dict or not isinstance(result_dict, dict):
             return True
         if result_dict.get("is_generic") is True:
@@ -1692,7 +2348,7 @@ class ServiceCoordinator:
 
     async def _generate_parametric_definition_answer(self, query: str) -> str:
         return await DefinitionHandler.generate_parametric_definition_answer(self, query)
-
+    
     async def _handle_definition(self, context: WorkflowContext):
         await DefinitionHandler.handle(self, context)
     
@@ -1757,6 +2413,7 @@ class ServiceCoordinator:
 
     async def _build_response(self, context: WorkflowContext) -> Dict[str, Any]:
         """Build final response from workflow context."""
+        logger.info(f"[{context.request_id}] [CONTEXT-ID] Building final response. context_id={id(context)}, metadata={context.metadata}")
         response = {
             "request_id": context.request_id,
             "question": context.question,
@@ -1992,7 +2649,12 @@ class ServiceCoordinator:
         )
 
         if is_error_or_empty:
-            error_detail = raw_answer or (context.errors[0] if context.errors else "No data or duty rates found.")
+            raw_error = raw_answer or (context.errors[0] if context.errors else "No data or duty rates found.")
+            # Sanitize before it ever reaches the LLM prompt — strip stack traces / exception
+            # class prefixes, cap length so a verbose backend error can't inflate the prompt
+            # or leak internals even if the model repeats fragments of it.
+            error_detail = str(raw_error).split("\n")[0][:200]
+
             friendly_response = None
             try:
                 if self.llm_service and self.llm_service.is_available():
@@ -2005,12 +2667,21 @@ class ServiceCoordinator:
                             question=context.question,
                             error_detail=error_detail
                         )
-                        llm_resp = await asyncio.to_thread(
-                            provider.client.models.generate_content,
-                            model=provider.model_name,
-                            contents=prompt,
+                        llm_resp = await asyncio.wait_for(
+                            asyncio.to_thread(
+                                provider.client.models.generate_content,
+                                model=provider.model_name,
+                                contents=prompt,
+                                config={
+                                    "max_output_tokens": 80,   # hard ceiling backing the "1-2 sentence" prompt rule
+                                    "temperature": 0.4,
+                                },
+                            ),
+                            timeout=6.0,
                         )
                         friendly_response = (llm_resp.text or "").strip()
+            except asyncio.TimeoutError:
+                logger.warning(f"[{context.request_id}] Universal LLM error fallback timed out")
             except Exception as e:
                 logger.warning(f"[{context.request_id}] Universal LLM error fallback response generation failed: {e}")
 
@@ -2018,26 +2689,39 @@ class ServiceCoordinator:
                 response["answer"] = friendly_response
                 response["message"] = friendly_response
             else:
-                if "Duty rates not found" in str(error_detail) or "HS code" in str(error_detail):
+                if context.metadata and context.metadata.get("slots_complete"):
+                    hs_code = context.metadata.get("hs_code") or (
+                        getattr(context.session_context, "hs_code", None)
+                        if context.session_context
+                        else None
+                    )
+                    if hs_code:
+                        fallback_msg = f"I couldn't find duty rates for HS code {hs_code} in the database."
+                    else:
+                        fallback_msg = "I couldn't find duty rates for that product in the database."
+                elif "Duty rates not found" in error_detail or "HS code" in error_detail:
                     fallback_msg = (
-                        "I couldn't find specific duty rates for that product or HS code in our current database. "
-                        "Please verify the HS code or describe the item in more detail (e.g., 'smartphones', 'laptops', 'motor cars') to attempt an automatic rate lookup."
+                        "I couldn't find duty rates for that — could you give me the HS code, "
+                        "or describe the product (e.g. 'smartphones', 'motor cars')?"
                     )
                 else:
                     fallback_msg = (
-                        "I'm sorry, I couldn't complete your request at this time. "
-                        "Please verify your query parameters (such as product name, HS code, or invoice value) and try again."
+                        "I couldn't complete that — could you confirm the product name, "
+                        "HS code, or invoice value?"
                     )
                 response["answer"] = fallback_msg
                 response["message"] = fallback_msg
 
             if context.intent == WorkflowIntent.CALCULATION:
-                response["status"] = "clarification_required"
-                if context.session_context:
-                    context.session_context.set_pending_clarification(
-                        candidate_intents=["calculation"],
-                        rewritten_query=context.question
-                    )
+                if context.metadata and context.metadata.get("slots_complete"):
+                    response["status"] = "completed"
+                else:
+                    response["status"] = "clarification_required"
+                    if context.session_context:
+                        context.session_context.set_pending_clarification(
+                            candidate_intents=["calculation"],
+                            rewritten_query=context.question
+                        )
 
         return response
 

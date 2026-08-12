@@ -80,7 +80,7 @@ onMounted(() => {
       class="p-4 bg-neutral-100 dark:bg-zinc-900/40 animate-pulse h-32 flex items-center justify-center"
     >
       <v-progress-circular indeterminate size="20" width="2" color="primary" />
-    </div>
+    </div>  
   </div>
 </template>
 

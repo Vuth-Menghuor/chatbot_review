@@ -14,6 +14,7 @@ from app.dependencies.auth import get_current_user
 from app.models import User
 from app.schemas.common import ChatRequest, FeedbackRequest
 from app.services.audit_service import add_audit_log
+from app.services.chat_debug import can_include_chat_response_debug
 from app.services.chat_response_normalizer import normalize_chat_response
 from app.services.main_chatbot_client import main_chatbot_client
 from app.services.ownership import create_or_get_chat, owned_chat, touch_chat
@@ -32,10 +33,16 @@ def upstream_payload(payload: ChatRequest, chat, user: User, request_id: str) ->
 
 
 def orchestrator_query_payload(payload: ChatRequest, chat) -> dict:
-    return {
+    body = {
         "question": payload.message,
         "session_id": str(chat.id),
+        "chat_id": str(chat.id),
     }
+    if payload.presentation:
+        body["presentation"] = payload.presentation
+    if payload.context:
+        body["context"] = payload.context
+    return body
 
 
 orchestrator_stream_payload = orchestrator_query_payload
@@ -46,7 +53,11 @@ def sse_event(event: str, data: dict) -> bytes:
 
 
 def should_include_debug(user: User) -> bool:
-    return settings.environment.lower() in {"development", "local", "dev"}
+    return can_include_chat_response_debug(
+        enable_debug=settings.enable_chat_response_debug,
+        environment=settings.environment,
+        role=getattr(user, "role", ""),
+    )
 
 
 def log_normalization_trace(orchestrator_response: dict, normalized_response: dict) -> None:
@@ -125,9 +136,15 @@ async def send_chat(payload: ChatRequest, request: Request, user: User = Depends
         add_audit_log(db, "chat_created", "chat", user.id, {"chat_id": str(chat.id)})
     await touch_chat(db, chat, payload.message)
     await db.commit()
-    result = await main_chatbot_client.request("POST", "/query", json=orchestrator_query_payload(payload, chat))
+    body = orchestrator_query_payload(payload, chat)
+    result = await main_chatbot_client.request("POST", "/query", json=body)
     include_debug = should_include_debug(user)
-    normalized = normalize_chat_response(result, chat=chat, include_debug=include_debug).model_dump(mode="json", exclude_none=True)
+    normalized = normalize_chat_response(
+        result,
+        chat=chat,
+        include_debug=include_debug,
+        request_presentation=payload.presentation,
+    ).model_dump(mode="json", exclude_none=True)
     if isinstance(result, dict):
         log_normalization_trace(result, normalized)
     return normalized
@@ -135,6 +152,8 @@ async def send_chat(payload: ChatRequest, request: Request, user: User = Depends
 
 @router.post("/stream")
 async def stream_chat(payload: ChatRequest, request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    # Current web integration is an SSE progress wrapper around one non-streaming
+    # orchestrator POST /query call. Do not emit fake token/table/card deltas here.
     await enforce_rate_limit(f"chat_stream:{user.id}", 30, request=request, user_id=user.id)
     chat = await create_or_get_chat(db, user.id, payload.chat_id, payload.project_id, payload.message)
     if payload.chat_id is None:
@@ -155,6 +174,7 @@ async def stream_chat(payload: ChatRequest, request: Request, user: User = Depen
                 result,
                 chat=chat,
                 include_debug=should_include_debug(user),
+                request_presentation=payload.presentation,
             ).model_dump(mode="json", exclude_none=True)
             if isinstance(result, dict):
                 log_normalization_trace(result, normalized)

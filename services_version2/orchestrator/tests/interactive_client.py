@@ -4,6 +4,30 @@ import uuid
 import json
 import urllib.request
 import urllib.error
+import socket
+
+_LOCK_PORT = 47821  # arbitrary unused local port, just for this client's mutex
+
+def acquire_single_instance_lock() -> socket.socket:
+    """
+    Prevents a second interactive_client.py from starting while one is
+    already running. Binding a local TCP port acts as a mutex: only one
+    process can hold it at a time, and the OS releases it automatically
+    if this process crashes or is killed — no stale lockfile to clean up.
+    """
+    lock_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        # SO_REUSEADDR intentionally omitted — we want a strict single holder.
+        lock_socket.bind(("127.0.0.1", _LOCK_PORT))
+    except OSError:
+        print(
+            "Another interactive_client.py is already running "
+            "(detected via lock port). Close it before starting a new one.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return lock_socket
+
 
 # Target URL configuration: defaults to localhost:8001 but can be overridden by env vars or CLI args
 HOST = os.getenv("ORCHESTRATOR_HOST", "127.0.0.1")
@@ -144,4 +168,6 @@ def main():
             print(f"\n[ERROR] Unexpected error: {e}")
 
 if __name__ == "__main__":
+    _lock = acquire_single_instance_lock()  # keep reference alive for the process lifetime
     main()
+

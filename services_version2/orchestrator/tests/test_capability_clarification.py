@@ -7,7 +7,9 @@ from unittest.mock import AsyncMock, MagicMock
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app.services.coordinator import ServiceCoordinator, WorkflowIntent
+from app.services.handlers.calculation import CalculationHandler
 from app.services.session_context import SessionContext
+from app.services.workflow import WorkflowContext, WorkflowStatus
 from app.core.config import LLMFirstLayerConfig
 from app.ai.analyzer import get_llm_first_layer_service, unified_result_var
 from app.ai.shims.validator_service import get_validator, ValidationResult
@@ -149,6 +151,46 @@ async def test_capability_calculation_merge():
     assert res2.get("intent") == "calculation"
     assert res2.get("status") == "completed"
     assert session.pending_clarification is False
+
+
+@pytest.mark.asyncio
+async def test_calculation_blocks_fabricated_hs_code_during_open_product_clarification():
+    """Verify that calculation cannot invent a fresh HS code while HS lookup clarification is still open."""
+    mock_calculator = make_mock_calculator()
+    coordinator = ServiceCoordinator(
+        retrieval_client=AsyncMock(),
+        general_client=AsyncMock(),
+        calculator_client=mock_calculator,
+        trade_data_client=MagicMock(),
+        first_layer_service=get_llm_first_layer_service(LLMFirstLayerConfig()),
+        use_input_rewriter=True
+    )
+    coordinator._execute_service_call = AsyncMock()
+
+    session = SessionContext(session_id="sess_calc_hs_guard")
+    session.product_clarification_needed = True
+    session.clarification_entity = "motorcycle"
+    session.clarification_candidate_codes = ["8703.23.00", "8703.24.00"]
+    session.turns = [{"user": "what is the HS code for motorcycle?", "bot": "Please choose one of the candidates."}]
+
+    context = WorkflowContext(
+        request_id="req_calc_hs_guard",
+        question="calculate duty for it",
+        session_id="sess_calc_hs_guard",
+        original_input="calculate duty for it",
+    )
+    context.intent = WorkflowIntent.CALCULATION
+    context.session_context = session
+    context.metadata = {}
+
+    await CalculationHandler.handle(coordinator, context)
+
+    assert context.status == WorkflowStatus.CLARIFICATION_REQUIRED
+    assert mock_calculator.query.await_count == 0
+    assert session.product_clarification_needed is True
+    assert session.clarification_candidate_codes == ["8703.23.00", "8703.24.00"]
+    assert context.calculation_result["clarification_required"] is True
+    assert "HS code" in context.calculation_result["answer"]
 
 
 @pytest.mark.asyncio

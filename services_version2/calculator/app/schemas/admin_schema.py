@@ -87,7 +87,7 @@ class RoundingRuleResponse(BaseModel):
 class PolicyCreate(BaseModel):
     policy_id: str
     policy_name: str
-    policy_type: str = Field(..., description="duty, vat, exemption, fta, dv, dq")
+    policy_type: str = Field(..., description="duty, vat, exemption, fta, dv (Deduction Value), dq (Deduction Quantity)")
     conditions: Dict[str, Any] = Field(default_factory=dict)
     actions: Dict[str, Any] = Field(default_factory=dict)
     priority: int = 100

@@ -126,11 +126,11 @@ export interface Prediction {
   value?: string | number;
   unit?: string;
   metrics?: PredictionMetric[];
-  confidence: number;
   reason?: string;
   evidence?: string[];
   sourceName?: string;
   sourceUrl?: string;
+  preliminary?: boolean;
   tariffSectionTitle?: string;
   taxRates?: PredictionTaxRate[];
   importDuty?: string;
@@ -141,7 +141,6 @@ export interface Prediction {
     hsCode: string;
     productName: string;
     category?: string;
-    confidence: number;
     reason?: string;
     importDuty?: string;
     specialTax?: string;

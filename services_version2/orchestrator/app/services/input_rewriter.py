@@ -27,6 +27,7 @@ PRODUCT_KEYWORDS = [
 ]
 
 CIF_PATTERN = re.compile(r"\$?\s?([\d,]+(?:\.\d+)?)\s*(usd|khr|thb|eur)?", re.IGNORECASE)
+CURRENCY_TOKEN_PATTERN = re.compile(r'\b(usd|khr|thb|eur)\b', re.IGNORECASE)
 HS_CODE_PATTERN = re.compile(r"\b\d{4}\.\d{2}(?:\.\d{2})?\b")
 
 TRACKED_FIELDS = [
@@ -93,6 +94,10 @@ def extract_context_updates(query: str) -> Dict[str, Any]:
             pass
         if cif_match.group(2):
             updates["currency"] = cif_match.group(2).upper()
+        else: 
+            cur_match = CURRENCY_TOKEN_PATTERN.search(query)
+            if cur_match:
+                updates["currency"] = cur_match.group(1).upper()
 
     # 5. Import/Export Mode
     if re.search(r"\bexport(?:ing|ed)?\b", q):
@@ -140,7 +145,7 @@ def build_rewrite_from_context(user_input: str, intent: Optional[str], context: 
     if intent == "hs_code_lookup":
         return f"HS code for {product}{desc}".strip()
     if intent == "calculation":
-        return f"calculate {mode} duty for {product}{desc}{cif}{origin}{ta}".strip()
+        return f"calculate {mode} duty for {product}{desc}{hs}{cif}{origin}{ta}".strip()
     if intent == "trade_query":
         return f"{mode} value for {product}{origin}{destination}{year}{month}".strip()
 
@@ -321,6 +326,7 @@ class InputRewriter:
                         rolling_summary=context.rolling_summary,
                         context=slots_str,
                         user_input=user_input,
+                        intent=active_intent or "unknown",
                     )
                     async with httpx.AsyncClient(timeout=self.request_timeout_seconds) as client:
                         response = await client.post(

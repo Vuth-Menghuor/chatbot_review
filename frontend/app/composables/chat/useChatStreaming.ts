@@ -6,9 +6,8 @@ import {
 } from '~/utils/tool';
 import {
   isChatApiConfigured,
-  isNormalizedChatResponse,
+  handleNormalizedChatResponse,
   legacyChatResponseToMessageParts,
-  normalizedChatResponseToMessageParts,
   streamGdceChat,
 } from '~/services/chat-api';
 import { uploadImageFile } from '~/services/files-api';
@@ -98,6 +97,7 @@ export function useChatStreaming(deps: StreamingDeps) {
     text: string,
     files: unknown[] | undefined,
     assistantMsgId: string,
+    context?: Record<string, unknown>,
   ) {
     if (!deps.chatApi || !isChatApiConfigured(deps.chatApi)) {
       throw new Error('Chat API is not configured');
@@ -122,8 +122,12 @@ export function useChatStreaming(deps: StreamingDeps) {
       apiToken: deps.chatApi.apiToken,
       message: text,
       chatId: deps.chatId,
+      projectId: deps.projectId,
       attachments,
+      presentation: presentationPreferenceFromMessage(text),
+      context,
       signal: controller.signal,
+      // True token streaming requires an upstream streaming endpoint.
       onToken: (content) => {
         if (deps.stopStreaming.value) return;
         if (firstToken) {
@@ -139,17 +143,17 @@ export function useChatStreaming(deps: StreamingDeps) {
     });
 
     if (deps.stopStreaming.value || controller.signal.aborted) return;
-    if (isNormalizedChatResponse(normalizedDone)) {
-      const parts = normalizedChatResponseToMessageParts(normalizedDone, assistantMsgId);
-      deps.upsertAssistantMessage(assistantMsgId, parts.content, {
-        blocks: parts.blocks,
-        sources: parts.sources,
-        generationDurationMs: parts.latencyMs ?? Date.now() - startedAt,
-        status: parts.status,
-        coverage: parts.coverage,
-        confidence: parts.confidence,
+    const normalizedParts = handleNormalizedChatResponse(normalizedDone, assistantMsgId);
+    if (normalizedParts) {
+      deps.upsertAssistantMessage(assistantMsgId, normalizedParts.content, {
+        blocks: normalizedParts.blocks,
+        sources: normalizedParts.sources,
+        generationDurationMs: normalizedParts.latencyMs ?? Date.now() - startedAt,
+        status: normalizedParts.status,
+        coverage: normalizedParts.coverage,
+        confidence: normalizedParts.confidence,
       });
-      notifyResponseCompleted();
+      if (normalizedParts.status === 'completed') notifyResponseCompleted();
       return;
     }
     const legacyParts = legacyChatResponseToMessageParts(normalizedDone, assistantMsgId);
@@ -162,7 +166,7 @@ export function useChatStreaming(deps: StreamingDeps) {
         coverage: legacyParts.coverage,
         confidence: legacyParts.confidence,
       });
-      notifyResponseCompleted();
+      if (legacyParts.status === 'completed') notifyResponseCompleted();
       return;
     }
 
@@ -182,4 +186,18 @@ export function useChatStreaming(deps: StreamingDeps) {
   }
 
   return { streamFromChatApi };
+}
+
+export function presentationPreferenceFromMessage(message: string) {
+  const normalized = message.toLowerCase();
+  const preferredBlocks: string[] = [];
+  if (/\b(table|tabular)\b/.test(normalized)) preferredBlocks.push('table');
+  if (/\b(card|prediction)\b/.test(normalized)) preferredBlocks.push('prediction');
+  if (/\b(report)\b/.test(normalized)) preferredBlocks.push('report');
+  if (/\b(chart|graph|visuali[sz]e|plot)\b/.test(normalized)) preferredBlocks.push('chart');
+  if (!preferredBlocks.length) return undefined;
+  return {
+    preferred_blocks: [...new Set(preferredBlocks)],
+    fallback: 'markdown' as const,
+  };
 }

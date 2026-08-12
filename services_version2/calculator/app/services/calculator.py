@@ -34,6 +34,7 @@ from .hs_code_handler import HSCodeHandler
 from .models import (
     CalculationRequest,
     CalculationResult,
+    CalculationStep,
     TaxLineItem,
     TaxReference,
 )
@@ -108,7 +109,7 @@ class DatabaseInterface:
             - currency: str (e.g., 'USD')
             - source: str (e.g., 'MEF-2026-May')
         """
-        raise NotImplementedError("Implement database query for declared values")
+        raise NotImplementedError("Implement database query for deduction values")
 
     def save_calculation(self, calculation_result: CalculationResult) -> None:
         """Save calculation result for audit trail."""
@@ -318,6 +319,7 @@ class ImportTaxCalculator:
                     "Pending user to provide the applicable CD rate.",
                 ],
                 references=[],
+                steps=[],
                 exchange_rate_usd_to_khr=exchange_rate_khr,
                 cif_value_usd=Decimal(str(request.customs_value)) if request.currency == "USD" else None,
                 preferential_rate_missing=True,
@@ -389,6 +391,7 @@ class ImportTaxCalculator:
             line_items=result["line_items"],
             assumptions=result["assumptions"],
             references=result["references"],
+            steps=result.get("steps", []),
             exchange_rate_usd_to_khr=exchange_rate_khr,
             cif_value_usd=Decimal(str(request.customs_value)) if request.currency == "USD" else None,
             preferential_rate_missing=rates.get("preferential_rate_missing"),
@@ -707,9 +710,11 @@ class ImportTaxCalculator:
 
         agreement_code = request.flags.get("fta_certificate_type") if request.flags else None
 
-        # Default FTA rates for agreements that are typically 0% for most goods.
-        # Agreements with variable rates (AKFTA, AJCEP, RCEP) still require explicit rate.
-        FTA_ZERO_RATE_AGREEMENTS = {"ACFTA", "ATIGA", "AANZFTA"}
+        # NOTE: Preferential rates are user-provided for now.
+        # The fta_type_202603181508.csv defines valid agreement codes for validation,
+        # but the actual rate must come from the user via preferential_cd_rate or DV.
+        # Auto-zero FTA logic is disabled until per-HS preferential rates are implemented.
+        FTA_ZERO_RATE_AGREEMENTS: set[str] = set()
 
         # Apply user-provided preferential CD rate override (e.g., from orchestrator ask-back)
         user_pref_cd = request.preferential_cd_rate
@@ -724,7 +729,7 @@ class ImportTaxCalculator:
         # Cambodian customs convention: when exemption/FTA applies,
         # the declared_value field IS the COP rate percentage (not a valuation).
         # DV = 0.00 means 0% duty-free; DV = 5.00 means 5% rate.
-        # Exception: petroleum cases use DV as real declared value per ton.
+        # Exception: petroleum cases use DV as real deduction value per ton.
         is_petroleum = (request.flags or {}).get("petroleum_case") or (request.hs_code or "").startswith("27")
         if request.declared_value is not None and (active_exemption or agreement_code) and not is_petroleum:
             result["cd_rate"] = Decimal(str(request.declared_value)) / Decimal("100")
@@ -809,7 +814,7 @@ class ImportTaxCalculator:
         net_mass_kg = request.net_mass_kg_normalized
         if not net_mass_kg or net_mass_kg <= 0:
             raise ValueError(
-                "Declared Value per ton requires net mass "
+                "Deduction Value (DV) per ton requires net mass "
                 "(net_mass_kg, net_mass_tons, or net_mass_kg with net_mass_unit='ton')"
             )
 
@@ -823,7 +828,7 @@ class ImportTaxCalculator:
             )
             if dv_record:
                 dv = Decimal(str(dv_record["dv_per_metric_ton"]))
-                source = f"government DV ({dv_record.get('source', 'DB')})"
+                source = f"government DV (Deduction Value) ({dv_record.get('source', 'DB')})"
                 if request.declared_value is not None:
                     source += " — overridden by request"
                     return request.declared_value, source
@@ -832,8 +837,8 @@ class ImportTaxCalculator:
         # 2. User-provided declared_value
         if request.declared_value is not None:
             if request.declared_value_basis == "per_ton":
-                return request.declared_value, "provided as declared_value per metric ton"
-            return request.declared_value / metric_tons, "provided as total declared_value"
+                return request.declared_value, "provided as DV (Deduction Value) per metric ton"
+            return request.declared_value / metric_tons, "provided as total DV (Deduction Value)"
 
         # 3. Fallback: derive from customs_value
         return fallback_total_value / metric_tons, "derived from customs_value"
@@ -1040,7 +1045,7 @@ class ImportTaxCalculator:
                 )
             )
         
-        # Build assumptions - include exchange rate
+        # Build assumptions — clean factual statements only (no formatting artifacts)
         assumptions = [
             f"HS Code: {request.hs_code}",
             f"Product: {request.goods.get('description', 'N/A')}",
@@ -1050,13 +1055,10 @@ class ImportTaxCalculator:
             basis_label = request.declared_value_basis or "total"
             assumptions.append(f"DV: {float(request.declared_value):,.2f} USD ({basis_label})")
         assumptions.extend([
-            "",
-            "=== APPLICABLE RATES ===",
             f"Import Tax (COP) rate: {float(rates['cd_rate'] * 100):.2f}%",
             f"Special Tariff (SOP) rate: {float(rates['st_rate'] * 100):.2f}%",
             f"VAT rate: {float(rates['vat_rate'] * 100):.2f}%",
             f"Exchange rate: 1 {request.currency} = {float(exchange_rate_khr):,.2f} KHR",
-            f"Source: Calculator PostgreSQL ({_DB_NAME})"
         ])
         assumptions.extend(self._dq_assumptions(request))
         
@@ -1081,6 +1083,66 @@ class ImportTaxCalculator:
         # Calculate original USD amount if not already provided
         cif_value_usd = Decimal(str(request.customs_value)) if request.currency == "USD" else None
         
+        # Build wizard steps
+        steps = [
+            CalculationStep(
+                step=1,
+                name="Currency Conversion" if request.currency != "KHR" else "Currency Confirmation",
+                formula=f"CIF Value = {float(cif_value_khr):,.0f} KHR" if request.currency == "KHR" else f"CIF Value x Exchange Rate = {float(cif_value_khr):,.0f} KHR",
+                base=cif_value_khr,
+                amount=cif_value_khr,
+            ),
+            CalculationStep(
+                step=2,
+                name="Import Taxes (COP)",
+                formula="Customs Value x CD Rate",
+                base=cif_value_khr,
+                rate=rates["cd_rate"] * Decimal("100"),
+                amount=cop_amount,
+            ),
+        ]
+        if st_base > 0:
+            steps.append(
+                CalculationStep(
+                    step=3,
+                    name="Special Tariff (SOP)",
+                    formula="(Customs Value + COP) x ST Rate",
+                    base=st_base,
+                    rate=rates["st_rate"] * Decimal("100"),
+                    amount=sop_amount,
+                )
+            )
+        vat_step_number = 4 if sop_amount > 0 else 3
+        steps.append(
+            CalculationStep(
+                step=vat_step_number,
+                name="VOP",
+                formula="(Customs Value + COP + SOP) x VAT Rate" if sop_amount > 0 else "(Customs Value + COP) x VAT Rate",
+                base=vat_base,
+                rate=rates["vat_rate"] * Decimal("100"),
+                amount=vop_amount,
+            )
+        )
+        steps.append(
+            CalculationStep(
+                step=vat_step_number + 1,
+                name="Total Duties and Taxes",
+                formula="COP + SOP + VOP + VVF",
+                amount=total_payable,
+            )
+        )
+        if vvf > 0:
+            steps.append(
+                CalculationStep(
+                    step=vat_step_number + 2,
+                    name="Vehicle Valuation Fee (VVF)",
+                    formula="60,000 KHR per vehicle unit",
+                    base=request.quantity or Decimal("1"),
+                    rate=Decimal("60000"),
+                    amount=vvf,
+                )
+            )
+
         return {
             "total": total_payable,
             "currency": "KHR",
@@ -1096,9 +1158,10 @@ class ImportTaxCalculator:
             },
             "line_items": line_items,
             "assumptions": assumptions,
-            "references": references
+            "references": references,
+            "steps": steps,
         }
-    
+
     def _calculate_petroleum_case(
         self,
         request: CalculationRequest,
@@ -1117,7 +1180,7 @@ class ImportTaxCalculator:
         """
         
         # KHR-FIRST: All calculations work directly with KHR values
-        # Requires DV (Declared Value), net mass, and volume
+        # Requires DV (Deduction Value), net mass, and volume
         # net_mass_kg_normalized handles tons → kg conversion automatically
         net_mass_kg = request.net_mass_kg_normalized
         if not net_mass_kg or not request.volume_liter:
@@ -1128,7 +1191,7 @@ class ImportTaxCalculator:
 
         cif_value_usd = Decimal(str(request.customs_value))
 
-        # Phase 1: Calculate using CPP base (Declared Value)
+        # Phase 1: Calculate using CPP base (Deduction Value)
         # DV = fair market price per metric TON in request currency
         # CPP base = (DV_per_ton × exchange_rate × net_mass_kg) / 1000
         dv_per_ton, dv_source = self._get_declared_value_per_ton(request, cif_value_usd)
@@ -1234,13 +1297,11 @@ class ImportTaxCalculator:
             f"Net mass: {float(net_mass_kg):,.2f} kg (provided as: {request.goods.get('net_mass_tons', request.goods.get('net_mass_kg'))} {request.net_mass_unit})",
             f"Volume: {request.volume_liter} liters",
             f"DV: {float(dv_per_ton):,.4f} {request.currency} per metric ton ({dv_source})",
-            "=== APPLICABLE RATES (PETROLEUM) ===",
             f"Customs Petroleum Payment (CPP) rate: {float(rates['cd_rate'] * 100):.2f}%",
             f"Additional Tax Petroleum (ATP) rate: {float(rates['atp_rate']):.2f} $/L",
             f"Special Petroleum Payment (SPP) rate: {float(rates['st_rate'] * 100):.2f}%",
             f"VAT Petroleum Payment (VPP) rate: {float(rates['vat_rate'] * 100):.2f}%",
             f"Exchange rate: 1 USD = {float(exchange_rate_khr):,.2f} KHR",
-            f"Source: Calculator PostgreSQL ({_DB_NAME})"
         ]
         assumptions.extend(self._dq_assumptions(request))
         
@@ -1267,6 +1328,70 @@ class ImportTaxCalculator:
             ),
         ]
         
+        # Build wizard steps
+        steps = [
+            CalculationStep(
+                step=1,
+                name="Currency Conversion" if request.currency != "KHR" else "Currency Confirmation",
+                formula=f"CIF Value = {float(cif_value_khr):,.0f} KHR" if request.currency == "KHR" else f"CIF Value x Exchange Rate = {float(cif_value_khr):,.0f} KHR",
+                base=cif_value_khr,
+                amount=cif_value_khr,
+            ),
+            CalculationStep(
+                step=2,
+                name="Phase 1 -- Petroleum Tax (Deduction Value Basis)",
+                formula="CPP base = DV/ton x exchange_rate x net_mass_kg / 1000",
+                base=cpp_base_khr,
+                rate=rates["cd_rate"] * Decimal("100"),
+                amount=cpp,
+            ),
+            CalculationStep(
+                step=3,
+                name="Additional Tax (ATP)",
+                formula="volume_liter x ATP_rate x exchange_rate",
+                base=Decimal(str(request.volume_liter)),
+                rate=rates["atp_rate"],
+                amount=atp,
+            ),
+            CalculationStep(
+                step=4,
+                name="Special Petroleum Payment (SPP)",
+                formula="(CPP base + CPP + ATP) x ST Rate",
+                base=spp_base,
+                rate=rates["st_rate"] * Decimal("100"),
+                amount=spp,
+            ),
+            CalculationStep(
+                step=5,
+                name="VAT (VPP)",
+                formula="(CPP base + CPP + ATP + SPP) x VAT Rate",
+                base=vpp_base,
+                rate=rates["vat_rate"] * Decimal("100"),
+                amount=vpp,
+            ),
+            CalculationStep(
+                step=6,
+                name="Phase 2 -- Petroleum Tax (CIF Basis)",
+                formula="Recalculate using actual Customs Value as CPP base",
+                base=cif_value_khr,
+                amount=phase2_total,
+                note="Importer always pays Phase 1. DPP difference handled by the state.",
+            ),
+            CalculationStep(
+                step=7,
+                name="Difference / Partial Subsidy (DPP)",
+                formula="|Phase 1 Total - Phase 2 Total|",
+                amount=dpp_gap,
+                note="Subsidy" if phase1_total > phase2_total else ("Additional charge" if phase2_total > phase1_total else "No difference"),
+            ),
+            CalculationStep(
+                step=8,
+                name="Total Payable",
+                formula="CPP + ATP + SPP + VPP",
+                amount=total_payable,
+            ),
+        ]
+
         return {
             "total": total_payable,
             "currency": "KHR",
@@ -1290,10 +1415,10 @@ class ImportTaxCalculator:
             },
             "line_items": line_items,
             "assumptions": assumptions,
-            "references": references
+            "references": references,
+            "steps": steps,
         }
-        
-    
+
     def _calculate_rubber_case(
         self,
         request: CalculationRequest,
@@ -1315,7 +1440,7 @@ class ImportTaxCalculator:
             raise ValueError("Rubber case requires net_mass_kg")
         
         # KHR-FIRST: All calculations in KHR
-        # ETR = (Declared Value in KHR / Net Mass) × Export Tax rate
+        # ETR = (Deduction Value (DV) in KHR / Net Mass) × Export Tax rate
         # = (CIF_KHR / net_mass_kg) × et_rate
         
         cif_value_usd = Decimal(str(request.customs_value))
@@ -1344,11 +1469,8 @@ class ImportTaxCalculator:
             f"Origin country: {request.origin_country or 'N/A'}",
             f"Net mass: {float(net_mass_kg):,.2f} kg",
             f"DV total: {float(dv_khr):,.2f} KHR ({dv_source})",
-            "",
-            "=== APPLICABLE RATES (RUBBER) ===",
             f"Export Tax on Rubber (ETR) rate: {float(rates.get('et_rate', 0) * 100):.2f}%",
             f"Exchange rate: 1 USD = {float(exchange_rate_khr):,.2f} KHR",
-            f"Source: Calculator PostgreSQL ({_DB_NAME})"
         ]
         assumptions.extend(self._dq_assumptions(request))
         
@@ -1375,6 +1497,31 @@ class ImportTaxCalculator:
             ),
         ]
         
+        # Build wizard steps
+        steps = [
+            CalculationStep(
+                step=1,
+                name="Currency Conversion" if request.currency != "KHR" else "Currency Confirmation",
+                formula=f"CIF Value = {float(cif_value_khr):,.0f} KHR" if request.currency == "KHR" else f"CIF Value x Exchange Rate = {float(cif_value_khr):,.0f} KHR",
+                base=cif_value_khr,
+                amount=cif_value_khr,
+            ),
+            CalculationStep(
+                step=2,
+                name="Export Tax on Rubber (ETR)",
+                formula="(DV in KHR / net_mass_kg) x ET Rate",
+                base=dv_khr,
+                rate=rates.get("et_rate", Decimal("0")) * Decimal("100"),
+                amount=etr_amount,
+            ),
+            CalculationStep(
+                step=3,
+                name="Total Payable",
+                formula="ETR only (no VAT on exports)",
+                amount=total_payable,
+            ),
+        ]
+
         return {
             "total": total_payable,
             "currency": "KHR",
@@ -1387,9 +1534,10 @@ class ImportTaxCalculator:
             },
             "line_items": line_items,
             "assumptions": assumptions,
-            "references": references
+            "references": references,
+            "steps": steps,
         }
-    
+
     def _calculate_fta_dv_case(
         self,
         request: CalculationRequest,
@@ -1496,15 +1644,12 @@ class ImportTaxCalculator:
             f"Origin country: {request.origin_country or 'N/A'}",
             f"FTA Certificate: {fta_cert}",
             f"DV basis: {float(customs_basis_khr):,.2f} KHR ({dv_source})",
-            "",
-            "=== APPLICABLE RATES (FTA) ===",
             f"Customs Duty (CD) preferential rate: {float(rates['cd_rate'] * 100):.2f}%",
             f"Customs Duty (CD) normal rate: {float(cd_rate_normal * 100):.2f}%",
             f"Special Tax (ST) preferential rate: {float(rates['st_rate'] * 100):.2f}%",
             f"Special Tax (ST) normal rate: {float(st_rate_normal * 100):.2f}%",
             f"VAT rate: {float(rates['vat_rate'] * 100):.2f}%",
             f"Exchange rate: 1 USD = {float(exchange_rate_khr):,.2f} KHR",
-            f"Source: Calculator PostgreSQL ({_DB_NAME}) — FTA rates"
         ]
 
         references = [
@@ -1530,6 +1675,82 @@ class ImportTaxCalculator:
             ),
         ]
 
+        # Build wizard steps
+        steps = [
+            CalculationStep(
+                step=1,
+                name="Currency Conversion" if request.currency != "KHR" else "Currency Confirmation",
+                formula=f"CIF Value = {float(cif_value_khr):,.0f} KHR" if request.currency == "KHR" else f"CIF Value x Exchange Rate = {float(cif_value_khr):,.0f} KHR",
+                base=cif_value_khr,
+                amount=cif_value_khr,
+            ),
+            CalculationStep(
+                step=2,
+                name="Original COP (MFN rate for base build-up)",
+                formula="Customs Value x Normal CD Rate",
+                base=customs_basis_khr,
+                rate=cd_rate_normal * Decimal("100"),
+                amount=original_cop_amount,
+            ),
+            CalculationStep(
+                step=3,
+                name="Payable COP (FTA preferential rate)",
+                formula="Customs Value x Preferential CD Rate",
+                base=customs_basis_khr,
+                rate=rates["cd_rate"] * Decimal("100"),
+                amount=payable_cop,
+            ),
+            CalculationStep(
+                step=4,
+                name="Original SOP (MFN rate)",
+                formula="(Customs Value + Original COP) x Normal ST Rate",
+                base=st_base,
+                rate=st_rate_normal * Decimal("100"),
+                amount=original_sop_amount,
+            ),
+            CalculationStep(
+                step=5,
+                name="Payable SOP (FTA preferential rate)",
+                formula="(Customs Value + Original COP) x Preferential ST Rate",
+                base=st_base,
+                rate=rates["st_rate"] * Decimal("100"),
+                amount=payable_sop,
+            ),
+            CalculationStep(
+                step=6,
+                name="Original VOP (MFN rate)",
+                formula="(Customs Value + Original COP + Original SOP) x Normal VAT Rate",
+                base=vat_base,
+                rate=vat_rate_normal * Decimal("100"),
+                amount=original_vop_amount,
+            ),
+            CalculationStep(
+                step=7,
+                name="Payable VOP (FTA preferential rate)",
+                formula="(Customs Value + Original COP + Original SOP) x Preferential VAT Rate",
+                base=vat_base,
+                rate=rates["vat_rate"] * Decimal("100"),
+                amount=payable_vop,
+            ),
+            CalculationStep(
+                step=8,
+                name="Total Payable",
+                formula="Payable COP + Payable SOP + Payable VOP + VVF",
+                amount=total_payable,
+            ),
+        ]
+        if vvf > 0:
+            steps.append(
+                CalculationStep(
+                    step=9,
+                    name="Vehicle Valuation Fee (VVF)",
+                    formula="60,000 KHR per vehicle unit",
+                    base=request.quantity or Decimal("1"),
+                    rate=Decimal("60000"),
+                    amount=vvf,
+                )
+            )
+
         return {
             "total": total_payable,
             "currency": "KHR",
@@ -1549,7 +1770,8 @@ class ImportTaxCalculator:
             },
             "line_items": line_items,
             "assumptions": assumptions,
-            "references": references
+            "references": references,
+            "steps": steps,
         }
 
     def _calculate_fta_dv_dq_case(
@@ -1560,7 +1782,7 @@ class ImportTaxCalculator:
         exchange_rate_khr: Decimal
     ) -> Dict[str, Any]:
         """
-        Calculate FTA/DV case with DQ Deal/Trade Agreement adjustment.
+        Calculate FTA/DV case with DQ (Deduction Quantity) adjustment.
 
         Matches the Excel formula behaviour:
         - Original Amounts use normal/MFN rates for cumulative base build-up.
@@ -1681,15 +1903,12 @@ class ImportTaxCalculator:
             f"Origin country: {request.origin_country or 'N/A'}",
             f"FTA Certificate: {fta_cert}",
             f"DV basis: {float(customs_basis_khr):,.2f} KHR ({dv_source})",
-            "",
-            "=== APPLICABLE RATES (FTA/DV/DQ) ===",
             f"Customs Duty (CD) preferential rate: {float(rates['cd_rate'] * 100):.2f}%",
             f"Customs Duty (CD) normal rate: {float(cd_rate_normal * 100):.2f}%",
             f"Special Tax (ST) preferential rate: {float(rates['st_rate'] * 100):.2f}%",
             f"Special Tax (ST) normal rate: {float(st_rate_normal * 100):.2f}%",
             f"VAT rate: {float(rates['vat_rate'] * 100):.2f}%",
             f"Exchange rate: 1 USD = {float(exchange_rate_khr):,.2f} KHR",
-            f"Source: Calculator PostgreSQL ({_DB_NAME}) — FTA rates"
         ]
         assumptions.extend(self._dq_assumptions(request))
 
@@ -1710,11 +1929,119 @@ class ImportTaxCalculator:
             ),
             TaxReference(
                 doc_id=f"fta_rates:{fta_cert}:dq",
-                title=f"{fta_cert} - Preferential Rates with DQ",
+                title=f"{fta_cert} - Preferential Rates with DQ (Deduction Quantity)",
                 source_url="https://gdce.gov.kh/tariff-search",
-                section_title="FTA/DQ Certificate Registry"
+                section_title="FTA/DQ (Deduction Quantity) Certificate Registry"
             ),
         ]
+
+        # Build wizard steps
+        steps = [
+            CalculationStep(
+                step=1,
+                name="Currency Conversion" if request.currency != "KHR" else "Currency Confirmation",
+                formula=f"CIF Value = {float(cif_value_khr):,.0f} KHR" if request.currency == "KHR" else f"CIF Value x Exchange Rate = {float(cif_value_khr):,.0f} KHR",
+                base=cif_value_khr,
+                amount=cif_value_khr,
+            ),
+            CalculationStep(
+                step=2,
+                name="Original COP (MFN rate for base build-up)",
+                formula="Customs Value x Normal CD Rate",
+                base=customs_basis_khr,
+                rate=cd_rate_normal * Decimal("100"),
+                amount=original_cop,
+            ),
+            CalculationStep(
+                step=3,
+                name="Before-DQ COP (preferential rate)",
+                formula="Customs Value x Preferential CD Rate",
+                base=customs_basis_khr,
+                rate=rates["cd_rate"] * Decimal("100"),
+                amount=before_dq_cop,
+            ),
+            CalculationStep(
+                step=4,
+                name="Payable COP (after DQ discount)",
+                formula="Before-DQ COP x (1 - DQ)",
+                base=before_dq_cop,
+                amount=payable_cop,
+                note=f"DQ factor = {float(dq_factor):.4f}",
+            ),
+            CalculationStep(
+                step=5,
+                name="Original SOP (MFN rate)",
+                formula="(Customs Value + Original COP) x Normal ST Rate",
+                base=sop_base,
+                rate=st_rate_normal * Decimal("100"),
+                amount=original_sop,
+            ),
+            CalculationStep(
+                step=6,
+                name="Before-DQ SOP (preferential rate)",
+                formula="(Customs Value + Original COP) x Preferential ST Rate",
+                base=sop_base,
+                rate=rates["st_rate"] * Decimal("100"),
+                amount=before_dq_sop,
+            ),
+            CalculationStep(
+                step=7,
+                name="Payable SOP (after DQ discount)",
+                formula="Before-DQ SOP x (1 - DQ)",
+                base=before_dq_sop,
+                amount=payable_sop,
+                note=f"DQ factor = {float(dq_factor):.4f}",
+            ),
+            CalculationStep(
+                step=8,
+                name="Original VOP (MFN rate)",
+                formula="(Customs Value + Original COP + Original SOP) x Normal VAT Rate",
+                base=vat_base,
+                rate=vat_rate_normal * Decimal("100"),
+                amount=original_vop,
+            ),
+            CalculationStep(
+                step=9,
+                name="Before-DQ VOP (preferential rate)",
+                formula="(Customs Value + Original COP + Original SOP) x Preferential VAT Rate",
+                base=vat_base,
+                rate=rates["vat_rate"] * Decimal("100"),
+                amount=before_dq_vop,
+            ),
+            CalculationStep(
+                step=10,
+                name="Payable VOP (after DQ discount)",
+                formula="Before-DQ VOP x (1 - DQ)",
+                base=before_dq_vop,
+                amount=payable_vop,
+                note=f"DQ factor = {float(dq_factor):.4f}",
+            ),
+            CalculationStep(
+                step=11,
+                name="BUR (Build-Up Rebate / DQ Portion)",
+                formula="(Before-DQ COP + Before-DQ SOP + Before-DQ VOP) x DQ",
+                base=before_dq_total,
+                rate=dq_factor * Decimal("100"),
+                amount=bur,
+            ),
+            CalculationStep(
+                step=12,
+                name="Total Payable",
+                formula="Payable COP + Payable SOP + Payable VOP + VVF",
+                amount=total_payable,
+            ),
+        ]
+        if vvf > 0:
+            steps.append(
+                CalculationStep(
+                    step=13,
+                    name="Vehicle Valuation Fee (VVF)",
+                    formula="60,000 KHR per vehicle unit",
+                    base=request.quantity or Decimal("1"),
+                    rate=Decimal("60000"),
+                    amount=vvf,
+                )
+            )
 
         return {
             "total": total_payable,
@@ -1743,7 +2070,8 @@ class ImportTaxCalculator:
             },
             "line_items": line_items,
             "assumptions": assumptions,
-            "references": references
+            "references": references,
+            "steps": steps,
         }
 
 

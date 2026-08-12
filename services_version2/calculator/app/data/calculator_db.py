@@ -11,7 +11,7 @@ This is the PRIMARY source of truth for:
 - Duty rates (by HS code + origin country)
 - HS code descriptions and units
 - Exchange rates
-- Declared values (DV per metric ton)
+- Deduction values (DV per metric ton)
 - Dynamic rules (formulas, rounding_rules, policies, exemptions)
 - Calculation history (audit trail)
 
@@ -359,13 +359,13 @@ class CalculatorDatabaseAdapter:
             return {r["currency"]: Decimal(str(r["local_rate"])) for r in rows} if rows else None
 
     # ------------------------------------------------------------------
-    # Declared values
+    # Deduction values
     # ------------------------------------------------------------------
 
     def get_declared_value(
         self, hs_code: str, effective_date: str | None = None
     ) -> Optional[Dict[str, Any]]:
-        """Get government-declared fair market value per metric ton."""
+        """Get government Deduction Value (DV) per metric ton."""
         if not effective_date:
             effective_date = datetime.now().strftime("%Y-%m-%d")
 
@@ -390,6 +390,93 @@ class CalculatorDatabaseAdapter:
                 "currency": row["currency"] or "USD",
                 "source": row["source"] or "government",
             }
+
+    # ------------------------------------------------------------------
+    # Reference data: FTA types, country groups, country-region mappings
+    # ------------------------------------------------------------------
+
+    def get_preferential_rate(self, agreement_code: str) -> Optional[Dict[str, Any]]:
+        """Get FTA / preferential agreement reference by code (any row)."""
+        with self._cursor() as cur:
+            cur.execute(
+                """
+                SELECT agreement_code, origin_country, hs_code, name_en, name_kh, valid_from, valid_to
+                FROM preferential_rates
+                WHERE agreement_code = %s
+                LIMIT 1
+                """,
+                (agreement_code.upper(),),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
+            return dict(row)
+
+    def is_agreement_valid_for_country(
+        self, agreement_code: str, origin_country: str
+    ) -> bool:
+        """Check whether an agreement actually covers the given origin country."""
+        with self._cursor() as cur:
+            cur.execute(
+                """
+                SELECT 1 FROM preferential_rates
+                WHERE agreement_code = %s AND origin_country = %s
+                LIMIT 1
+                """,
+                (agreement_code.upper(), origin_country.upper()),
+            )
+            return cur.fetchone() is not None
+
+    def list_agreements_for_country(self, origin_country: str) -> List[Dict[str, Any]]:
+        """List all agreements that cover the given origin country."""
+        with self._cursor() as cur:
+            cur.execute(
+                """
+                SELECT DISTINCT agreement_code, hs_code, name_en, name_kh, valid_from, valid_to
+                FROM preferential_rates
+                WHERE origin_country = %s
+                ORDER BY agreement_code
+                """,
+                (origin_country.upper(),),
+            )
+            return [dict(r) for r in cur.fetchall()]
+
+    def list_preferential_rates(self) -> List[Dict[str, Any]]:
+        """List all agreement-country pairs."""
+        with self._cursor() as cur:
+            cur.execute(
+                """
+                SELECT agreement_code, origin_country, hs_code, name_en, name_kh, valid_from, valid_to
+                FROM preferential_rates
+                ORDER BY agreement_code, origin_country
+                """
+            )
+            return [dict(r) for r in cur.fetchall()]
+
+    def get_country_regions(self, country_code: str) -> List[Dict[str, Any]]:
+        """Get region groups for a country (e.g., CN -> ['ASI', 'CHN'])."""
+        with self._cursor() as cur:
+            cur.execute(
+                """
+                SELECT country_code, region_code, region_desc
+                FROM countries_by_regions
+                WHERE country_code = %s
+                """,
+                (country_code.upper(),),
+            )
+            return [dict(r) for r in cur.fetchall()]
+
+    def list_country_groups(self) -> List[Dict[str, Any]]:
+        """List all country groups / regions."""
+        with self._cursor() as cur:
+            cur.execute(
+                """
+                SELECT code, name, name_kh, valid_from
+                FROM country_groups
+                ORDER BY code
+                """
+            )
+            return [dict(r) for r in cur.fetchall()]
 
     # ------------------------------------------------------------------
     # Calculation history (audit trail)
@@ -712,7 +799,7 @@ class CalculatorDatabaseAdapter:
         return len(records)
 
     def bulk_insert_declared_values(self, records: List[Dict[str, Any]]) -> int:
-        """Bulk insert declared values."""
+        """Bulk insert deduction values."""
         if not records:
             return 0
         with self._cursor(dict_cursor=False) as cur:

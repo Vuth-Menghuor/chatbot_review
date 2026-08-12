@@ -1,0 +1,16 @@
+{
+  "request_id": "fixture-calculator-plain-text",
+  "session_id": "fixture-session-calculator-plain-text",
+  "question": "calculate import tax for oxen",
+  "answer": "The calculator returned a plain text response.",
+  "intent": "calculation",
+  "status": "completed",
+  "citations": [],
+  "clarifications": [],
+  "errors": [],
+  "latency_ms": 0,
+  "metadata": {},
+  "table": null,
+  "visualization": null,
+  "message": "The calculator returned a plain text response."
+}

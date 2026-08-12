@@ -194,6 +194,59 @@ class TradeQueryHandler:
             elif re.search(r"\blatest\b", query_to_send, flags=re.IGNORECASE):
                 query_to_send = re.sub(r"\blatest\b", LATEST_TRADE_YEAR, query_to_send, flags=re.IGNORECASE)
 
+            # --- Trade Query Slots Diagnostic Logging ---
+            raw_lower = (context.original_input or "").lower()
+            rewritten_lower = (service_query or "").lower()
+            final_lower = query_to_send.lower()
+
+            # Year resolution
+            raw_year_match = re.search(r"\b(19|20)\d{2}\b", raw_lower)
+            rewritten_year_match = re.search(r"\b(19|20)\d{2}\b", rewritten_lower)
+            if rewritten_year_match:
+                year_val = rewritten_year_match.group(0)
+                year_source = "user_input" if raw_year_match else "inherited_history"
+            elif re.search(r"\b(19|20)\d{2}\b", final_lower):
+                year_val = re.search(r"\b(19|20)\d{2}\b", final_lower).group(0)
+                year_source = "default_fallback"
+            else:
+                year_val = "2025"
+                year_source = "default_fallback"
+
+            # Flow resolution
+            raw_flow_match = re.search(r"\b(import|export|imports|exports|imported|exported)\b", raw_lower)
+            rewritten_flow_match = re.search(r"\b(import|export|imports|exports|imported|exported)\b", rewritten_lower)
+            if rewritten_flow_match:
+                flow_val = rewritten_flow_match.group(0)
+                flow_source = "user_input" if raw_flow_match else "inherited_history"
+            elif re.search(r"\b(import|export|imports|exports|imported|exported)\b", final_lower):
+                flow_val = re.search(r"\b(import|export|imports|exports|imported|exported)\b", final_lower).group(0)
+                flow_source = "default_fallback"
+            else:
+                flow_val = "import"
+                flow_source = "default_fallback"
+
+            # Metric/Topic resolution
+            raw_ranking = bool(re.search(r"\b(top\s+\d+|top\s+ten|top\s+five|top\s+partners?|top\s+countries|top\s+commodit|top\s+products?|ranking|most\s+export|highest\s+export|most\s+import|highest\s+import)\b", raw_lower))
+            rewritten_ranking = bool(re.search(r"\b(top\s+\d+|top\s+ten|top\s+five|top\s+partners?|top\s+countries|top\s+commodit|top\s+products?|ranking|most\s+export|highest\s+export|most\s+import|highest\s+import)\b", rewritten_lower))
+            raw_overall = bool(re.search(r"\b(total\s+trade|overall\s+trade|total\s+volume|overall\s+volume|all\s+products?|no\s+specific\s+product|all\s+commodit|entire\s+trade|aggregate\s+trade|macro\s+trade|total\s+import|total\s+export|total\s+imports|total\s+exports)\b", raw_lower))
+            rewritten_overall = bool(re.search(r"\b(total\s+trade|overall\s+trade|total\s+volume|overall\s+volume|all\s+products?|no\s+specific\s+product|all\s+commodit|entire\s+trade|aggregate\s+trade|macro\s+trade|total\s+import|total\s+export|total\s+imports|total\s+exports)\b", rewritten_lower))
+
+            metric_source = "user_input"
+            if (rewritten_ranking and not raw_ranking) or (rewritten_overall and not raw_overall):
+                metric_source = "inherited_history"
+            else:
+                raw_entity = extract_entity(raw_lower)
+                rewritten_entity = extract_entity(rewritten_lower)
+                if rewritten_entity and not raw_entity:
+                    metric_source = "inherited_history"
+
+            logger.info(
+                f"[{context.request_id}] [TRADE_SLOTS_DIAGNOSTIC] "
+                f"metric_source: {metric_source} | "
+                f"flow: {flow_val} ({flow_source}) | "
+                f"year: {year_val} ({year_source})"
+            )
+
             lang_tag = context.metadata.get("language") or getattr(context, "language", "en")
             async def run_call():
                 return await asyncio.wait_for(

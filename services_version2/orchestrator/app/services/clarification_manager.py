@@ -94,48 +94,78 @@ class ClarificationManager:
                 currency = None
                 origin = None
                 hs_code = None
-                
+                qty = None
+                unit = None
                 try:
                     from ..infrastructure.clients import CalculatorServiceClient
                     latest_params = CalculatorServiceClient._parse_question_for_calculation(clarification_response)
                     cif_val = latest_params.get("cif_value")
-                    currency = latest_params.get("currency")
+                    currency = latest_params.get("currency") or getattr(session_context, 'currency', None)
                     origin = latest_params.get("origin_country")
                     hs_code = latest_params.get("hs_code")
+                    qty = latest_params.get("quantity")
+                    unit = latest_params.get("unit")
                 except Exception:
                     pass
 
+                from app.utils.entity_utils import looks_like_unit_price
+                if looks_like_unit_price(clarification_response):
+                    qty = None
+                    unit = None
+
+                # Check if entity has changed compared to history (session_last_entity)
+                from app.utils.entity_utils import is_entity_changed
+                is_different_entity = is_entity_changed(entity, session_last_entity)
+
                 if session_context:
-                    turns_to_check = []
-                    if hasattr(session_context, "turns") and session_context.turns:
-                        turns_to_check = [turn.get("user") or turn.get("user_input", "") for turn in reversed(session_context.turns)]
-                    
-                    last_norm = getattr(session_context, 'last_normalized_query', None)
-                    if last_norm:
-                        turns_to_check.insert(0, last_norm)
+                    has_confirmed_hs = bool(getattr(session_context, "hs_code", None))
+                    has_explicit_hs_in_query = False
+                    if clarification_response:
+                        has_explicit_hs_in_query = has_explicit_hs_in_query or bool(re.search(r"\b(?:hs\s*code|hs)?\s*(\d{4}(?:\.\d{2}){0,2}|\d{6}|\d{8})\b", clarification_response.lower()))
+                    if pending_query:
+                        has_explicit_hs_in_query = has_explicit_hs_in_query or bool(re.search(r"\b(?:hs\s*code|hs)?\s*(\d{4}(?:\.\d{2}){0,2}|\d{6}|\d{8})\b", pending_query.lower()))
+
+                    is_unresolved = not (has_confirmed_hs or has_explicit_hs_in_query)
+
+                    # Only scan history if entity has not changed
+                    if not is_different_entity:
+                        turns_to_check = []
+                        if hasattr(session_context, "turns") and session_context.turns:
+                            turns_to_check = [turn.get("user") or turn.get("user_input", "") for turn in reversed(session_context.turns)]
                         
-                    for q in turns_to_check:
-                        if not q:
-                            continue
-                        try:
-                            from ..infrastructure.clients import CalculatorServiceClient
-                            params = CalculatorServiceClient._parse_question_for_calculation(q)
-                            if cif_val is None and params.get("cif_value") is not None:
-                                cif_val = params.get("cif_value")
-                                if not currency:
-                                    currency = params.get("currency")
-                            if not origin and params.get("origin_country"):
-                                origin = params.get("origin_country")
-                            if not hs_code and params.get("hs_code"):
-                                hs_code = params.get("hs_code")
-                        except Exception:
-                            pass
+                        last_norm = getattr(session_context, 'last_normalized_query', None)
+                        if last_norm:
+                            turns_to_check.insert(0, last_norm)
+                            
+                        for q in turns_to_check:
+                            if not q:
+                                continue
+                            try:
+                                from ..infrastructure.clients import CalculatorServiceClient
+                                params = CalculatorServiceClient._parse_question_for_calculation(q)
+                                if cif_val is None and params.get("cif_value") is not None:
+                                    cif_val = params.get("cif_value")
+                                    if not currency and params.get("currency"):
+                                        currency = params.get("currency")
+                                if not origin and params.get("origin_country"):
+                                    origin = params.get("origin_country")
+                                if not hs_code and params.get("hs_code") and not is_unresolved:
+                                    hs_code = params.get("hs_code")
+                                if qty is None and params.get("quantity") is not None:
+                                    qty = params.get("quantity")
+                                    unit = params.get("unit")
+                            except Exception:
+                                pass
+
+                    if not currency:
+                        currency = "USD"
+
+                    # If entity changed, do not pull hs_code from session
+                    if not hs_code and getattr(session_context, "hs_code", None) and not is_unresolved and not is_different_entity:
+                        hs_code = session_context.hs_code
                 
                 if not currency:
                     currency = "USD"
-                if not origin:
-                    origin = "Thailand"
-
                 if hs_code and hs_code not in product:
                     product = f"{product} HS {hs_code}"
 
@@ -147,7 +177,20 @@ class ClarificationManager:
                         "KRW": "₩", "INR": "₹"
                     }
                     cur_str = sym_map.get(currency, f"{currency} ")
-                    return f"Calculate import tax for {product} {cur_str}{cif_display} from {origin}"
+                    
+                    product_str = product
+                    if qty is not None:
+                        qty_display = int(qty) if qty == int(qty) else qty
+                        unit_str = unit or "units"
+                        product_str = f"{qty_display} {unit_str} of {product}"
+
+                    from app.utils.entity_utils import looks_like_unit_price
+                    cif_suffix = " each" if looks_like_unit_price(clarification_response) else ""
+
+                    if origin:
+                        return f"Calculate import tax for {product_str} {cur_str}{cif_display}{cif_suffix} from {origin}"
+                    else:
+                        return f"Calculate import tax for {product_str} {cur_str}{cif_display}{cif_suffix}"
                 else:
                     return f"Calculate import tax for {product}"
 
@@ -302,6 +345,7 @@ class ClarificationManager:
         stripped = question.strip()
         normalized = coordinator._light_normalize_query(stripped)
         input_tokens = set(re.findall(r"[a-z0-9]+", normalized))
+        indep_intent = "hs_code_lookup"
 
         # ---- Guard 1: Small talk / explicit exit ---------------------------------
         small_talk_resp = await coordinator._detect_small_talk(normalized_question, llm_service=None)
@@ -313,6 +357,43 @@ class ClarificationManager:
             context.metadata["small_talk_response"] = small_talk_resp
             ClarificationManager.clear_product_clarification(session)
             return question, normalized_question
+
+        # ---- Guard 1b: Reuse LLM Unified First-Layer Intent & Entity Signals ----
+        # If the incoming query independently resolves to a high-confidence intent
+        # other than HS lookup, or has a different explicit product entity, or is
+        # classified as procedural, we skip the merge and treat it as a fresh query.
+        if coordinator.first_layer_service:
+            try:
+                nlu_cache = await coordinator.first_layer_service.get_unified_result(question, session)
+                if nlu_cache:
+                    indep_intent = nlu_cache.get("intent") or "hs_code_lookup"
+                    indep_conf = nlu_cache.get("confidence", 0.0)
+                    query_nature = nlu_cache.get("query_nature")
+                    entity = nlu_cache.get("entity")
+                    entity_conf = nlu_cache.get("entity_confidence")
+
+                    is_procedural = query_nature == "procedural"
+                    is_other_intent = indep_intent in {"general", "trade_query", "small_talk"} and indep_conf >= 0.70
+                    
+                    is_different_entity = False
+                    if indep_intent == "hs_code_lookup" and entity_conf == "high" and entity:
+                        saved_entity = (session.clarification_entity or "").lower()
+                        new_entity = entity.lower()
+                        saved_tokens = set(re.findall(r"[a-z0-9]+", saved_entity))
+                        new_tokens = set(re.findall(r"[a-z0-9]+", new_entity))
+                        if saved_tokens and not (saved_tokens & new_tokens):
+                            is_different_entity = True
+
+                    if is_procedural or is_other_intent or is_different_entity:
+                        logger.info(
+                            f"[{request_id}] [SPEC-MERGE] Input '{stripped[:40]}' looks like a complete independent query "
+                            f"(procedural={is_procedural}, other_intent={is_other_intent}, diff_entity={is_different_entity}) — "
+                            "resetting product clarification state and treating as fresh query."
+                        )
+                        ClarificationManager.clear_product_clarification(session)
+                        return question, normalized_question
+            except Exception as e:
+                logger.warning(f"[{request_id}] [SPEC-MERGE] Failed to fetch/analyze raw NLU cache: {e}")
 
         # ---- Guard 2: Retry cap --------------------------------------------------
         if session.product_ask_back_count >= MAX_PRODUCT_ASK_BACK_RETRIES:
@@ -334,6 +415,12 @@ class ClarificationManager:
                     "as spec answer (Guard 4 validates the merged result)."
                 )
             else:
+                if indep_intent == "calculation":
+                    logger.info(
+                        f"[{request_id}] [SPEC-MERGE] Input '{stripped[:40]}' has no overlap with expected terms, but intent is calculation — preserving clarification state and proceeding."
+                    )
+                    return question, normalized_question
+
                 logger.info(
                     f"[{request_id}] [SPEC-MERGE] Input '{stripped[:40]}' has no overlap "
                     f"with expected terms {list(expected_terms)[:6]} — resetting, treating as fresh query."
@@ -382,6 +469,7 @@ class ClarificationManager:
         session.clarification_last_query = None
         session.product_ask_back_count = 0
         session.clarification_expected_terms = []
+        session.clarification_candidate_codes = []
         session._trigger_change()
 
     @staticmethod

@@ -67,7 +67,19 @@ RATE_TTL_SECONDS = int(os.getenv("RATE_TTL_SECONDS", "172800"))
 CURRENCIES = [
     "USD", "THB", "EUR", "GBP", "AUD", "CAD", "CHF", "CNY", "CNH",
     "HKD", "IDR", "INR", "JPY", "KRW", "LAK", "MMK", "MYR", "NZD",
+    "PHP", "SGD", "SDR", "SEK", "TWD", "VND", "AED", "ZAR", "NGN",
+    "DKK", "SAR",
 ]
+
+# Fallback rates for currencies not supported by NBC API
+# (updated manually from official NBC tables)
+FALLBACK_RATES = {
+    "AED": 1106.5,
+    "ZAR": 244.0,
+    "NGN": 2.985,
+    "DKK": 622.0,
+    "SAR": 1082.5,
+}
 
 REQUEST_DELAY_SECONDS = 0.5
 
@@ -126,21 +138,59 @@ def fetch_one(currency: str, for_date: str = None) -> dict:
     return data
 
 
-def _store_rate(redis_client, currency: str, data: dict) -> None:
-    """Store a rate in Redis with TTL."""
+# NBC API returns some rates per-100 or per-1000 units.
+# Map currency → divisor to normalize to per-1-unit rate.
+# Detected from API foreign_unit field (e.g. "100JPY", "1000IDR").
+_PER_UNIT_DIVISORS = {
+    "JPY": 100,    # API returns per 100 JPY
+    "IDR": 1000,   # API returns per 1000 IDR
+    "VND": 1000,   # API returns per 1000 VND
+    "PHP": 100,    # API returns per 100 PHP
+    "KRW": 100,    # API returns per 100 KRW
+    "INR": 100,    # API returns per 100 INR
+    "LAK": 1000,   # API returns per 1000 LAK
+    "MMK": 100,    # API returns per 100 MMK
+}
+
+
+def _detect_divisor(data: dict, currency: str) -> float:
+    """Detect per-unit divisor from API response or hardcoded mapping."""
+    # Try API foreign_unit field first (e.g. "100JPY", "1000IDR")
+    foreign_unit = data.get("foreign_unit") or data.get("unit") or ""
+    if foreign_unit:
+        import re
+        m = re.match(r"(\d+)([A-Z]{3})", str(foreign_unit).upper())
+        if m:
+            multiplier = int(m.group(1))
+            if multiplier > 1:
+                return float(multiplier)
+    # Fallback to known mapping
+    return float(_PER_UNIT_DIVISORS.get(currency.upper(), 1))
+
+
+def _store_rate(redis_client, currency: str, data: dict) -> float:
+    """Store a rate in Redis with TTL. Returns the normalized rate."""
     avg = data.get("average")
     if avg is None:
         raise ValueError(f"No 'average' rate in API response for {currency}")
 
-    rate = float(avg)
+    raw_rate = float(avg)
+    divisor = _detect_divisor(data, currency)
+    rate = raw_rate / divisor
     effective_date = data["valid_date"]
     fetched_at = datetime.now().isoformat()
+
+    # Normalize bid/ask if present
+    bid_raw = data.get("bid", avg)
+    ask_raw = data.get("ask", avg)
+    bid = float(bid_raw) / divisor if bid_raw is not None else rate
+    ask = float(ask_raw) / divisor if ask_raw is not None else rate
 
     # Store as JSON for flexibility
     value = json.dumps({
         "rate": rate,
-        "bid": float(data.get("bid", avg)),
-        "ask": float(data.get("ask", avg)),
+        "bid": bid,
+        "ask": ask,
         "date": effective_date,
         "fetched_at": fetched_at,
     })
@@ -155,7 +205,12 @@ def _store_rate(redis_client, currency: str, data: dict) -> None:
         value,
     )
 
-    logger.info(f"Stored {currency} @ {rate} KHR in Redis (TTL {RATE_TTL_SECONDS}s)")
+    if divisor > 1:
+        logger.info(f"Stored {currency} @ {rate} KHR in Redis (normalized from {raw_rate} / {int(divisor)}, TTL {RATE_TTL_SECONDS}s)")
+    else:
+        logger.info(f"Stored {currency} @ {rate} KHR in Redis (TTL {RATE_TTL_SECONDS}s)")
+
+    return rate
 
 
 def fetch_and_store_all() -> None:
@@ -165,13 +220,50 @@ def fetch_and_store_all() -> None:
     stored, failed = [], []
 
     for currency in CURRENCIES:
-        try:
-            data = fetch_one(currency)
-            _store_rate(redis_client, currency, data)
-            stored.append((currency, data.get("average")))
-        except Exception as e:
-            failed.append((currency, str(e)))
-            logger.warning(f"Failed to fetch/store {currency}: {e}")
+        normalized_rate = None
+        api_error = None
+        # Retry up to 3 times with exponential backoff for rate limits
+        for attempt in range(3):
+            try:
+                data = fetch_one(currency)
+                normalized_rate = _store_rate(redis_client, currency, data)
+                stored.append((currency, normalized_rate))
+                break
+            except requests.exceptions.HTTPError as e:
+                status = e.response.status_code if hasattr(e, 'response') else 0
+                api_error = e
+                if status == 429 and attempt < 2:
+                    wait = (2 ** attempt) * 2  # 2s, 4s
+                    logger.warning(f"{currency} rate-limited (429), retrying in {wait}s...")
+                    time.sleep(wait)
+                    continue
+                break
+            except Exception as e:
+                api_error = e
+                break
+
+        # If API failed, try fallback static rate
+        if normalized_rate is None:
+            fallback = FALLBACK_RATES.get(currency)
+            if fallback is not None:
+                today = date.today().isoformat()
+                fetched_at = datetime.now().isoformat()
+                value = json.dumps({
+                    "rate": fallback,
+                    "bid": fallback,
+                    "ask": fallback,
+                    "date": today,
+                    "fetched_at": fetched_at,
+                    "is_fallback": True,
+                })
+                redis_client.setex(f"exchange_rate:{currency}", RATE_TTL_SECONDS, value)
+                redis_client.setex(f"exchange_rate:{currency}:{today}", RATE_TTL_SECONDS, value)
+                stored.append((currency, fallback))
+                logger.info(f"Stored {currency} @ {fallback} KHR in Redis (fallback static rate)")
+            else:
+                failed.append((currency, str(api_error)))
+                logger.warning(f"Failed to fetch/store {currency}: {api_error}")
+
         time.sleep(REQUEST_DELAY_SECONDS)
 
     # Always ensure KHR is present (1 KHR = 1 KHR)

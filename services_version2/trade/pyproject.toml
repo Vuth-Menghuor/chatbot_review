@@ -16,3 +16,11 @@ warn_unused_configs = true
 ignore_missing_imports = true
 strict_optional = true
 
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+python_files = ["test_*.py", "run_quantity_and_speed_benchmark.py"]
+addopts = "-v"
+
+
+

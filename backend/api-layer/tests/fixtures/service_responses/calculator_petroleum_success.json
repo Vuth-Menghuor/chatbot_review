@@ -1,0 +1,80 @@
+{
+  "request_id": "fixture-calculator-petroleum",
+  "session_id": "fixture-session-calculator-petroleum",
+  "question": "calculate petroleum import tax",
+  "answer": "Petroleum calculation complete.",
+  "intent": "calculation",
+  "status": "completed",
+  "citations": [],
+  "clarifications": [],
+  "errors": [],
+  "latency_ms": 0,
+  "metadata": {},
+  "table": null,
+  "visualization": null,
+  "message": "Petroleum calculation complete.",
+  "calculator_result": {
+    "summary": {
+      "total_tax": 2500000,
+      "currency": "KHR",
+      "phase_gap": "100,000 KHR"
+    },
+    "product": {
+      "hs_code": "2710.12.21",
+      "description": "Petroleum"
+    },
+    "inputs": {
+      "declared_value": "500 USD/MT",
+      "quantity": "10 MT"
+    },
+    "tax_breakdown": [
+      {
+        "component": "Phase 1",
+        "tax_base": "DV",
+        "rate": "35%",
+        "amount": 1200000,
+        "currency": "KHR"
+      },
+      {
+        "component": "Phase 2",
+        "tax_base": "State charge",
+        "rate": "10%",
+        "amount": 1300000,
+        "currency": "KHR"
+      }
+    ],
+    "phases": [
+      {
+        "name": "Phase 1",
+        "basis": "Declared value",
+        "total": 1200000,
+        "currency": "KHR",
+        "lines": [
+          {
+            "component": "CPP",
+            "amount": 700000
+          }
+        ]
+      },
+      {
+        "name": "Phase 2",
+        "basis": "State charge",
+        "total": 1300000,
+        "currency": "KHR",
+        "lines": [
+          {
+            "component": "VPP",
+            "amount": 600000
+          }
+        ]
+      }
+    ],
+    "assumptions": [
+      {
+        "title": "Declared value",
+        "content": "Provided by the user"
+      },
+      "Importer pays Phase 1 amount."
+    ]
+  }
+}
