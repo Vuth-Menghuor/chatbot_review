@@ -125,6 +125,14 @@ async def read_sse_events(response) -> list[tuple[str, dict]]:
     return events
 
 
+def event_names(events: list[tuple[str, dict]]) -> list[str]:
+    return [event for event, _data in events]
+
+
+def block_types(events: list[tuple[str, dict]]) -> list[str]:
+    return [data["type"] for event, data in events if event == "block"]
+
+
 async def call_stream_chat(monkeypatch, upstream):
     install_optional_auth_dependency_fakes()
     from app.api.v1.endpoints import chat as chat_endpoint
@@ -146,6 +154,7 @@ async def call_stream_chat(monkeypatch, upstream):
     monkeypatch.setattr(chat_endpoint, "enforce_rate_limit", fake_enforce_rate_limit)
     monkeypatch.setattr(chat_endpoint, "add_audit_log", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(chat_endpoint, "main_chatbot_client", upstream)
+    monkeypatch.setattr(chat_endpoint.settings, "use_standard_chat_stream", False)
 
     response = await chat_endpoint.stream_chat(
         ChatRequest(message="calculate petroleum import tax"),
@@ -177,6 +186,7 @@ async def build_stream_response(monkeypatch, upstream):
     monkeypatch.setattr(chat_endpoint, "enforce_rate_limit", fake_enforce_rate_limit)
     monkeypatch.setattr(chat_endpoint, "add_audit_log", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(chat_endpoint, "main_chatbot_client", upstream)
+    monkeypatch.setattr(chat_endpoint.settings, "use_standard_chat_stream", False)
 
     return await chat_endpoint.stream_chat(
         ChatRequest(message="calculate petroleum import tax"),
@@ -207,6 +217,7 @@ async def build_stream_response_with_request(monkeypatch, upstream, request):
     monkeypatch.setattr(chat_endpoint, "enforce_rate_limit", fake_enforce_rate_limit)
     monkeypatch.setattr(chat_endpoint, "add_audit_log", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(chat_endpoint, "main_chatbot_client", upstream)
+    monkeypatch.setattr(chat_endpoint.settings, "use_standard_chat_stream", False)
 
     return await chat_endpoint.stream_chat(
         ChatRequest(message="calculate petroleum import tax"),
@@ -250,6 +261,34 @@ class InterruptingStreamingClient:
         raise RuntimeError("upstream socket closed unexpectedly")
 
 
+class StreamFailsQuerySucceedsClient:
+    def __init__(self, *, event_error: bool = False):
+        self.calls: list[tuple[str, str, dict]] = []
+        self.event_error = event_error
+
+    async def request(self, method, path, **kwargs):
+        self.calls.append((method, path, kwargs))
+        return {
+            "request_id": "upstream-sync-fallback",
+            "session_id": kwargs["json"]["session_id"],
+            "intent": "hs_code_lookup",
+            "status": "completed",
+            "answer": "A standard laptop computer is classified under HS code 8471.30.20.",
+            "table": {
+                "title": "Possible HS Code Matches",
+                "rows": [{"hs_code": "8471.30.20", "description": "Laptop computer"}],
+            },
+        }
+
+    async def stream_chat(self, body):
+        self.calls.append(("POST", "/query/stream", {"json": body}))
+        if self.event_error:
+            yield ChatStreamEvent(type="error", data={"detail": "Main Chatbot Service stream interrupted"})
+            return
+        yield ChatStreamEvent(type="delta", content="partial text before failure")
+        raise RuntimeError("upstream socket closed unexpectedly")
+
+
 def test_stream_chat_sends_start_then_final_normalized_calculator_done(monkeypatch):
     events = asyncio.run(
         call_stream_chat(
@@ -272,14 +311,20 @@ def test_stream_chat_sends_start_then_final_normalized_calculator_done(monkeypat
         )
     )
 
-    assert [event for event, _data in events] == ["start", "done"]
+    assert event_names(events) == ["start", "progress", "progress", "block", "block", "done"]
     start = events[0][1]
-    done = events[1][1]
+    progress = events[1][1]
+    done = events[-1][1]
 
+    assert block_types(events) == ["summary", "table"]
     assert start["chat_id"]
     assert start["request_id"]
     assert start["status"] == "processing"
+    assert start["mode"] == "stream"
     assert "content" not in start
+    assert progress["status"] == "processing"
+    assert progress["mode"] == "stream"
+    assert progress["stage"] == "queued"
     assert done["api_version"] == "1.0"
     assert done["service"] == "calculator"
     assert done["intent"] == "calculation"
@@ -288,6 +333,51 @@ def test_stream_chat_sends_start_then_final_normalized_calculator_done(monkeypat
     assert done["message"]["content"][1]["rows"][0]["amount"] == 1200000
     assert not any(event in {"token", "delta"} for event, _data in events)
     assert not any("table" in data for event, data in events if event != "done")
+
+
+def test_stream_chat_uses_query_fallback_when_calculator_stream_done_is_generic(monkeypatch, caplog):
+    caplog.set_level("WARNING")
+    upstream = FakeMainChatbotClient(
+        result={
+            "request_id": "upstream-calculator-query",
+            "session_id": "upstream-session",
+            "intent": "calculation",
+            "status": "completed",
+            "answer": "Structured calculator result.",
+            "calculator_result": {
+                "summary": {"total_tax": 102535000, "currency": "KHR"},
+                "tax_breakdown": [
+                    {"component": "Import Taxes (COP)", "amount": 56616000, "currency": "KHR"},
+                ],
+            },
+        },
+        events=[
+            (
+                "done",
+                {
+                    "request_id": "upstream-calculator-stream",
+                    "session_id": "upstream-session",
+                    "intent": "calculation",
+                    "status": "completed",
+                    "answer": "SUMMARY OF CALCULATION: generic explanatory text.",
+                    "suggestions": ["How do I import General merchandise?"],
+                },
+            )
+        ],
+    )
+    events = asyncio.run(call_stream_chat(monkeypatch, upstream))
+
+    assert event_names(events) == ["start", "progress", "progress", "block", "block", "done"]
+    assert block_types(events) == ["summary", "table"]
+    done = events[-1][1]
+    assert done["request_id"] == "upstream-calculator-query"
+    assert done["message"]["content"][0]["data"]["total_tax"] == 102535000
+    assert "SUMMARY OF CALCULATION" not in json.dumps(done)
+    assert [call[0:2] for call in upstream.calls] == [
+        ("POST", "/query/stream"),
+        ("POST", "/query"),
+    ]
+    assert "calculator_stream_missing_structured_blocks" in caplog.text
 
 
 def test_stream_chat_returns_sse_response_with_required_proxy_headers(monkeypatch):
@@ -319,7 +409,7 @@ def test_stream_chat_closes_upstream_stream_when_client_disconnects(monkeypatch)
 
     events = asyncio.run(read_sse_events(response))
 
-    assert [event for event, _data in events] == ["start"]
+    assert [event for event, _data in events] == ["start", "progress"]
     assert upstream.yielded == 0
     assert upstream.closed is True
     assert request.calls == 2
@@ -342,10 +432,11 @@ def test_stream_chat_sends_start_then_final_normalized_general_done_without_fake
         )
     )
 
-    assert [event for event, _data in events] == ["start", "done"]
+    assert event_names(events) == ["start", "progress", "progress", "block", "block", "done"]
     assert events[0][1]["status"] == "processing"
-    done = events[1][1]
+    done = events[-1][1]
 
+    assert block_types(events) == ["markdown", "suggestions"]
     assert done["api_version"] == "1.0"
     assert done["service"] == "general"
     assert done["intent"] == "general"
@@ -376,10 +467,11 @@ def test_stream_chat_sends_start_then_final_normalized_retrieval_done_without_pa
         )
     )
 
-    assert [event for event, _data in events] == ["start", "done"]
+    assert event_names(events) == ["start", "progress", "progress", "block", "block", "block", "done"]
     assert events[0][1]["status"] == "processing"
-    done = events[1][1]
+    done = events[-1][1]
 
+    assert block_types(events) == ["markdown", "table", "clarification"]
     assert done["api_version"] == "1.0"
     assert done["service"] == "retrieval"
     assert done["intent"] == "hs_code_lookup"
@@ -390,7 +482,7 @@ def test_stream_chat_sends_start_then_final_normalized_retrieval_done_without_pa
     assert done["message"]["content"][2]["questions"] == ["What is the fabric weight in g/m²?"]
     assert not any(event in {"token", "delta"} for event, _data in events)
     assert not any(
-        "message" in data or "table" in data or "prediction" in data
+        "table" in data or "prediction" in data
         for event, data in events
         if event != "done"
     )
@@ -429,10 +521,11 @@ def test_stream_chat_sends_start_then_final_normalized_trade_done_without_fake_t
         )
     )
 
-    assert [event for event, _data in events] == ["start", "done"]
+    assert event_names(events) == ["start", "progress", "progress", "block", "block", "block", "done"]
     start = events[0][1]
-    done = events[1][1]
+    done = events[-1][1]
 
+    assert block_types(events) == ["markdown", "table", "chart"]
     assert start["chat_id"]
     assert start["request_id"]
     assert start["status"] == "processing"
@@ -452,7 +545,7 @@ def test_stream_chat_sends_start_then_final_normalized_trade_done_without_fake_t
     ]
     assert not any(event in {"token", "delta"} for event, _data in events)
     assert not any(
-        "message" in data or "table" in data or "visualization" in data or "chart" in data
+        "table" in data or "visualization" in data or "chart" in data
         for event, data in events
         if event != "done"
     )
@@ -467,8 +560,8 @@ def test_stream_chat_sends_safe_error_event_without_raw_internal_details(monkeyp
         )
     )
 
-    assert [event for event, _data in events] == ["start", "error"]
-    error = events[1][1]
+    assert [event for event, _data in events] == ["start", "progress", "error"]
+    error = events[2][1]
 
     assert error == {"detail": "Main Chatbot Service is temporarily unavailable"}
     assert "Traceback" not in json.dumps(error)
@@ -503,12 +596,46 @@ def test_stream_chat_returns_http_503_when_failure_happens_before_sse_response_b
     assert exc_info.value.status_code == 503
 
 
-def test_stream_chat_sends_error_event_when_upstream_fails_after_sse_response_begins(monkeypatch):
-    events = asyncio.run(call_stream_chat(monkeypatch, InterruptingStreamingClient()))
+def test_stream_chat_falls_back_to_query_when_upstream_fails_after_sse_response_begins(monkeypatch):
+    upstream = StreamFailsQuerySucceedsClient()
+    events = asyncio.run(call_stream_chat(monkeypatch, upstream))
 
-    assert [event for event, _data in events] == ["start", "delta", "error"]
-    assert events[1][1] == {"content": "partial text before failure"}
-    assert events[2][1] == {"detail": "Main Chatbot Service stream interrupted"}
+    names = event_names(events)
+    assert names[:3] == ["start", "progress", "delta"]
+    assert names[-2:] == ["progress", "done"]
+    assert [data["content"] for event, data in events if event == "delta"] == ["partial text before failure"]
+    assert block_types(events) == ["markdown", "table"]
+    assert events[3][1]["mode"] == "sync"
+    assert events[3][1]["stage"] == "fallback"
+    streamed_text = "".join(data["content"] for event, data in events if event == "delta")
+    assert streamed_text == "partial text before failure"
+    assert events[-1][1]["api_version"] == "1.0"
+    assert events[-1][1]["response"]["content"] == "A standard laptop computer is classified under HS code 8471.30.20."
+    assert [call[0:2] for call in upstream.calls] == [
+        ("POST", "/query/stream"),
+        ("POST", "/query"),
+    ]
+
+
+def test_stream_chat_falls_back_to_query_when_upstream_sends_stream_interrupted_error(monkeypatch):
+    upstream = StreamFailsQuerySucceedsClient(event_error=True)
+    events = asyncio.run(call_stream_chat(monkeypatch, upstream))
+
+    names = event_names(events)
+    assert names[:3] == ["start", "progress", "progress"]
+    assert names[-2:] == ["progress", "done"]
+    assert "delta" not in names
+    assert block_types(events) == ["markdown", "table"]
+    assert events[2][1]["mode"] == "sync"
+    assert events[2][1]["stage"] == "fallback"
+    streamed_text = "".join(data["content"] for event, data in events if event == "delta")
+    assert streamed_text == ""
+    assert events[-1][1]["api_version"] == "1.0"
+    assert events[-1][1]["message"]["content"][0]["text"] == "A standard laptop computer is classified under HS code 8471.30.20."
+    assert [call[0:2] for call in upstream.calls] == [
+        ("POST", "/query/stream"),
+        ("POST", "/query"),
+    ]
 
 
 def test_stream_chat_converts_clarification_with_questions_to_terminal_done(monkeypatch):
@@ -531,11 +658,12 @@ def test_stream_chat_converts_clarification_with_questions_to_terminal_done(monk
             ),
         )
     )
-    event_names = [event for event, _data in events]
+    names = event_names(events)
     done = events[-1][1]
 
-    assert event_names == ["start", "done"]
-    assert "delta" not in event_names
+    assert names == ["start", "progress", "block", "block", "done"]
+    assert block_types(events) == ["markdown", "clarification"]
+    assert "delta" not in names
     assert done["api_version"] == "1.0"
     assert done["status"] == "clarification_required"
     assert done["message"]["content"][0]["text"] == "I need more information about the product."
@@ -543,12 +671,19 @@ def test_stream_chat_converts_clarification_with_questions_to_terminal_done(monk
     assert done["message"]["content"][-1]["questions"] == ["What product are you importing?"]
 
 
-def test_stream_chat_logs_and_errors_for_clarification_with_empty_questions(monkeypatch, caplog):
+def test_stream_chat_falls_back_to_query_for_clarification_with_empty_questions(monkeypatch, caplog):
     caplog.set_level("ERROR")
     events = asyncio.run(
         call_stream_chat(
             monkeypatch,
             FakeMainChatbotClient(
+                result={
+                    "request_id": "upstream-empty-clarification-fallback",
+                    "session_id": "upstream-session",
+                    "intent": "hs_code_lookup",
+                    "status": "completed",
+                    "answer": "A standard laptop computer is classified under HS code 8471.30.20.",
+                },
                 events=[
                     (
                         "clarification",
@@ -565,8 +700,17 @@ def test_stream_chat_logs_and_errors_for_clarification_with_empty_questions(monk
         )
     )
 
-    assert [event for event, _data in events] == ["start", "error"]
-    assert events[-1][1] == {"detail": "Main Chatbot Service stream interrupted"}
+    names = event_names(events)
+    assert names[:3] == ["start", "progress", "progress"]
+    assert names[-2:] == ["progress", "done"]
+    assert "delta" not in names
+    assert block_types(events) == ["markdown"]
+    assert events[2][1]["mode"] == "sync"
+    assert events[2][1]["stage"] == "fallback"
+    streamed_text = "".join(data["content"] for event, data in events if event == "delta")
+    assert streamed_text == ""
+    assert events[-1][1]["api_version"] == "1.0"
+    assert events[-1][1]["response"]["content"] == "A standard laptop computer is classified under HS code 8471.30.20."
     assert "upstream_contract_inconsistency empty_clarification_questions" in caplog.text
 
 
@@ -593,16 +737,23 @@ def test_stream_chat_never_emits_empty_delta(monkeypatch):
         )
     )
 
-    assert [event for event, _data in events] == ["start", "done"]
+    assert [event for event, _data in events] == ["start", "progress", "progress", "done"]
     assert not any(event == "delta" and data.get("content") == "" for event, data in events)
     assert events[-1][1]["status"] == "completed"
 
 
-def test_stream_chat_emits_terminal_error_when_upstream_ends_without_done_or_error(monkeypatch):
+def test_stream_chat_falls_back_to_query_when_upstream_ends_without_done_or_error(monkeypatch):
     events = asyncio.run(
         call_stream_chat(
             monkeypatch,
             FakeMainChatbotClient(
+                result={
+                    "request_id": "upstream-fallback-after-missing-terminal",
+                    "session_id": "upstream-session",
+                    "intent": "general",
+                    "status": "completed",
+                    "answer": "Fallback answer from non-streaming query.",
+                },
                 events=[
                     ("delta", {"content": "partial"}),
                 ],
@@ -610,8 +761,15 @@ def test_stream_chat_emits_terminal_error_when_upstream_ends_without_done_or_err
         )
     )
 
-    assert [event for event, _data in events] == ["start", "delta", "error"]
-    assert events[-1][1] == {"detail": "Main Chatbot Service stream interrupted"}
+    names = event_names(events)
+    assert names[:4] == ["start", "progress", "delta", "progress"]
+    assert names[-2:] == ["progress", "done"]
+    assert events[3][1]["mode"] == "sync"
+    assert events[3][1]["stage"] == "fallback"
+    streamed_text = "".join(data["content"] for event, data in events if event == "delta")
+    assert "Fallback answer from non-streaming query." in streamed_text
+    assert events[-1][1]["api_version"] == "1.0"
+    assert events[-1][1]["response"]["content"] == "Fallback answer from non-streaming query."
 
 
 def test_stream_chat_proxies_real_upstream_delta_events(monkeypatch):
@@ -624,7 +782,7 @@ def test_stream_chat_proxies_real_upstream_delta_events(monkeypatch):
                 {
                     "request_id": "upstream-general-request",
                     "session_id": "upstream-session",
-                    "intent": "hs_code_lookup",
+                    "intent": "general",
                     "status": "completed",
                     "answer": "Hello, how can I help?",
                 },
@@ -635,14 +793,35 @@ def test_stream_chat_proxies_real_upstream_delta_events(monkeypatch):
     streamed_text = "".join(data["content"] for event, data in events if event == "delta")
     done = events[-1][1]
 
-    assert [event for event, _data in events] == ["start", "delta", "delta", "done"]
-    assert events[1][1] == {"content": "Hello, "}
-    assert events[2][1] == {"content": "how can I help?"}
+    assert event_names(events) == ["start", "progress", "delta", "delta", "progress", "done"]
+    assert events[2][1] == {"content": "Hello, "}
+    assert events[3][1] == {"content": "how can I help?"}
     assert streamed_text == "Hello, how can I help?"
     assert done["status"] == "completed"
     assert done["message"]["content"]
     assert done["message"]["content"][0]["text"] == "Hello, how can I help?"
     assert upstream.calls[0][0:2] == ("POST", "/query/stream")
+
+
+def test_stream_chat_forwards_a_delta_before_upstream_done(monkeypatch):
+    class DelayedTerminalClient:
+        def __init__(self):
+            self.release_terminal = asyncio.Event()
+
+        async def stream_chat(self, _body):
+            yield ChatStreamEvent(type="delta", content="Visible immediately")
+            await self.release_terminal.wait()
+
+    async def get_first_delta():
+        response = await build_stream_response(monkeypatch, DelayedTerminalClient())
+        iterator = response.body_iterator
+        await anext(iterator)  # start
+        await anext(iterator)  # queued progress
+        return await asyncio.wait_for(anext(iterator), timeout=0.1)
+
+    chunk = asyncio.run(get_first_delta())
+
+    assert chunk == b'event: delta\ndata: {"content": "Visible immediately"}\n\n'
 
 
 def test_stream_chat_emits_only_core_sse_event_types(monkeypatch):
@@ -665,9 +844,10 @@ def test_stream_chat_emits_only_core_sse_event_types(monkeypatch):
     )
     events = asyncio.run(call_stream_chat(monkeypatch, upstream))
 
-    assert [event for event, _data in events] == ["start", "done"]
-    assert set(event for event, _data in events) <= {"start", "delta", "done", "error"}
-    assert "progress" not in {event for event, _data in events}
+    assert [event for event, _data in events] == ["start", "progress", "progress", "progress", "done"]
+    assert set(event for event, _data in events) <= {"start", "progress", "delta", "done", "error"}
+    assert events[2][1]["stage"] == "retrieving"
+    assert events[2][1]["message"] == "Searching customs documents..."
 
 
 def test_stream_chat_does_not_emit_structured_renderer_json_as_delta(monkeypatch):
@@ -700,7 +880,9 @@ def test_stream_chat_does_not_emit_structured_renderer_json_as_delta(monkeypatch
     )
     events = asyncio.run(call_stream_chat(monkeypatch, upstream))
 
-    assert [event for event, _data in events] == ["start", "done"]
+    assert event_names(events) == ["start", "progress", "progress", "block", "block", "done"]
+    assert block_types(events) == ["markdown", "table"]
+    assert not any(event == "delta" for event, _data in events)
     done = events[-1][1]
     assert done["api_version"] == "1.0"
     assert [block["type"] for block in done["message"]["content"]] == ["markdown", "table"]
@@ -759,12 +941,12 @@ def test_stream_chat_does_not_split_complete_done_answer_into_fake_deltas(monkey
         )
     )
 
-    assert [event for event, _data in events] == ["start", "done"]
+    assert [event for event, _data in events] == ["start", "progress", "progress", "done"]
     assert not any(event == "delta" for event, _data in events)
     assert events[-1][1]["response"]["content"] == answer
 
 
-def test_stream_chat_falls_back_to_query_without_fake_deltas_when_stream_endpoint_missing(monkeypatch):
+def test_stream_chat_streams_query_fallback_when_stream_endpoint_missing(monkeypatch):
     stream_request = httpx.Request("POST", "http://orchestrator.internal/query/stream")
     stream_response = httpx.Response(404, request=stream_request, json={"detail": "not found"})
     upstream = FakeMainChatbotClient(
@@ -780,11 +962,13 @@ def test_stream_chat_falls_back_to_query_without_fake_deltas_when_stream_endpoin
     events = asyncio.run(call_stream_chat(monkeypatch, upstream))
     event_names = [event for event, _data in events]
 
-    assert event_names == ["start", "done"]
+    assert event_names[:3] == ["start", "progress", "delta"]
+    assert event_names[-2:] == ["progress", "done"]
     assert [call[0:2] for call in upstream.calls] == [
         ("POST", "/query/stream"),
         ("POST", "/query"),
     ]
-    assert "delta" not in event_names
+    streamed_text = "".join(data["content"] for event, data in events if event == "delta")
+    assert streamed_text.strip() == "Complete fallback answer from /query."
     assert events[-1][1]["api_version"] == "1.0"
     assert events[-1][1]["response"]["content"] == "Complete fallback answer from /query."

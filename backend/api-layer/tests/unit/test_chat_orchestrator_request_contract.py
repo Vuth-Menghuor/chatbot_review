@@ -145,6 +145,7 @@ def patch_chat_dependencies(monkeypatch, chat: FakeChat, upstream: FakeMainChatb
     monkeypatch.setattr(chat_endpoint, "enforce_rate_limit", fake_enforce_rate_limit)
     monkeypatch.setattr(chat_endpoint, "add_audit_log", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(chat_endpoint, "main_chatbot_client", upstream)
+    monkeypatch.setattr(chat_endpoint.settings, "use_standard_chat_stream", False)
 
 
 def sent_bodies(upstream: FakeMainChatbotClient) -> list[dict]:
@@ -312,6 +313,7 @@ async def _stream_done_keeps_same_normalized_v1_shape_as_send(monkeypatch):
 
     stream_upstream = FullContractMainChatbotClient(intent="general")
     patch_chat_dependencies(monkeypatch, chat, stream_upstream)
+    monkeypatch.setattr(chat_endpoint.settings, "use_standard_chat_stream", True)
     stream_response = await chat_endpoint.stream_chat(
         ChatRequest(chat_id=chat.id, message=message),
         FakeRequest(),

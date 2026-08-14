@@ -31,6 +31,18 @@ const generationDurationLabel = computed(() => {
   return `Generated in ${formatted.replace(/\.0$/, '')} s`;
 });
 
+const responseStateLabel = computed(() => {
+  if (props.message.type === 'image') return '';
+  const mode = props.message.responseMode;
+  const status = props.message.responseStatus;
+  if (!mode && !status && !props.message.progressMessage) return '';
+  const modeLabel = mode ? mode.charAt(0).toUpperCase() + mode.slice(1) : 'Response';
+  const statusLabel = status ? status.replace(/_/g, ' ') : 'processing';
+  if (props.loading) return `${modeLabel} · ${statusLabel}`;
+  if (status && status !== 'completed') return `${modeLabel} · ${statusLabel}`;
+  return '';
+});
+
 const coverageBadge = computed(() => {
   if (props.loading || props.message.type === 'image' || props.message.coverage !== 'partial') {
     return null;
@@ -51,9 +63,12 @@ const handleRegenerateImage = (messageId: string | number) => {
     <div class="flex min-w-0 flex-1 flex-col">
       <div class="max-w-full flex-1 overflow-visible rounded-2xl px-4 py-3">
         <div
-          v-if="generationDurationLabel || coverageBadge"
+          v-if="responseStateLabel || generationDurationLabel || coverageBadge"
           class="mb-2 flex flex-wrap items-center gap-2 text-md text-gray-500 dark:text-zinc-500"
         >
+          <span v-if="responseStateLabel" class="capitalize">
+            {{ responseStateLabel }}
+          </span>
           <span v-if="generationDurationLabel" class="tabular-nums">
             {{ generationDurationLabel }}
           </span>

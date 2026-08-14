@@ -125,6 +125,7 @@ test('streamGdceChat consumes only the small core SSE event contract', async () 
   const originalFetch = globalThis.fetch;
   const deltas: string[] = [];
   let start: Record<string, unknown> | null = null;
+  let progress: Record<string, unknown> | null = null;
   let done: Record<string, unknown> | null = null;
   globalThis.fetch = (async () => sseEvents([
     { event: 'start', data: { request_id: 'request-1', status: 'processing' } },
@@ -142,6 +143,9 @@ test('streamGdceChat consumes only the small core SSE event contract', async () 
       onStart: (data) => {
         start = data;
       },
+      onProgress: (data) => {
+        progress = data;
+      },
       onDelta: (content) => deltas.push(content),
       onDone: (data) => {
         done = data;
@@ -152,8 +156,38 @@ test('streamGdceChat consumes only the small core SSE event contract', async () 
   }
 
   assert.deepEqual(start, { request_id: 'request-1', status: 'processing' });
+  assert.deepEqual(progress, { stage: 'retrieving', message: 'Searching customs documents...' });
   assert.deepEqual(deltas, ['hello']);
   assert.deepEqual(done, { status: 'completed' });
+});
+
+test('streamGdceChat awaits async delta handlers before done', async () => {
+  const originalFetch = globalThis.fetch;
+  const order: string[] = [];
+  globalThis.fetch = (async () => sseEvents([
+    { event: 'delta', data: { content: 'hello' } },
+    { event: 'done', data: { status: 'completed' } },
+  ])) as typeof fetch;
+
+  try {
+    await streamGdceChat({
+      baseUrl: 'http://localhost:8000',
+      apiToken: 'test-token',
+      message: 'hello',
+      onDelta: async () => {
+        order.push('delta-start');
+        await new Promise<void>((resolve) => setTimeout(resolve, 1));
+        order.push('delta-end');
+      },
+      onDone: () => {
+        order.push('done');
+      },
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.deepEqual(order, ['delta-start', 'delta-end', 'done']);
 });
 
 test('streamGdceChat dispatches error event detail and stops the stream', async () => {

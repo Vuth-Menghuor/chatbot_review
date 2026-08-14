@@ -141,6 +141,9 @@ def parse_orchestrator_sse_block(block: str) -> ChatStreamEvent | None:
             return ChatStreamEvent(type="delta", content=content)
         return None
 
+    if event == "progress" and isinstance(data, dict):
+        return ChatStreamEvent(type="progress", data=data)
+
     if event == "done" and isinstance(data, dict):
         return ChatStreamEvent(type="done", data=data)
 

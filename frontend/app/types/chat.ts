@@ -5,6 +5,7 @@ import type { ChatApiStreamingConfig } from './chatApi';
 // ─── Core Message Roles ───────────────────────────────────────────────────
 export type MessageRole = 'user' | 'assistant' | 'system';
 export type ResponseStatus =
+  | 'pending'
   | 'processing'
   | 'completed'
   | 'clarification_required'
@@ -17,6 +18,8 @@ export type MessageUiStatus =
   | 'completed'
   | 'error'
   | 'stopped';
+
+export type ResponseMode = 'sync' | 'async' | 'stream';
 
 // ─── Block Types ────────────────────────────────────────────────────────────
 // Canonical render types map 1:1 with renderer components in `app/composables/renderers/useRenderer.ts`.
@@ -162,6 +165,9 @@ export interface StreamingDeps {
       confidence?: AnswerConfidence;
       requestId?: string;
       chatId?: string;
+      responseMode?: ResponseMode;
+      progressStage?: string;
+      progressMessage?: string;
       streamingContent?: string;
       normalizedResponse?: unknown;
       error?: string | null;
@@ -254,6 +260,9 @@ export interface Message {
   generationDurationMs?: number;
   requestId?: string;
   chatId?: string;
+  responseMode?: ResponseMode;
+  progressStage?: string;
+  progressMessage?: string;
   streamingContent?: string;
   normalizedResponse?: unknown;
   error?: string;

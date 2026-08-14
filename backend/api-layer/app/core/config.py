@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     frontend_origins: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["http://localhost:3000", "http://localhost:5173"])
     api_response_cache_seconds: int = 30
     http_timeout_seconds: float = 60.0
+    # When enabled, /chat/stream gets the exact same completed response as
+    # /chat/send and uses SSE only to reveal that normalized response in the UI.
+    use_standard_chat_stream: bool = False
     general_rate_limit_requests: int = 100
     rate_limit_window_seconds: int = 60
 

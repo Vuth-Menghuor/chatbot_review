@@ -37,6 +37,9 @@ export function useUiBlockInjection({ messages }: UiBlockInjectionOptions) {
       confidence?: AnswerConfidence;
       requestId?: string;
       chatId?: string;
+      responseMode?: 'sync' | 'async' | 'stream';
+      progressStage?: string;
+      progressMessage?: string;
       streamingContent?: string;
       normalizedResponse?: unknown;
       error?: string | null;
@@ -78,6 +81,9 @@ export function useUiBlockInjection({ messages }: UiBlockInjectionOptions) {
       generationDurationMs: meta?.generationDurationMs ?? existingMessage.generationDurationMs,
       requestId: meta?.requestId ?? existingMessage.requestId,
       chatId: meta?.chatId ?? existingMessage.chatId,
+      responseMode: meta?.responseMode ?? existingMessage.responseMode,
+      progressStage: meta?.progressStage ?? existingMessage.progressStage,
+      progressMessage: meta?.progressMessage ?? existingMessage.progressMessage,
       streamingContent: meta?.streamingContent ?? existingMessage.streamingContent,
       normalizedResponse: meta?.normalizedResponse ?? existingMessage.normalizedResponse,
       error: meta?.error === undefined ? existingMessage.error : meta.error ?? undefined,

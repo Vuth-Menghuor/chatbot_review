@@ -190,7 +190,7 @@ function invalidNormalizedResponseToMessageParts(fallbackId: string): Normalized
 
 type SafeNormalizedChatContentBlock = ValidatedNormalizedChatResponse['message']['content'][number];
 
-function normalizedBlockToMessageBlock(
+export function normalizedBlockToMessageBlock(
   block: unknown | SafeNormalizedChatContentBlock,
   id: string,
 ): MessageBlock {
