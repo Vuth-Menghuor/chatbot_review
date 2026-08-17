@@ -157,6 +157,34 @@ def test_general_plain_text_fallback_uses_string_message_without_changing_value(
     assert response.message.content[0].text == "Plain text message from General service."
 
 
+def test_general_answer_is_inserted_before_explicit_suggestions_only_blocks():
+    answer = "A dog is a domesticated mammal."
+    response = normalize_chat_response({
+        "intent": "general",
+        "answer": answer,
+        "message": {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "suggestions",
+                    "items": [
+                        "How do I classify my goods?",
+                        "How is customs duty calculated?",
+                    ],
+                },
+            ],
+        },
+    })
+
+    assert response.response.content == answer
+    assert [block.type for block in response.message.content] == ["markdown", "suggestions"]
+    assert response.message.content[0].text == answer
+    assert response.message.content[1].items == [
+        "How do I classify my goods?",
+        "How is customs duty calculated?",
+    ]
+
+
 def test_general_empty_answer_returns_safe_markdown_fallback():
     response = normalize_chat_response({
         "intent": "general",

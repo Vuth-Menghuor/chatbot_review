@@ -1,4 +1,5 @@
 import type { EChartsOption, ExtendedChartOutput } from './types';
+import { chartColor, chartPalette } from './palette';
 
 export function buildTreemapOption(out: ExtendedChartOutput, isDark: boolean): EChartsOption {
   const textColor = isDark ? '#e4e4e7' : '#27272a';
@@ -7,9 +8,10 @@ export function buildTreemapOption(out: ExtendedChartOutput, isDark: boolean): E
   const firstSeries = out.series?.[0];
   const key = firstSeries?.key || 'value';
   const treeData =
-    out.data?.map((item) => ({
+    out.data?.map((item, index) => ({
       name: String(item[out.xKey] ?? ''),
       value: Number(item[key] ?? 0),
+      itemStyle: { color: chartColor(index, isDark) },
     })) || [];
 
   return {
@@ -25,6 +27,7 @@ export function buildTreemapOption(out: ExtendedChartOutput, isDark: boolean): E
       borderColor: gridLineColor,
       textStyle: { color: textColor },
     },
+    color: chartPalette(isDark),
     series: [
       {
         name: out.title || 'Treemap',

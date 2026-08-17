@@ -1,6 +1,5 @@
 import json
 import logging
-import asyncio
 from contextlib import suppress
 from uuid import uuid4
 
@@ -65,113 +64,132 @@ def sse_event(event: str, data: dict) -> bytes:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n".encode()
 
 
-def stream_progress_event(
-    *,
-    status: str = "processing",
-    mode: str = "stream",
-    stage: str,
-    message: str,
-    **extra,
-) -> bytes:
-    payload = {
-        "status": status,
-        "mode": mode,
-        "stage": stage,
-        "message": message,
-        **extra,
-    }
-    return sse_event("progress", payload)
-
-
-def fallback_stream_text(normalized: dict) -> str:
-    response = normalized.get("response")
-    if isinstance(response, dict):
-        content = response.get("content")
-        if isinstance(content, str) and content.strip():
-            return content
-
+def normalized_block_types(normalized: dict) -> list[str]:
     message = normalized.get("message")
-    if isinstance(message, dict):
-        parts: list[str] = []
-        for block in message.get("content") or []:
-            if isinstance(block, dict) and block.get("type") == "markdown":
-                text = block.get("text")
-                if isinstance(text, str) and text.strip():
-                    parts.append(text.strip())
-        if parts:
-            return "\n\n".join(parts)
-    return ""
+    blocks = message.get("content") if isinstance(message, dict) else []
+    return [
+        str(block.get("type"))
+        for block in blocks or []
+        if isinstance(block, dict) and block.get("type")
+    ]
 
 
-def fallback_delta_chunks(text: str, *, max_words: int = 3) -> list[str]:
-    words = text.split(" ")
-    chunks: list[str] = []
-    current: list[str] = []
-    for word in words:
-        current.append(word)
-        if len(current) >= max_words or word.endswith((".", "?", "!", ":", ";")):
-            chunks.append(" ".join(current))
-            current = []
-    if current:
-        chunks.append(" ".join(current))
-    return [f"{chunk} " for chunk in chunks if chunk.strip()]
-
-
-def normalized_message_blocks(normalized: dict) -> list[dict]:
-    message = normalized.get("message")
-    if not isinstance(message, dict):
-        return []
-    blocks = message.get("content")
-    if not isinstance(blocks, list):
-        return []
-    return [block for block in blocks if isinstance(block, dict) and block.get("type")]
-
-
-def should_stream_normalized_blocks(normalized: dict) -> bool:
-    blocks = normalized_message_blocks(normalized)
-    if not blocks:
+def has_primary_answer_block(block: object) -> bool:
+    if not isinstance(block, dict):
         return False
-    service = str(normalized.get("service") or "").lower()
-    if service in {"calculator", "retrieval", "trade"}:
+    block_type = str(block.get("type") or "")
+    if block_type == "markdown":
+        return bool(str(block.get("text") or "").strip())
+    if block_type == "table":
+        rows = block.get("rows")
+        return isinstance(rows, list) and len(rows) > 0
+    if block_type == "error":
+        return bool(str(block.get("message") or "").strip())
+    return block_type in {
+        "summary",
+        "key_value",
+        "details",
+        "chart",
+        "prediction",
+    }
+
+
+def has_primary_answer(normalized: dict) -> bool:
+    response = normalized.get("response")
+    if isinstance(response, dict) and str(response.get("content") or "").strip():
         return True
-    return len(blocks) > 1 or any(block.get("type") != "markdown" for block in blocks)
+    message = normalized.get("message")
+    blocks = message.get("content") if isinstance(message, dict) else []
+    return any(has_primary_answer_block(block) for block in blocks or [])
 
 
-def has_calculator_structured_blocks(normalized: dict) -> bool:
-    structural_types = {"summary", "key_value", "table", "details"}
-    return any(block.get("type") in structural_types for block in normalized_message_blocks(normalized))
+def has_any_key(data: dict, keys: set[str]) -> bool:
+    return any(key in data and data.get(key) not in (None, "", [], {}) for key in keys)
 
 
-def needs_calculator_query_fallback(normalized: dict) -> bool:
+def is_unreliable_trade_formatter_text(text: object) -> bool:
+    if not isinstance(text, str):
+        return False
+    normalized = " ".join(text.upper().split())
+    if not normalized:
+        return False
+    headings = {
+        "SUMMARY OF KEY FINDINGS",
+        "DATA VISUALIZATION SUGGESTIONS",
+        "YEAR-OVER-YEAR OR BILATERAL COMPARISONS",
+        "TRENDS AND INSIGHTS",
+    }
+    if any(heading in normalized or (len(normalized) >= 8 and heading.startswith(normalized)) for heading in headings):
+        return True
+    lowered = normalized.lower()
     return (
-        str(normalized.get("service") or "").lower() == "calculator"
-        and str(normalized.get("status") or "").lower() != "failed"
-        and not has_calculator_structured_blocks(normalized)
+        "the provided trade data contains" in lowered
+        or "the raw trade data provided contains" in lowered
+        or "the provided trade data includes" in lowered
+        or "contact the general department of customs and excise" in lowered
+        or "contact gdce" in lowered
+        or "detailed figures require the full dataset" in lowered
+        or "requires the full dataset" in lowered
+        or "require the full dataset" in lowered
     )
 
 
-async def fallback_delta_events(normalized: dict, request: Request):
-    text = fallback_stream_text(normalized)
-    for chunk in fallback_delta_chunks(text):
-        if await request.is_disconnected():
-            return
-        yield sse_event("delta", {"content": chunk})
-        await asyncio.sleep(0.055)
+def has_unreliable_trade_final_text(normalized: dict) -> bool:
+    response = normalized.get("response")
+    if isinstance(response, dict) and is_unreliable_trade_formatter_text(response.get("content")):
+        return True
+    message = normalized.get("message")
+    blocks = message.get("content") if isinstance(message, dict) else []
+    return any(
+        isinstance(block, dict)
+        and block.get("type") == "markdown"
+        and is_unreliable_trade_formatter_text(block.get("text"))
+        for block in blocks or []
+    )
 
 
-async def normalized_stream_events(normalized: dict, request: Request):
-    if should_stream_normalized_blocks(normalized):
-        for index, block in enumerate(normalized_message_blocks(normalized)):
-            if await request.is_disconnected():
-                return
-            block_payload = dict(block)
-            block_payload.setdefault("stream_index", index)
-            yield sse_event("block", block_payload)
-            await asyncio.sleep(0.035)
-        return
+def stream_final_fallback_reason(raw_stream_done: dict, normalized: dict) -> str | None:
+    status = str(normalized.get("status") or "").lower()
+    if status in {"failed", "clarification_required"}:
+        return None
+    service = str(normalized.get("service") or raw_stream_done.get("service") or "").lower()
+    intent = str(normalized.get("intent") or raw_stream_done.get("intent") or "").lower()
+    block_types = set(normalized_block_types(normalized))
 
-    async for event in fallback_delta_events(normalized, request):
-        yield event
+    if service == "general" or intent in {"general", "small_talk", "smalltalk"}:
+        if not has_primary_answer(normalized):
+            return "general_stream_done_missing_primary_answer"
+        return None
+
+    if status == "completed" and not has_primary_answer(normalized):
+        return "stream_done_missing_primary_answer"
+
+    # Temporary compatibility check for current Main Chatbot streaming: the
+    # final stream event must contain the data needed for the normalizer to
+    # produce the same contract as /query. Deltas remain visual-only.
+    if service == "calculator" or "calc" in intent:
+        calculator_raw_keys = {"calculator_result", "product", "inputs", "tax_breakdown", "phases"}
+        if has_any_key(raw_stream_done, calculator_raw_keys):
+            return None
+        if block_types.intersection({"summary", "key_value", "table"}):
+            return None
+        return "calculator_stream_done_missing_structured_payload"
+
+    if service == "trade" or intent.startswith("trade"):
+        if has_unreliable_trade_final_text(normalized):
+            return "trade_stream_done_generic_formatter_text"
+        trade_raw_keys = {"table", "chart", "charts", "data", "rows", "series"}
+        if has_any_key(raw_stream_done, trade_raw_keys):
+            return None
+        if block_types.intersection({"table", "chart", "summary"}):
+            return None
+        return "trade_stream_done_missing_structured_payload"
+
+    return None
+
+
+def needs_authoritative_query_fallback(raw_stream_done: dict, normalized: dict) -> bool:
+    return stream_final_fallback_reason(raw_stream_done, normalized) is not None
 
 
 def should_include_debug(user: User) -> bool:
@@ -201,15 +219,6 @@ def log_normalization_trace(orchestrator_response: dict, normalized_response: di
         )
 
 
-def is_normalized_v1_response(data: dict) -> bool:
-    return (
-        data.get("api_version") == "1.0"
-        and isinstance(data.get("response"), dict)
-        and isinstance(data.get("message"), dict)
-        and isinstance(data["message"].get("content"), list)
-    )
-
-
 def is_stream_endpoint_unavailable(exc: httpx.HTTPStatusError) -> bool:
     return exc.response.status_code in {404, 405, 501}
 
@@ -237,6 +246,15 @@ def normalized_clarification_payload(data: dict, *, chat, user: User, request_pr
     ).model_dump(mode="json", exclude_none=True)
 
 
+def normalize_final_response(raw: dict, *, chat, user: User, request_presentation: dict | None) -> dict:
+    return normalize_chat_response(
+        raw,
+        chat=chat,
+        include_debug=should_include_debug(user),
+        request_presentation=request_presentation,
+    ).model_dump(mode="json", exclude_none=True)
+
+
 @router.post("/send")
 async def send_chat(payload: ChatRequest, request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     await enforce_rate_limit(f"chat_send:{user.id}", 30, request=request, user_id=user.id)
@@ -248,13 +266,12 @@ async def send_chat(payload: ChatRequest, request: Request, user: User = Depends
     await db.commit()
     body = orchestrator_query_payload(payload, chat)
     result = await main_chatbot_client.request("POST", "/query", json=body)
-    include_debug = should_include_debug(user)
-    normalized = normalize_chat_response(
+    normalized = normalize_final_response(
         result,
         chat=chat,
-        include_debug=include_debug,
+        user=user,
         request_presentation=payload.presentation,
-    ).model_dump(mode="json", exclude_none=True)
+    )
     if isinstance(result, dict):
         log_normalization_trace(result, normalized)
     return normalized
@@ -271,372 +288,100 @@ async def stream_chat(payload: ChatRequest, request: Request, user: User = Depen
     request_id = str(uuid4())
     body = orchestrator_stream_payload(payload, chat, request_id)
 
+    async def query_fallback_response() -> dict:
+        result = await main_chatbot_client.request("POST", "/query", json=orchestrator_query_payload(payload, chat))
+        normalized = normalize_final_response(
+            result,
+            chat=chat,
+            user=user,
+            request_presentation=payload.presentation,
+        )
+        if isinstance(result, dict):
+            log_normalization_trace(result, normalized)
+        return normalized
+
     async def events():
-        if settings.use_standard_chat_stream:
-            # Obtain the final response through the exact same route and
-            # normalizer used by /chat/send.  SSE remains the presentation
-            # transport: the frontend progressively renders these blocks, but
-            # the terminal `done` payload has the standard v1 response shape.
-            try:
-                yield sse_event(
-                    "start",
-                    {
-                        "chat_id": str(chat.id),
-                        "project_id": str(chat.project_id) if chat.project_id else None,
-                        "request_id": request_id,
-                        "status": "processing",
-                        "mode": "stream",
-                    },
-                )
-                yield stream_progress_event(
-                    request_id=request_id,
-                    chat_id=str(chat.id),
-                    project_id=str(chat.project_id) if chat.project_id else None,
-                    mode="sync",
-                    stage="processing",
-                    message="Preparing response...",
-                )
-                if await request.is_disconnected():
-                    return
-
-                result = await main_chatbot_client.request(
-                    "POST",
-                    "/query",
-                    json=orchestrator_query_payload(payload, chat),
-                )
-                normalized = normalize_chat_response(
-                    result,
-                    chat=chat,
-                    include_debug=should_include_debug(user),
-                    request_presentation=payload.presentation,
-                ).model_dump(mode="json", exclude_none=True)
-                if isinstance(result, dict):
-                    log_normalization_trace(result, normalized)
-
-                yield stream_progress_event(
-                    request_id=request_id,
-                    chat_id=str(chat.id),
-                    project_id=str(chat.project_id) if chat.project_id else None,
-                    status=str(normalized.get("status") or "completed"),
-                    mode="sync",
-                    stage="rendering",
-                    message="Rendering response...",
-                )
-                yield sse_event("done", normalized)
-            except HTTPException as exc:
-                yield sse_event("error", {"detail": str(exc.detail)})
-            except httpx.RequestError:
-                yield sse_event("error", {"detail": "Main Chatbot Service is temporarily unavailable"})
-            except Exception:
-                logger.exception(
-                    "standard_chat_stream_exception request_id=%s chat_id=%s",
-                    request_id,
-                    chat.id,
-                )
-                yield sse_event("error", {"detail": "Main Chatbot Service stream interrupted"})
+        # The public SSE contract deliberately contains only start, delta, done,
+        # and error. Structured response blocks belong exclusively in `done`.
+        yield sse_event("start", {
+            "chat_id": str(chat.id), "project_id": str(chat.project_id) if chat.project_id else None,
+            "request_id": request_id, "status": "processing",
+        })
+        if await request.is_disconnected():
             return
-
-        async def query_fallback_response() -> dict:
-            result = await main_chatbot_client.request(
-                "POST",
-                "/query",
-                json=orchestrator_query_payload(payload, chat),
-            )
-            normalized = normalize_chat_response(
-                result,
-                chat=chat,
-                include_debug=should_include_debug(user),
-                request_presentation=payload.presentation,
-            ).model_dump(mode="json", exclude_none=True)
-            if isinstance(result, dict):
-                log_normalization_trace(result, normalized)
-            return normalized
-
         try:
-            yield sse_event(
-                "start",
-                {
-                    "chat_id": str(chat.id),
-                    "project_id": str(chat.project_id) if chat.project_id else None,
-                    "request_id": request_id,
-                    "status": "processing",
-                    "mode": "stream",
-                },
-            )
-            yield stream_progress_event(
-                request_id=request_id,
-                chat_id=str(chat.id),
-                project_id=str(chat.project_id) if chat.project_id else None,
-                stage="queued",
-                message="Starting response stream...",
-            )
-            if await request.is_disconnected():
+            if settings.use_standard_chat_stream:
+                yield sse_event("done", await query_fallback_response())
                 return
 
+            upstream_events = main_chatbot_client.stream_chat(body)
             try:
-                upstream_events = main_chatbot_client.stream_chat(body)
-                terminal_sent = False
                 try:
-                    while True:
+                    async for upstream_event in upstream_events:
                         if await request.is_disconnected():
                             return
-                        try:
-                            upstream_event = await anext(upstream_events)
-                        except StopAsyncIteration:
-                            break
                         if upstream_event.type == "delta" and upstream_event.content:
-                            # Forward upstream text immediately. Holding these chunks until
-                            # `done` makes a nominal SSE response appear non-streaming in the UI.
                             yield sse_event("delta", {"content": upstream_event.content})
-                        elif upstream_event.type == "progress" and isinstance(upstream_event.data, dict):
-                            data = upstream_event.data
-                            stage = str(data.get("stage") or "processing")
-                            message = str(data.get("message") or "Processing request...")
-                            yield stream_progress_event(
-                                request_id=request_id,
-                                chat_id=str(chat.id),
-                                project_id=str(chat.project_id) if chat.project_id else None,
-                                status=str(data.get("status") or "processing"),
-                                mode=str(data.get("mode") or "stream"),
-                                stage=stage,
-                                message=message,
-                            )
                         elif upstream_event.type == "done" and isinstance(upstream_event.data, dict):
                             data = upstream_event.data
                             data.setdefault("chat_id", str(chat.id))
                             data.setdefault("project_id", str(chat.project_id) if chat.project_id else None)
-                            if is_normalized_v1_response(data):
-                                normalized = data
-                            else:
-                                normalized = normalize_chat_response(
-                                    data,
-                                    chat=chat,
-                                    include_debug=should_include_debug(user),
-                                    request_presentation=payload.presentation,
-                                ).model_dump(mode="json", exclude_none=True)
-                            if needs_calculator_query_fallback(normalized):
-                                logger.warning(
-                                    "calculator_stream_missing_structured_blocks request_id=%s chat_id=%s",
+                            normalized = normalize_final_response(
+                                data,
+                                chat=chat,
+                                user=user,
+                                request_presentation=payload.presentation,
+                            )
+                            fallback_reason = stream_final_fallback_reason(data, normalized)
+                            if fallback_reason:
+                                logger.info(
+                                    "stream_final_fallback request_id=%s intent=%s service=%s reason=%s raw_keys=%s blocks=%s",
                                     request_id,
-                                    chat.id,
+                                    normalized.get("intent"),
+                                    normalized.get("service"),
+                                    fallback_reason,
+                                    sorted(str(key) for key in data.keys()),
+                                    normalized_block_types(normalized),
                                 )
                                 normalized = await query_fallback_response()
                             log_normalization_trace(data, normalized)
-                            yield stream_progress_event(
-                                request_id=request_id,
-                                chat_id=str(chat.id),
-                                project_id=str(chat.project_id) if chat.project_id else None,
-                                status=str(normalized.get("status") or "completed"),
-                                mode="stream",
-                                stage="finalizing",
-                                message="Finalizing response...",
-                            )
-                            if should_stream_normalized_blocks(normalized):
-                                async for event in normalized_stream_events(normalized, request):
-                                    yield event
                             yield sse_event("done", normalized)
-                            terminal_sent = True
-                        elif upstream_event.type == "error" and isinstance(upstream_event.data, dict):
-                            detail = str(upstream_event.data.get("detail") or "Chat stream failed")
-                            logger.warning(
-                                "main_chatbot_stream_error_event request_id=%s chat_id=%s detail=%s",
-                                request_id,
-                                chat.id,
-                                detail,
-                            )
-                            if await request.is_disconnected():
-                                return
-                            yield stream_progress_event(
-                                request_id=request_id,
-                                chat_id=str(chat.id),
-                                project_id=str(chat.project_id) if chat.project_id else None,
-                                status="processing",
-                                mode="sync",
-                                stage="fallback",
-                                message="Completing response without streaming...",
-                            )
-                            try:
-                                normalized = await query_fallback_response()
-                                async for event in normalized_stream_events(normalized, request):
-                                    yield event
-                                yield stream_progress_event(
-                                    request_id=request_id,
-                                    chat_id=str(chat.id),
-                                    project_id=str(chat.project_id) if chat.project_id else None,
-                                    status=str(normalized.get("status") or "completed"),
-                                    mode="sync",
-                                    stage="finalizing",
-                                    message="Finalizing response...",
-                                )
-                                yield sse_event("done", normalized)
-                            except Exception:
-                                logger.exception(
-                                    "main_chatbot_stream_error_event_fallback_failed request_id=%s chat_id=%s",
-                                    request_id,
-                                    chat.id,
-                                )
-                                yield sse_event("error", {"detail": detail})
-                            terminal_sent = True
-                        elif upstream_event.type == "clarification" and isinstance(upstream_event.data, dict):
-                            if not clarification_questions(upstream_event.data):
-                                logger.error(
-                                    "upstream_contract_inconsistency empty_clarification_questions request_id=%s chat_id=%s",
-                                    request_id,
-                                    chat.id,
-                                )
-                                if await request.is_disconnected():
-                                    return
-                                yield stream_progress_event(
-                                    request_id=request_id,
-                                    chat_id=str(chat.id),
-                                    project_id=str(chat.project_id) if chat.project_id else None,
-                                    status="processing",
-                                    mode="sync",
-                                    stage="fallback",
-                                    message="Completing response without streaming...",
-                                )
-                                try:
-                                    normalized = await query_fallback_response()
-                                    async for event in normalized_stream_events(normalized, request):
-                                        yield event
-                                    yield stream_progress_event(
-                                        request_id=request_id,
-                                        chat_id=str(chat.id),
-                                        project_id=str(chat.project_id) if chat.project_id else None,
-                                        status=str(normalized.get("status") or "completed"),
-                                        mode="sync",
-                                        stage="finalizing",
-                                        message="Finalizing response...",
-                                    )
-                                    yield sse_event("done", normalized)
-                                except Exception:
-                                    logger.exception(
-                                        "empty_clarification_questions_fallback_failed request_id=%s chat_id=%s",
-                                        request_id,
-                                        chat.id,
-                                    )
-                                    yield sse_event("error", {"detail": "Main Chatbot Service stream interrupted"})
-                                terminal_sent = True
-                            else:
-                                normalized = normalized_clarification_payload(
-                                    upstream_event.data,
-                                    chat=chat,
-                                    user=user,
-                                    request_presentation=payload.presentation,
-                                )
-                                async for event in normalized_stream_events(normalized, request):
-                                    yield event
-                                yield sse_event("done", normalized)
-                                terminal_sent = True
-                        if terminal_sent:
-                            break
-                    if not terminal_sent:
-                        logger.warning(
-                            "main_chatbot_stream_missing_terminal request_id=%s chat_id=%s",
-                            request_id,
-                            chat.id,
-                        )
-                        if await request.is_disconnected():
                             return
-                        yield stream_progress_event(
-                            request_id=request_id,
-                            chat_id=str(chat.id),
-                            project_id=str(chat.project_id) if chat.project_id else None,
-                            status="processing",
-                            mode="sync",
-                            stage="fallback",
-                            message="Completing response without streaming...",
-                        )
-                        try:
-                            normalized = await query_fallback_response()
-                            async for event in normalized_stream_events(normalized, request):
-                                yield event
-                            yield stream_progress_event(
-                                request_id=request_id,
-                                chat_id=str(chat.id),
-                                project_id=str(chat.project_id) if chat.project_id else None,
-                                status=str(normalized.get("status") or "completed"),
-                                mode="sync",
-                                stage="finalizing",
-                                message="Finalizing response...",
-                            )
-                            yield sse_event("done", normalized)
-                        except Exception:
-                            logger.exception(
-                                "main_chatbot_stream_missing_terminal_fallback_failed request_id=%s chat_id=%s",
-                                request_id,
-                                chat.id,
-                            )
-                            yield sse_event("error", {"detail": "Main Chatbot Service stream interrupted"})
-                finally:
-                    aclose = getattr(upstream_events, "aclose", None)
-                    if aclose:
-                        with suppress(Exception):
-                            await aclose()
-            except httpx.HTTPStatusError as exc:
-                if not is_stream_endpoint_unavailable(exc):
-                    raise
-                if await request.is_disconnected():
-                    return
-                normalized = await query_fallback_response()
-                async for event in normalized_stream_events(normalized, request):
-                    yield event
-                yield stream_progress_event(
-                    request_id=request_id,
-                    chat_id=str(chat.id),
-                    project_id=str(chat.project_id) if chat.project_id else None,
-                    status="completed",
-                    mode="sync",
-                    stage="finalizing",
-                    message="Finalizing response...",
-                )
-                yield sse_event("done", normalized)
-            except httpx.RequestError:
-                raise
-            except Exception:
-                logger.exception(
-                    "main_chatbot_stream_exception request_id=%s chat_id=%s",
-                    request_id,
-                    chat.id,
-                )
-                if await request.is_disconnected():
-                    return
-                yield stream_progress_event(
-                    request_id=request_id,
-                    chat_id=str(chat.id),
-                    project_id=str(chat.project_id) if chat.project_id else None,
-                    status="processing",
-                    mode="sync",
-                    stage="fallback",
-                    message="Completing response without streaming...",
-                )
-                try:
-                    normalized = await query_fallback_response()
-                    async for event in normalized_stream_events(normalized, request):
-                        yield event
-                    yield stream_progress_event(
-                        request_id=request_id,
-                        chat_id=str(chat.id),
-                        project_id=str(chat.project_id) if chat.project_id else None,
-                        status=str(normalized.get("status") or "completed"),
-                        mode="sync",
-                        stage="finalizing",
-                        message="Finalizing response...",
-                    )
-                    yield sse_event("done", normalized)
+                        elif upstream_event.type == "clarification" and isinstance(upstream_event.data, dict):
+                            if clarification_questions(upstream_event.data):
+                                yield sse_event("done", normalized_clarification_payload(
+                                    upstream_event.data, chat=chat, user=user, request_presentation=payload.presentation,
+                                ))
+                                return
+                            break
+                        elif upstream_event.type == "error":
+                            break
                 except Exception:
-                    logger.exception(
-                        "main_chatbot_stream_exception_fallback_failed request_id=%s chat_id=%s",
-                        request_id,
-                        chat.id,
-                    )
-                    yield sse_event("error", {"detail": "Main Chatbot Service stream interrupted"})
+                    # The final /query response is safe to use when the live
+                    # connection breaks after a partial delta.
+                    logger.warning("main_chatbot_stream_interrupted request_id=%s chat_id=%s", request_id, chat.id)
+            finally:
+                aclose = getattr(upstream_events, "aclose", None)
+                if aclose:
+                    with suppress(Exception):
+                        await aclose()
+
+            # A stream that cannot provide a terminal response falls back to
+            # /query, but never fabricates token or structured-block events.
+            if not await request.is_disconnected():
+                yield sse_event("done", await query_fallback_response())
         except httpx.HTTPStatusError as exc:
-            detail = "Main Chatbot Service is temporarily unavailable"
-            yield sse_event("error", {"detail": detail, "status_code": exc.response.status_code})
+            if is_stream_endpoint_unavailable(exc):
+                try:
+                    yield sse_event("done", await query_fallback_response())
+                except Exception:
+                    yield sse_event("error", {"detail": "Main Chatbot Service is temporarily unavailable"})
+            else:
+                yield sse_event("error", {"detail": "Main Chatbot Service is temporarily unavailable"})
         except httpx.RequestError:
             yield sse_event("error", {"detail": "Main Chatbot Service is temporarily unavailable"})
         except Exception:
+            logger.exception("main_chatbot_stream_exception request_id=%s chat_id=%s", request_id, chat.id)
             yield sse_event("error", {"detail": "Main Chatbot Service stream interrupted"})
 
     return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"})

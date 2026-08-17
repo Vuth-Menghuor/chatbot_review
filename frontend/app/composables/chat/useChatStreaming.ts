@@ -4,31 +4,18 @@ import type {
   ResponseMode,
   ResponseStatus,
   StreamingDeps,
-  UnifiedToolResponse,
 } from '~/types/message';
-import {
-  isLocalChartTaskId,
-  normalizeUnifiedToolResponse,
-  unifiedResponseToMarkerText,
-} from '~/utils/tool';
-import { blocksToMarkerText } from '~/utils/message';
 import {
   isChatApiConfigured,
   handleNormalizedChatResponse,
-  legacyChatResponseToMessageParts,
   ChatStreamEventError,
-  normalizedBlockToMessageBlock,
-  sendGdceChat,
   streamGdceChat,
 } from '~/services/chat-api';
 import { uploadImageFile } from '~/services/files-api';
 import { useAuthStore } from '~/stores/auth.store';
 import { useNotificationStore } from '~/stores/notification.store';
 import { getImageUploadLimits, validateImageFile } from '~/utils/file/imageUpload';
-import {
-  pollAsyncToolTasksWhenEnabled,
-  scheduleDeferredLocalChartTaskMerges,
-} from '~/composables/chat/useAsyncToolTaskPoll';
+import { isCalculatorReportDraftText, isUnreliableTradeFormatterDraftText } from '~/utils/chat';
 
 type NormalizedChatMessageParts = NonNullable<ReturnType<typeof handleNormalizedChatResponse>>;
 
@@ -76,27 +63,21 @@ export function useChatStreaming(deps: StreamingDeps) {
     return typeof value === 'string' && value.trim() ? value.trim() : fallback;
   }
 
-  function isCalculatorRequest(message: string) {
-    const normalized = message.toLowerCase();
-    return (
-      /\b(calculate|calculation)\b/.test(normalized) &&
-      /\b(import|tax|duty|cif)\b/.test(normalized)
-    );
-  }
-
-  function isTradeChartRequest(message: string) {
-    const normalized = message.toLowerCase();
-    const requestsChart = /\b(chart|graph|pie|bar|line|visuali[sz]e|plot)\b/.test(normalized);
-    const requestsTradeData = /\b(trade|partner|transport|import partners|export partners|sea transport)\b/.test(normalized);
-    return requestsChart && requestsTradeData;
-  }
-
   function streamingMarkdownBlock(messageId: string, content: string) {
     return [{
       id: `${messageId}-streaming-markdown`,
       type: 'markdown' as const,
       content,
       isComplete: false,
+    }];
+  }
+
+  function completedStreamingMarkdownBlock(messageId: string, content: string) {
+    return [{
+      id: `${messageId}-streaming-markdown`,
+      type: 'markdown' as const,
+      content,
+      isComplete: true,
     }];
   }
 
@@ -112,45 +93,14 @@ export function useChatStreaming(deps: StreamingDeps) {
     }];
   }
 
-  function blocksToStreamingText(blocks: MessageBlock[]) {
-    return blocksToMarkerText(blocks);
-  }
-
-  function hasRenderableFinalContent(parts: { content?: string; blocks?: unknown[] } | null) {
-    if (!parts) return false;
-    if (parts.blocks?.length) return parts.blocks.some(isRenderableFinalBlock);
-    return Boolean(parts.content?.trim());
-  }
-
-  function isRenderableFinalBlock(block: unknown) {
-    if (!block || typeof block !== 'object' || Array.isArray(block)) return false;
-    const record = block as Record<string, unknown>;
-    const type = String(record.type ?? '').toLowerCase();
-    const content = record.content;
-    if (type === 'markdown' || type === 'reasoning' || type === 'code' || type === 'tool_output') {
-      return typeof content === 'string' && content.trim().length > 0;
+  function isRenderableMessageBlock(block: MessageBlock) {
+    if (block.type === 'markdown') return typeof block.content === 'string' && block.content.trim().length > 0;
+    if (block.type === 'table') return isTableBlock(block);
+    if (block.type === 'error') {
+      return isRecord(block.content) && typeof block.content.message === 'string' && block.content.message.trim().length > 0;
     }
-    if (type === 'suggestions') {
-      return Array.isArray(content) && content.length > 0;
-    }
-    if (type === 'error') {
-      if (typeof content === 'string') return content.trim().length > 0;
-      if (content && typeof content === 'object' && !Array.isArray(content)) {
-        const message = (content as Record<string, unknown>).message;
-        return typeof message === 'string' && message.trim().length > 0;
-      }
-      return false;
-    }
+    if (block.type === 'fallback') return false;
     return true;
-  }
-
-  function completedStreamingMarkdownBlock(messageId: string, content: string) {
-    return [{
-      id: `${messageId}-streaming-markdown`,
-      type: 'markdown' as const,
-      content,
-      isComplete: true,
-    }];
   }
 
   function shouldRevealFinalBlocksProgressively(
@@ -176,9 +126,9 @@ export function useChatStreaming(deps: StreamingDeps) {
     const available = [...(deps.getAssistantMessage(assistantMsgId)?.blocks ?? [])];
     return blocks.map((block) => {
       const existingIndex = available.findIndex((existing) => existing.type === block.type);
-      if (existingIndex < 0) return block;
+      if (existingIndex < 0) return withBlockCompletion(block, true);
       const [existing] = available.splice(existingIndex, 1);
-      return { ...block, id: existing.id };
+      return { ...block, id: existing.id, isComplete: true };
     });
   }
 
@@ -191,6 +141,10 @@ export function useChatStreaming(deps: StreamingDeps) {
 
   function isRecord(value: unknown): value is Record<string, unknown> {
     return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+  }
+
+  function normalizedRoutingValue(value: unknown) {
+    return typeof value === 'string' ? value.trim().toLowerCase() : '';
   }
 
   function isTableBlock(block: MessageBlock) {
@@ -471,34 +425,6 @@ export function useChatStreaming(deps: StreamingDeps) {
     }
   }
 
-  function maybeStartAsyncTaskPoll(
-    unified: UnifiedToolResponse,
-    assistantMsgId: string,
-    signal: AbortSignal,
-  ) {
-    const norm = normalizeUnifiedToolResponse(unified);
-    if (!norm.asyncTasks.length) return;
-
-    const mergeDeps = {
-      assistantMsgId,
-      signal,
-      getAssistantMessage: deps.getAssistantMessage,
-      upsertAssistantMessage: deps.upsertAssistantMessage,
-    };
-
-    void scheduleDeferredLocalChartTaskMerges({ ...mergeDeps, asyncTasks: norm.asyncTasks });
-
-    const remoteTasks = norm.asyncTasks.filter((t) => !isLocalChartTaskId(t.taskId));
-    if (remoteTasks.length && deps.chatApi) {
-      void pollAsyncToolTasksWhenEnabled({
-        ...mergeDeps,
-        asyncTasks: remoteTasks,
-        chatApiBaseUrl: deps.chatApi.baseUrl,
-        apiToken: deps.chatApi.apiToken,
-      });
-    }
-  }
-
   async function prepareAttachments(files: unknown[] | undefined) {
     const runtimeConfig = useRuntimeConfig();
     const limits = getImageUploadLimits(
@@ -557,37 +483,22 @@ export function useChatStreaming(deps: StreamingDeps) {
     let normalizedDone: Record<string, unknown> | null = null;
     let firstDelta = true;
     let streamFailed = false;
-    const streamedBlocks: MessageBlock[] = [];
+    let suppressedDeltaContent = '';
+    let streamService = '';
+    let streamIntent = '';
     let deltaRenderTail: Promise<void> = Promise.resolve();
-    const calculatorRequest = isCalculatorRequest(text);
-    const tradeChartRequest = isTradeChartRequest(text);
     const attachments = await prepareAttachments(files);
 
+    function rememberStreamRouting(data: Record<string, unknown>) {
+      streamService = normalizedRoutingValue(data.service) || streamService;
+      streamIntent = normalizedRoutingValue(data.intent) || streamIntent;
+    }
+
+    function isExplicitGeneralStream() {
+      return streamService === 'general' || streamIntent === 'general';
+    }
+
     try {
-      if (tradeChartRequest) {
-        deps.currentRenderType.value = 'thinking';
-        deps.upsertAssistantMessage(assistantMsgId, '', {
-          status: 'streaming',
-          responseStatus: 'processing',
-          blocks: [],
-          responseMode: 'stream',
-          progressStage: 'starting',
-          progressMessage: 'Preparing trade report...',
-          streamingContent: '',
-          error: null,
-        });
-        normalizedDone = await sendGdceChat({
-          baseUrl: deps.chatApi.baseUrl,
-          apiToken: deps.chatApi.apiToken,
-          message: text,
-          chatId: deps.chatId,
-          projectId: deps.projectId,
-          attachments,
-          presentation: presentationPreferenceFromMessage(text),
-          context,
-          signal: controller.signal,
-        });
-      } else {
       await streamGdceChat({
         baseUrl: deps.chatApi.baseUrl,
         apiToken: deps.chatApi.apiToken,
@@ -600,6 +511,7 @@ export function useChatStreaming(deps: StreamingDeps) {
         signal: controller.signal,
         onStart: (data) => {
           if (deps.stopStreaming.value) return;
+          rememberStreamRouting(data);
           deps.currentRenderType.value = 'response';
           const responseStatus = coerceResponseStatus(data.status);
           const responseMode = coerceResponseMode(data.mode);
@@ -618,6 +530,7 @@ export function useChatStreaming(deps: StreamingDeps) {
         },
         onProgress: (data) => {
           if (deps.stopStreaming.value) return;
+          rememberStreamRouting(data);
           const responseStatus = coerceResponseStatus(data.status);
           const responseMode = coerceResponseMode(data.mode);
           deps.currentRenderType.value = progressText(data.stage, 'response');
@@ -638,28 +551,31 @@ export function useChatStreaming(deps: StreamingDeps) {
         },
         onDelta: (content) => {
           receivedDeltaContent = `${receivedDeltaContent}${content}`;
+          const allowDraftSuppression = !isExplicitGeneralStream();
+          const suppressCalculatorReportDraft = allowDraftSuppression && isCalculatorReportDraftText(receivedDeltaContent);
+          const suppressTradeFormatterDraft = allowDraftSuppression && isUnreliableTradeFormatterDraftText(receivedDeltaContent);
+          if (suppressCalculatorReportDraft || suppressTradeFormatterDraft) {
+            suppressedDeltaContent = receivedDeltaContent;
+            const existing = deps.getAssistantMessage(assistantMsgId);
+            const existingContent = existing?.content ?? currentContent;
+            deps.currentRenderType.value = suppressCalculatorReportDraft ? 'calculator' : 'response';
+            deps.upsertAssistantMessage(assistantMsgId, existingContent, {
+              status: 'streaming',
+              responseStatus: 'processing',
+              blocks: existing?.blocks ?? (existingContent ? streamingMarkdownBlock(assistantMsgId, existingContent) : []),
+              responseMode: 'stream',
+              progressStage: 'streaming',
+              progressMessage: suppressCalculatorReportDraft ? 'Calculating taxes...' : 'Preparing response...',
+              streamingContent: existingContent,
+              error: null,
+            });
+            return;
+          }
           // Do not make the SSE reader wait for cosmetic typing delays. Incoming
           // events remain ordered in this queue and are flushed before `done` is
           // applied below.
           deltaRenderTail = deltaRenderTail.then(async () => {
-            if (deps.stopStreaming.value || streamFailed || streamedBlocks.length) return;
-            // Calculator deltas are an upstream progress narrative, while the
-            // authoritative answer is delivered as summary/table/detail blocks.
-            // Do not show that narrative as a second, conflicting calculation.
-            if (calculatorRequest) {
-              deps.currentRenderType.value = 'calculator';
-              deps.upsertAssistantMessage(assistantMsgId, '', {
-                status: 'streaming',
-                responseStatus: 'processing',
-                blocks: [],
-                responseMode: 'stream',
-                progressStage: 'streaming',
-                progressMessage: 'Calculating import tax...',
-                streamingContent: '',
-                error: null,
-              });
-              return;
-            }
+            if (deps.stopStreaming.value || streamFailed) return;
             if (firstDelta) {
               firstDelta = false;
               deps.currentRenderType.value = 'markdown';
@@ -683,105 +599,6 @@ export function useChatStreaming(deps: StreamingDeps) {
             }
           });
         },
-        onBlock: async (block) => {
-          await deltaRenderTail;
-          if (deps.stopStreaming.value) return;
-          const index = streamedBlocks.length;
-          const messageBlock = normalizedBlockToMessageBlock(block, `${assistantMsgId}-stream-block-${index}`);
-          deps.currentRenderType.value = String(messageBlock.type);
-
-          // Some upstreams send the answer first as `delta` events and then
-          // repeat it as the first complete markdown block. Keep the already
-          // visible delta text and use this block only as its confirmation;
-          // streaming the same markdown again looks like a second response.
-          if (
-            !streamedBlocks.length &&
-            receivedDeltaContent &&
-            !calculatorRequest &&
-            messageBlock.type === 'markdown' &&
-            typeof messageBlock.content === 'string'
-          ) {
-            const confirmedContent = currentContent || receivedDeltaContent;
-            streamedBlocks.push({
-              ...messageBlock,
-              id: `${assistantMsgId}-streaming-markdown`,
-              content: confirmedContent,
-              isComplete: true,
-            });
-            deps.upsertAssistantMessage(assistantMsgId, blocksToStreamingText(streamedBlocks), {
-              status: 'streaming',
-              responseStatus: 'processing',
-              blocks: [...streamedBlocks],
-              responseMode: 'stream',
-              progressStage: 'rendering',
-              progressMessage: 'Formatting response...',
-              streamingContent: '',
-              error: null,
-            });
-            return;
-          }
-
-          if (messageBlock.type === 'markdown' && typeof messageBlock.content === 'string') {
-            let visibleContent = '';
-            streamedBlocks.push(withBlockCompletion({ ...messageBlock, content: visibleContent }, false));
-
-            for (const chunk of markdownFallbackChunks(messageBlock.content)) {
-              if (deps.stopStreaming.value || controller.signal.aborted) return;
-              visibleContent = `${visibleContent}${chunk}`;
-              streamedBlocks[index] = withBlockCompletion({ ...messageBlock, content: visibleContent }, false);
-              deps.upsertAssistantMessage(assistantMsgId, blocksToStreamingText(streamedBlocks), {
-                status: 'streaming',
-                responseStatus: 'processing',
-                blocks: [...streamedBlocks],
-                responseMode: 'stream',
-                progressStage: 'streaming',
-                progressMessage: 'Streaming response...',
-                streamingContent: visibleContent,
-                error: null,
-              });
-              await deps.typing.sleep(markdownFallbackDelay(chunk));
-            }
-
-            if (deps.stopStreaming.value || controller.signal.aborted) return;
-            streamedBlocks[index] = withBlockCompletion(messageBlock, true);
-            deps.upsertAssistantMessage(assistantMsgId, blocksToStreamingText(streamedBlocks), {
-              status: 'streaming',
-              responseStatus: 'processing',
-              blocks: [...streamedBlocks],
-              responseMode: 'stream',
-              progressStage: 'rendering',
-              progressMessage: 'Formatting response...',
-              streamingContent: '',
-              error: null,
-            });
-            return;
-          }
-
-          streamedBlocks.push(withBlockCompletion(messageBlock, false));
-          deps.upsertAssistantMessage(assistantMsgId, blocksToStreamingText(streamedBlocks), {
-            status: 'streaming',
-            responseStatus: 'processing',
-            blocks: [...streamedBlocks],
-            responseMode: 'stream',
-            progressStage: 'rendering',
-            progressMessage: 'Formatting response...',
-            streamingContent: '',
-            error: null,
-          });
-          await deps.typing.sleep(finalBlockRevealDelay(messageBlock));
-          if (deps.stopStreaming.value || controller.signal.aborted) return;
-          streamedBlocks[index] = withBlockCompletion(messageBlock, true);
-          deps.upsertAssistantMessage(assistantMsgId, blocksToStreamingText(streamedBlocks), {
-            status: 'streaming',
-            responseStatus: 'processing',
-            blocks: [...streamedBlocks],
-            responseMode: 'stream',
-            progressStage: 'rendering',
-            progressMessage: 'Formatting response...',
-            streamingContent: '',
-            error: null,
-          });
-        },
         onDone: (data) => {
           normalizedDone = data;
         },
@@ -789,7 +606,7 @@ export function useChatStreaming(deps: StreamingDeps) {
           streamFailed = true;
           const detail = String(data.detail ?? 'Chat stream failed');
           const existing = deps.getAssistantMessage(assistantMsgId);
-          const preservedContent = receivedDeltaContent || existing?.content || currentContent;
+          const preservedContent = (suppressedDeltaContent ? '' : receivedDeltaContent) || currentContent || existing?.content;
           const nextContent = preservedContent || detail;
           deps.upsertAssistantMessage(assistantMsgId, nextContent, {
             status: 'error',
@@ -805,7 +622,6 @@ export function useChatStreaming(deps: StreamingDeps) {
           });
         },
       });
-      }
     } catch (error) {
       if (error instanceof ChatStreamEventError) return;
       throw error;
@@ -813,14 +629,46 @@ export function useChatStreaming(deps: StreamingDeps) {
 
     await deltaRenderTail;
     if (deps.stopStreaming.value || controller.signal.aborted) return;
+
+    if (!normalizedDone) {
+      const detail = streamFailed
+        ? 'Chat stream failed'
+        : 'The response stream ended before the final response was received.';
+      const preservedContent = (suppressedDeltaContent ? '' : receivedDeltaContent) || currentContent;
+      deps.upsertAssistantMessage(assistantMsgId, preservedContent || detail, {
+        generationDurationMs: Date.now() - startedAt,
+        status: 'error',
+        responseStatus: 'failed',
+        responseMode: 'stream',
+        progressStage: 'failed',
+        progressMessage: detail,
+        streamingContent: preservedContent,
+        blocks: preservedContent
+          ? streamingMarkdownBlock(assistantMsgId, preservedContent)
+          : streamErrorBlock(assistantMsgId, detail),
+        error: detail,
+      });
+      return;
+    }
+
     const normalizedParts = handleNormalizedChatResponse(normalizedDone, assistantMsgId);
     if (normalizedParts) {
-      // `block` events have already been rendered in order. Applying the final
-      // payload once makes it authoritative without replaying those blocks and
-      // causing a visible completion flash.
-      if (streamedBlocks.length) {
-        deps.upsertAssistantMessage(assistantMsgId, normalizedParts.content, {
-          blocks: preserveRenderedBlockIds(assistantMsgId, normalizedParts.blocks),
+      const finalHasContent = normalizedParts.content.trim().length > 0;
+      const finalHasBlocks = normalizedParts.blocks.some(isRenderableMessageBlock);
+      if (!finalHasContent && !finalHasBlocks) {
+        const existing = deps.getAssistantMessage(assistantMsgId);
+        const streamedText = (suppressedDeltaContent ? '' : receivedDeltaContent) ||
+          currentContent ||
+          existing?.streamingContent ||
+          existing?.content ||
+          '';
+        if (import.meta.dev) {
+          console.error('[chat-stream] done payload normalized to empty response', normalizedDone);
+        }
+        deps.upsertAssistantMessage(assistantMsgId, streamedText, {
+          blocks: streamedText
+            ? completedStreamingMarkdownBlock(assistantMsgId, streamedText)
+            : [],
           sources: normalizedParts.sources,
           generationDurationMs: normalizedParts.latencyMs ?? Date.now() - startedAt,
           status: responseStatusToUiStatus(normalizedParts.status),
@@ -837,42 +685,26 @@ export function useChatStreaming(deps: StreamingDeps) {
         if (normalizedParts.status === 'completed') notifyResponseCompleted();
         return;
       }
-      if (!hasRenderableFinalContent(normalizedParts) && currentContent.trim()) {
-        const finalContent = currentContent.trim();
-        deps.upsertAssistantMessage(assistantMsgId, finalContent, {
-          blocks: completedStreamingMarkdownBlock(assistantMsgId, finalContent),
-          sources: normalizedParts.sources,
-          generationDurationMs: normalizedParts.latencyMs ?? Date.now() - startedAt,
-          status: responseStatusToUiStatus(normalizedParts.status),
-          responseStatus: normalizedParts.status,
-          responseMode: 'stream',
-          progressStage: 'completed',
-          progressMessage: normalizedParts.status === 'completed' ? 'Response completed.' : 'Response finished.',
-          streamingContent: '',
-          normalizedResponse: normalizedDone,
-          error: null,
-          coverage: normalizedParts.coverage,
-          confidence: normalizedParts.confidence,
-        });
-        if (normalizedParts.status === 'completed') notifyResponseCompleted();
-        return;
+      if (!currentContent.trim()) {
+        if (shouldRevealFinalBlocksProgressively(normalizedParts, currentContent)) {
+          await revealFinalBlocksProgressively(
+            assistantMsgId,
+            normalizedParts,
+            normalizedDone,
+            currentContent,
+            startedAt,
+          );
+          if (normalizedParts.status === 'completed') notifyResponseCompleted();
+          return;
+        }
+        if (shouldStreamFinalMarkdown(normalizedParts, currentContent)) {
+          await streamFinalMarkdownFallback(assistantMsgId, normalizedParts, normalizedDone, startedAt);
+          if (normalizedParts.status === 'completed') notifyResponseCompleted();
+          return;
+        }
       }
-      if (shouldStreamFinalMarkdown(normalizedParts, currentContent)) {
-        await streamFinalMarkdownFallback(assistantMsgId, normalizedParts, normalizedDone, startedAt);
-        if (normalizedParts.status === 'completed') notifyResponseCompleted();
-        return;
-      }
-      if (shouldRevealFinalBlocksProgressively(normalizedParts, currentContent)) {
-        await revealFinalBlocksProgressively(
-          assistantMsgId,
-          normalizedParts,
-          normalizedDone,
-          currentContent,
-          startedAt,
-        );
-        if (normalizedParts.status === 'completed') notifyResponseCompleted();
-        return;
-      }
+      // `done` is already the complete authoritative response. Do not type or
+      // reveal it again: that makes a finished response look regenerated.
       deps.upsertAssistantMessage(assistantMsgId, normalizedParts.content, {
         blocks: preserveRenderedBlockIds(assistantMsgId, normalizedParts.blocks),
         sources: normalizedParts.sources,
@@ -891,51 +723,20 @@ export function useChatStreaming(deps: StreamingDeps) {
       if (normalizedParts.status === 'completed') notifyResponseCompleted();
       return;
     }
-    const legacyParts = legacyChatResponseToMessageParts(normalizedDone, assistantMsgId);
-    if (legacyParts) {
-      deps.upsertAssistantMessage(assistantMsgId, legacyParts.content || currentContent, {
-        blocks: preserveRenderedBlockIds(assistantMsgId, legacyParts.blocks),
-        sources: legacyParts.sources,
-        generationDurationMs: Date.now() - startedAt,
-        status: responseStatusToUiStatus(legacyParts.status),
-        responseStatus: legacyParts.status,
-        responseMode: 'stream',
-        progressStage: 'completed',
-        progressMessage: legacyParts.status === 'completed' ? 'Response completed.' : 'Response finished.',
-        streamingContent: '',
-        error: null,
-        coverage: legacyParts.coverage,
-        confidence: legacyParts.confidence,
-      });
-      if (legacyParts.status === 'completed') notifyResponseCompleted();
-      return;
-    }
 
-    const unified = {
-      requestId: assistantMsgId,
-      mode: 'sync',
-      status: 'success',
-      tools: [],
-    } as UnifiedToolResponse;
-    const markerText = unifiedResponseToMarkerText(unified);
-    const fallbackContent = markerText || currentContent;
-    deps.upsertAssistantMessage(assistantMsgId, fallbackContent, {
+    const detail = 'The response format was not supported.';
+    const preservedContent = (suppressedDeltaContent ? '' : receivedDeltaContent) || currentContent;
+    deps.upsertAssistantMessage(assistantMsgId, preservedContent || detail, {
       generationDurationMs: Date.now() - startedAt,
-      status: fallbackContent.trim() ? 'completed' : 'error',
-      responseStatus: fallbackContent.trim() ? 'completed' : 'failed',
+      status: 'error',
+      responseStatus: 'failed',
       responseMode: 'stream',
-      progressStage: 'completed',
-      progressMessage: fallbackContent.trim()
-        ? 'Response completed.'
-        : 'Response stream ended before a final answer was received.',
-      streamingContent: '',
-      blocks: fallbackContent.trim()
-        ? completedStreamingMarkdownBlock(assistantMsgId, fallbackContent)
-        : streamErrorBlock(assistantMsgId, 'Response stream ended before a final answer was received.'),
-      error: fallbackContent.trim() ? null : 'Response stream ended before a final answer was received.',
+      progressStage: 'failed',
+      progressMessage: detail,
+      streamingContent: preservedContent,
+      blocks: streamErrorBlock(assistantMsgId, detail),
+      error: detail,
     });
-    if (fallbackContent.trim()) notifyResponseCompleted();
-    maybeStartAsyncTaskPoll(unified, assistantMsgId, controller.signal);
   }
 
   return { streamFromChatApi };
@@ -947,10 +748,21 @@ export function presentationPreferenceFromMessage(message: string) {
   if (/\b(table|tabular)\b/.test(normalized)) preferredBlocks.push('table');
   if (/\b(card|prediction)\b/.test(normalized)) preferredBlocks.push('prediction');
   if (/\b(report)\b/.test(normalized)) preferredBlocks.push('report');
-  if (/\b(chart|graph|visuali[sz]e|plot)\b/.test(normalized)) preferredBlocks.push('chart');
+  if (/\b(chart|graph|pie|donut|doughnut|bar|line|area|visuali[sz]e|plot)\b/.test(normalized)) preferredBlocks.push('chart');
   if (!preferredBlocks.length) return undefined;
+  const chartType = requestedChartType(normalized);
   return {
     preferred_blocks: [...new Set(preferredBlocks)],
+    ...(chartType ? { chart_type: chartType } : {}),
     fallback: 'markdown' as const,
   };
+}
+
+function requestedChartType(normalizedMessage: string): 'pie' | 'donut' | 'bar' | 'line' | 'area' | undefined {
+  if (/\b(donut|doughnut)\b/.test(normalizedMessage)) return 'donut';
+  if (/\bpie\b/.test(normalizedMessage)) return 'pie';
+  if (/\bbar\b/.test(normalizedMessage)) return 'bar';
+  if (/\bline\b/.test(normalizedMessage)) return 'line';
+  if (/\barea\b/.test(normalizedMessage)) return 'area';
+  return undefined;
 }

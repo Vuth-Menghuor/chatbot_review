@@ -156,7 +156,7 @@ const { typedText, flush: flushTypewriter } = useTypewriter(textTarget, typewrit
   config: defaultTypingConfig,
 });
 
-const displayText = computed(() => (props.loading ? textTarget.value : typedText.value));
+const displayText = computed(() => (typewriterEnabled.value ? typedText.value : textTarget.value));
 
 watch(
   () => props.loading,

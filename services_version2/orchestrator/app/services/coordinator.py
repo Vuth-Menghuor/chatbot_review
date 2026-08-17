@@ -64,7 +64,7 @@ from .heuristics import (
 )
 from .clarification_manager import ClarificationManager
 from .handlers.small_talk import SmallTalkHandler, generate_small_talk_response
-from .handlers.definition import DefinitionHandler
+from .handlers.general import GeneralHandler
 from .handlers.calculation import CalculationHandler
 from .handlers.trade_query import TradeQueryHandler
 from .handlers.hs_lookup import HsCodeLookupHandler
@@ -764,6 +764,8 @@ class ServiceCoordinator:
                                     normalized_question = self._light_normalize_query(context.question)
                                     original_query = self.workflow_executor.cleanup_query(context.question)
                                     context.cleaned_input = original_query
+                                    if context.metadata:
+                                        context.metadata["service_query"] = original_query
                                     
                                     logger.info(
                                         f"[{request_id}] [MERGE] Cleaned/rewritten merged query -> '{original_query}'"
@@ -2346,11 +2348,11 @@ class ServiceCoordinator:
         ]
         return any(pat in low for pat in no_info_patterns)
 
-    async def _generate_parametric_definition_answer(self, query: str) -> str:
-        return await DefinitionHandler.generate_parametric_definition_answer(self, query)
+    async def _generate_parametric_definition_answer(self, query: str, entity: str | None = None) -> str:
+        return await GeneralHandler.generate_parametric_definition_answer(self, query, entity)
     
     async def _handle_definition(self, context: WorkflowContext):
-        await DefinitionHandler.handle(self, context)
+        await GeneralHandler.handle(self, context)
     
     async def _handle_default(self, context: WorkflowContext):
         try:
@@ -2367,9 +2369,17 @@ class ServiceCoordinator:
                 context.status = WorkflowStatus.COMPLETED
                 return
                 
+            nlu_entity = context.metadata.get("nlu_entity") if context.metadata else None
             async def run_call():
                 return await asyncio.wait_for(
-                    self.general_client.ask(query=service_query, top_k=5, generate_answer=True, session_id=context.session_id), timeout=timeout_sec
+                    self.general_client.ask(
+                        query=service_query,
+                        top_k=5,
+                        generate_answer=True,
+                        session_id=context.session_id,
+                        entity=nlu_entity,
+                    ),
+                    timeout=timeout_sec
                 )
 
             result = await self._execute_service_call(
@@ -2379,12 +2389,34 @@ class ServiceCoordinator:
                 request_payload={"query": service_query, "top_k": 5, "generate_answer": True, "session_id": context.session_id}
             )
 
-            # Fallback check: If RAG returned no document info, use direct LLM parametric knowledge
+            # Fallback check: If RAG returned no document info or missed the entity, use direct LLM parametric knowledge
             if result and isinstance(result, dict):
+                import re
                 ans_text = result.get("final_answer") or result.get("answer") or ""
-                if self._is_rag_no_info_response(ans_text, result):
-                    logger.info(f"[{context.request_id}] RAG returned no document info for query '{service_query}'. Invoking LLM parametric fallback.")
-                    parametric_ans = await self._generate_parametric_definition_answer(service_query)
+                
+                nlu_entity = context.metadata.get("nlu_entity") if context.metadata else None
+                entity_conf = context.metadata.get("nlu_entity_confidence") if context.metadata else None
+                entity_miss = False
+                if nlu_entity and entity_conf == "high":
+                    entity_lower = nlu_entity.lower()
+                    entity_words = set(re.findall(r"\b[a-z0-9]{3,}\b", entity_lower))
+                    if not entity_words:
+                        entity_words = {entity_lower}
+                    
+                    documents = result.get("documents", [])
+                    has_mention = False
+                    for doc in documents:
+                        content = str(doc.get("content", "")).lower()
+                        if any(word in content for word in entity_words):
+                            has_mention = True
+                            break
+                    if not has_mention:
+                        entity_miss = True
+                        logger.info(f"[{context.request_id}] Entity '{nlu_entity}' (high confidence) not mentioned in RAG documents. Triggering entity miss fallback.")
+                
+                if self._is_rag_no_info_response(ans_text, result) or entity_miss:
+                    logger.info(f"[{context.request_id}] RAG returned no document info or entity miss for query '{service_query}'. Invoking LLM parametric fallback.")
+                    parametric_ans = await self._generate_parametric_definition_answer(service_query, nlu_entity)
                     result["answer"] = parametric_ans
                     result["final_answer"] = parametric_ans
                     result["source"] = "llm_parametric_knowledge"
@@ -2460,8 +2492,12 @@ class ServiceCoordinator:
             calc_res = context.calculation_result
             provider_name = str(getattr(self.llm_service, "provider", "") or "").lower() if self.llm_service else ""
             
-            # Ollama safety rule: Direct route to DeterministicCalculationFormatter to prevent math hallucinations
-            if provider_name == "ollama":
+            # Direct route to DeterministicCalculationFormatter if provider is Ollama,
+            # or if the exchange rate was a fallback rate, or if the original currency is not USD
+            is_fallback = calc_res.get("exchange_rate_is_fallback", False)
+            orig_curr = calc_res.get("original_currency")
+            
+            if provider_name == "ollama" or is_fallback or (orig_curr and orig_curr != "USD"):
                 from ..ai.core.calculation_formatter import DeterministicCalculationFormatter
                 response["answer"] = DeterministicCalculationFormatter.format(calc_res, context.question)
             else:

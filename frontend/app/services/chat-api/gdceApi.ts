@@ -15,13 +15,13 @@ export interface GdceStreamOptions {
   onStart?: (data: Record<string, unknown>) => void;
   onProgress?: (data: Record<string, unknown>) => void;
   onDelta?: (content: string) => void | Promise<void>;
-  onBlock?: (block: Record<string, unknown>) => void | Promise<void>;
   onDone?: (data: Record<string, unknown>) => void;
   onError?: (data: Record<string, unknown>) => void;
 }
 
 export interface GdcePresentationPreference {
   preferred_blocks: string[];
+  chart_type?: 'pie' | 'donut' | 'bar' | 'line' | 'area';
   fallback: 'markdown';
 }
 
@@ -95,7 +95,6 @@ export async function streamGdceChat(options: GdceStreamOptions): Promise<void> 
     if (event === 'start') options.onStart?.(json);
     else if (event === 'progress') options.onProgress?.(json);
     else if (event === 'delta') await options.onDelta?.(String(json.content ?? ''));
-    else if (event === 'block') await options.onBlock?.(json);
     else if (event === 'done') options.onDone?.(json);
     else if (event === 'error') {
       options.onError?.(json);

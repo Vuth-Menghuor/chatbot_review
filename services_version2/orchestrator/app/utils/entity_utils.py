@@ -360,16 +360,129 @@ def looks_like_unit_price(query: str) -> bool:
     return False
 
 
+def get_head_noun(entity_str: str) -> str:
+    """
+    Extract the head noun (last significant word) of an entity string,
+    stripping common trailing specifiers and numeric model qualifiers.
+    """
+    import re
+    # Tokenize using any unicode alphanumeric word character to support non-Latin scripts (e.g. Khmer)
+    words = re.findall(r"\b\w+\b", entity_str.lower())
+    if not words:
+        return ""
+    
+    # Strip common specifiers/units from the end
+    specifiers = {"pro", "max", "plus", "mini", "super", "ultra", "lite", "active", "gb", "g", "v", "units", "pcs", "set", "pack"}
+    while words and (words[-1] in specifiers or words[-1].isdigit() or re.match(r"^\d+[a-z]?$", words[-1])):
+        words.pop()
+        
+    if not words:
+        return ""
+        
+    # Singularize the head noun simply (e.g. laptops -> laptop)
+    head = words[-1]
+    if head.endswith("s") and len(head) > 3 and not head.endswith("ss"):
+        head = head[:-1]
+        
+    return head
+
+
 def is_entity_changed(entity_a: Optional[str], entity_b: Optional[str]) -> bool:
     """
     Compare two commodity entities to determine if they represent a different product.
-    Known limitation: short/generic entities (e.g. "car" vs "car charger") 
-    will falsely match as the same product and skip clearing.
+    Resolves common synonyms using ALIAS_MAP on their extracted head nouns.
     """
     if not entity_a or not entity_b:
         return False
     ea_lower = entity_a.lower().strip()
     eb_lower = entity_b.lower().strip()
-    return ea_lower != eb_lower and ea_lower not in eb_lower and eb_lower not in ea_lower
+
+    # If identical, they are not changed
+    if ea_lower == eb_lower:
+        return False
+
+    # Extract head nouns to support model numbers and compound noun phrases
+    head_a = get_head_noun(ea_lower)
+    head_b = get_head_noun(eb_lower)
+
+    # Strict alias-to-canonical mapping to resolve synonyms
+    ALIAS_MAP = {
+        # Phones
+        "iphone": "phone",
+        "smartphone": "phone",
+        "mobile": "phone",
+        "telephone": "phone",
+        "cellphone": "phone",
+        "cell": "phone",
+        # Laptops/Computers
+        "notebook": "laptop",
+        "computer": "laptop",
+        "pc": "laptop",
+        "macbook": "laptop",
+        "desktop": "laptop",
+        "tablet": "laptop",
+        "ipad": "laptop",
+        # Cars/Vehicles
+        "vehicle": "car",
+        "automobile": "car",
+        "auto": "car",
+        "ev": "car",
+        "sedan": "car",
+        "suv": "car",
+        "truck": "car",
+        "motorcycle": "car",
+        "motor": "car",
+        # Seafood
+        "prawn": "shrimp",
+        "lobster": "shrimp",
+        "crab": "shrimp",
+        "seafood": "shrimp",
+        "fish": "shrimp",
+        # Poultry/Meat
+        "rooster": "chicken",
+        "hen": "chicken",
+        "goose": "duck",
+        "beef": "meat",
+        "pork": "meat",
+        # Garments
+        "shirt": "garment",
+        "tshirt": "garment",
+        "apparel": "garment",
+        "clothing": "garment",
+        "jacket": "garment",
+        "pants": "garment",
+        "jeans": "garment",
+        "coat": "garment",
+    }
+
+    if head_a and head_b:
+        alias_a = ALIAS_MAP.get(head_a, head_a)
+        alias_b = ALIAS_MAP.get(head_b, head_b)
+        if alias_a == alias_b:
+            return False
+
+    # Fallback to token subset checks for short/un-nouned fragments
+    import re
+    tokens_a = set(re.findall(r"\b\w{2,}\b", ea_lower))
+    tokens_b = set(re.findall(r"\b\w{2,}\b", eb_lower))
+
+    if not tokens_a or not tokens_b:
+        return ea_lower != eb_lower
+
+    canonical_a = {ALIAS_MAP.get(t, t) for t in tokens_a}
+    canonical_b = {ALIAS_MAP.get(t, t) for t in tokens_b}
+
+    if canonical_a & canonical_b:
+        # Prevent false negative when one contains a distinct modifier like "battery"
+        # e.g., "car" vs "car battery" should be different
+        if ("battery" in tokens_a) != ("battery" in tokens_b):
+            return True
+        if ("parts" in tokens_a) != ("parts" in tokens_b):
+            return True
+        if ("charger" in tokens_a) != ("charger" in tokens_b):
+            return True
+        return False
+
+    return True
 
 

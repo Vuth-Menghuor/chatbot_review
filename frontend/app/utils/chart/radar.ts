@@ -1,4 +1,5 @@
 import type { EChartsOption, ExtendedChartOutput } from './types';
+import { chartPalette, seriesColor } from './palette';
 
 export function buildRadarOption(out: ExtendedChartOutput, isDark: boolean): EChartsOption {
   const textColor = isDark ? '#e4e4e7' : '#27272a';
@@ -19,7 +20,7 @@ export function buildRadarOption(out: ExtendedChartOutput, isDark: boolean): ECh
   });
 
   const radarSeriesData =
-    out.series?.map((s) => {
+    out.series?.map((s, index) => {
       const vals = categories.map((cat) => {
         const item = out.data?.find((d) => String(d[out.xKey]) === cat);
         return Number(item?.[s.key] ?? 0);
@@ -27,7 +28,8 @@ export function buildRadarOption(out: ExtendedChartOutput, isDark: boolean): ECh
       return {
         value: vals,
         name: s.name,
-        itemStyle: { color: s.color },
+        itemStyle: { color: seriesColor(s.color, index, isDark) },
+        areaStyle: { opacity: 0.12 },
       };
     }) || [];
 
@@ -50,6 +52,7 @@ export function buildRadarOption(out: ExtendedChartOutput, isDark: boolean): ECh
       left: 'center',
       textStyle: { color: textColor },
     },
+    color: chartPalette(isDark),
     radar: {
       indicator: indicators,
       axisName: { color: textColor },

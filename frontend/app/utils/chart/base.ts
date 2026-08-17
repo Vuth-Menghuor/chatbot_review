@@ -1,4 +1,5 @@
 import type { EChartsOption, ExtendedChartOutput, ExtendedChartSeries } from './types';
+import { chartColor, chartPalette, seriesColor } from './palette';
 
 const ADAPTIVE_BAR_LIMIT = 12;
 const CROWDED_CATEGORY_COUNT = 8;
@@ -23,12 +24,20 @@ export function buildBaseOption(out: ExtendedChartOutput, isDark: boolean): ECha
   const hasDataZoom = out.dataZoom === true && !shouldAdapt;
 
   const seriesList =
-    out.series?.map((s) => {
+    out.series?.map((s, seriesIndex) => {
       const seriesData =
-        displayData.map((item) => {
+        displayData.map((item, dataIndex) => {
           const val = item[s.key];
-          return typeof val === 'number' ? val : parseFloat(String(val || '0')) || 0;
+          const value = typeof val === 'number' ? val : parseFloat(String(val || '0')) || 0;
+          if (out.series?.length === 1 && isBarLikeChartType(chartType, s.type)) {
+            return {
+              value,
+              itemStyle: { color: chartColor(dataIndex, isDark) },
+            };
+          }
+          return value;
         });
+      const color = seriesColor(s.color, seriesIndex, isDark);
 
       const type =
         s.type || (chartType === 'area' ? 'line' : chartType === 'line' ? 'line' : 'bar');
@@ -39,7 +48,7 @@ export function buildBaseOption(out: ExtendedChartOutput, isDark: boolean): ECha
         type,
         data: seriesData,
         stack: isStacked ? s.stack || 'total' : undefined,
-        itemStyle: { color: s.color || '#3b82f6' },
+        itemStyle: { color },
       };
 
       if (type === 'line') {
@@ -50,13 +59,13 @@ export function buildBaseOption(out: ExtendedChartOutput, isDark: boolean): ECha
         if (chartType === 'area' || s.areaStyle) {
           baseSeries.areaStyle = {
             opacity: 0.15,
-            color: s.color || '#3b82f6',
+            color,
           };
         }
       } else {
         baseSeries.barMaxWidth = 30;
         baseSeries.itemStyle = {
-          color: s.color || '#3b82f6',
+          color,
           borderRadius: isHorizontal ? [0, 4, 4, 0] : [4, 4, 0, 0],
         };
       }
@@ -117,6 +126,7 @@ export function buildBaseOption(out: ExtendedChartOutput, isDark: boolean): ECha
       borderWidth: 1,
       textStyle: { color: textColor },
     },
+    color: chartPalette(isDark),
     legend: {
       orient: 'horizontal',
       bottom: '0%',
@@ -147,6 +157,11 @@ export function buildBaseOption(out: ExtendedChartOutput, isDark: boolean): ECha
       : undefined,
     series: seriesList,
   };
+}
+
+function isBarLikeChartType(chartType: string, seriesType: unknown): boolean {
+  const type = String(seriesType || chartType || 'bar').toLowerCase();
+  return type === 'bar' || type === 'column' || type === 'horizontal-bar' || type === 'horizontalbar';
 }
 
 function shouldUseAdaptiveHorizontalBar(out: ExtendedChartOutput, chartType: string): boolean {

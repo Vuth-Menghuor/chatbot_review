@@ -6,7 +6,7 @@ This document provides a comprehensive breakdown of **Session Context**, **Conve
 
 ## 1. High-Level User Flow & Pipeline Journey
 
-The diagram below shows the streamlined 4-phase journey of a user message through the Orchestrator system:
+The diagram below shows the 4-phase journey of a user message through the 13-step Orchestrator system:
 
 ```mermaid
 flowchart TD
@@ -17,38 +17,41 @@ flowchart TD
     classDef service fill:#2ECC71,stroke:#1E8449,stroke-width:2px,color:#fff;
     classDef memory fill:#16A085,stroke:#117A65,stroke-width:2px,color:#fff;
 
-    subgraph PHASE1 ["1️⃣ INTAKE & PREPARATION"]
-        User([👤 User Request]) --> Security{Passes Security?}:::intake
-        Security -- No --> Blocked[🛑 Security Block]:::intake
-        Security -- Yes --> LoadSession[📖 Load Session Memory & Lock Session]:::intake
-        LoadSession --> TranslateIn[🌐 Translate Khmer ➔ English if needed]:::intake
+    subgraph PHASE1 ["1️⃣ INTAKE & PREPARATION (Steps 1-4)"]
+        User([👤 User Request]) --> Security{Passes Safety/Scope Check?}:::intake
+        Security -- No --> Blocked[🛑 Security/Out-of-Scope Refusal]:::intake
+        Security -- Yes --> LoadSession[📖 Load Session Context & Lock Session]:::intake
+        LoadSession --> SpecMerge{Awaiting Spec?}:::intake
+        SpecMerge -- Yes --> MergeSpec[🧩 Try Product Spec Merge]:::intake
+        SpecMerge -- No --> CleanInput[🧹 Cleanup Query & Typo Correction]:::intake
+        MergeSpec --> CleanInput
     end
 
-    subgraph PHASE2 ["2️⃣ CONTEXT & REWRITING"]
-        TranslateIn --> CheckSpec{Follow-up Spec?}:::ai
-        CheckSpec -- Yes --> MergeContext[🧩 Merge Spec Answer with Saved Context]:::ai
-        CheckSpec -- No --> SmallTalk{Small-Talk?}:::ai
-        MergeContext --> SmallTalk
-        
-        SmallTalk -- Yes --> FastReply[⚡ Polite Instant Reply]:::ai
-        SmallTalk -- No --> Rewrite[🤖 Smart Rewriter: Strip Filler & Flesh Out Query]:::ai
+    subgraph PHASE2 ["2️⃣ CLARIFICATION RESOLUTION (Step 7)"]
+        CleanInput --> ClarPending{Awaiting Intent Clarification?}:::gate
+        ClarPending -- Yes --> ResolveClar[🔄 Resolve Intent & Merge Queries\n• Skip Rewriter Post-Merge]:::gate
+        ClarPending -- No --> Classify[🤖 Classify Intent & Language]:::ai
+        ResolveClar --> Classify
     end
 
-    subgraph PHASE3 ["3️⃣ ROUTING & GATING"]
-        Rewrite --> Ambiguous{Clear or Ambiguous?}:::gate
-        Ambiguous -- Ambiguous < 0.60 --> AskBack[❓ Ask-Back Gate: Ask User to Clarify Intent]:::gate
-        
-        Ambiguous -- Clear Intent --> Route[🎯 Microservice Router & Hybrid Cache]:::service
-        Route --> Calc[🧮 Calculator Service<br/>Duties & Taxes]:::service
-        Route --> Trade[📊 Trade Data Service<br/>Import/Export Stats]:::service
-        Route --> Retrieval[🔍 Retrieval Service<br/>HS Tariff Codes]:::service
-        Route --> General[📄 General Policy Service<br/>Rules & Regulations]:::service
+    subgraph PHASE3 ["3️⃣ ROUTING & GATING (Steps 5, 8-12)"]
+        Classify --> AskBack{Ambiguous Intent?}:::gate
+        AskBack -- Yes (conf < 0.60 or Trade Matrix) --> IntentAskBack[❓ Ask-Back Gate: Query User]:::gate
+        AskBack -- No --> TopicSwitch{Topic/Entity Switch?}:::ai
+        TopicSwitch -- Yes --> ClearSlots[🧹 Clear Context Slots]:::ai
+        TopicSwitch -- No --> Rewrite[🤖 Context-Aware Rewriter]:::ai
+        ClearSlots --> Rewrite
+        Rewrite --> Route[🎯 Route to Handler & Microservice]:::service
+        Route --> Calc[🧮 Calculator Service\n• Slot Gate: Product ➔ HS ➔ CIF]:::service
+        Route --> Trade[📊 Trade Data Service]:::service
+        Route --> Retrieval[🔍 Retrieval Service]:::service
+        Route --> General[📄 General Policy Service]:::service
     end
 
-    subgraph PHASE4 ["4️⃣ RESPONSE & MEMORY UPDATE"]
-        Calc & Trade & Retrieval & General & FastReply & AskBack --> Format[✨ Format Markdown Answer & Translate back to Khmer]:::memory
-        Format --> Stream[🚀 SSE Token Stream to UI]:::memory
-        Stream --> MemoryUpdate[💾 Update Memory Tiers<br/>• Active Window (Last 8 turns)<br/>• Rolling Summary (Evicted turn 9+)<br/>• Sync to Redis, Disk & Database]:::memory
+    subgraph PHASE4 ["4️⃣ RESPONSE & MEMORY UPDATE (Step 13)"]
+        Calc & Trade & Retrieval & General & IntentAskBack & Blocked --> Format[✨ Format Markdown Answer & Translate back to Khmer]:::memory
+        Format --> Stream[🚀 SSE Token Stream or Sync JSON]:::memory
+        Stream --> MemoryUpdate[💾 Update Memory Tiers\n• Active Window (Last 8 turns)\n• Rolling Summary (Evicted turn 9+)\n• Flush to Redis, Disk & Database]:::memory
     end
 ```
 
@@ -63,7 +66,7 @@ graph TD
     User([👤 User Request]) --> Step1[1. Security Validation & Session Retrieval]
     Step1 --> ActiveMem[Active Window Memory: Last 8 Turns]
     
-    ActiveMem -- Turn 9+ Overflow Eviction --> Summarizer[Background Async Gemini Summarizer]
+    ActiveMem -- Turn 9+ Eviction --> Summarizer[Background Async Gemini Summarizer]
     Summarizer --> RollingSummary[Rolling Summary String <= 1600 chars]
     RollingSummary --> ActiveMem
     
@@ -81,6 +84,7 @@ graph TD
   * `origin_country`, `destination_country`, `currency`, `commercial_description`
   * `year`, `month`, `trade_agreement`
   * `last_intent`, `last_entity`, `last_raw_query`, `last_normalized_query`
+  * `calc_slot_collection` (sequential slot-collection metadata)
 
 ---
 
@@ -96,46 +100,57 @@ To ensure zero memory loss across server restarts, high throughput, and long-ter
 
 ---
 
-## 4. Dual Clarification & State Machine Architecture
+## 4. Clarification & State Machine Architecture
 
-The system features two independent, mutually exclusive state machines to handle conversation ambiguity:
+The system features three independent state machines to handle conversation ambiguity and missing slots:
 
 ```mermaid
 graph TD
-    Query[User Query] --> AmbiguityCheck{Is the Query Ambiguous or Incomplete?}
+    Query[User Query] --> AmbiguityCheck{Identify Ambiguity Type}
     
-    AmbiguityCheck -- Low Intent Confidence < 0.60 --> IntentAskBack[Intent Ambiguity Ask-Back Gate]
+    AmbiguityCheck -- Low Intent Confidence or Trade Matrix --> IntentAskBack[Intent Ambiguity Ask-Back Gate]
     IntentAskBack --> AskUserIntent["❓ Prompt User to select intent <br/> (e.g., Calculate Tax vs Trade Data vs HS Lookup)"]
     AskUserIntent --> SaveState1[Set pending_clarification = True]
     
-    AmbiguityCheck -- Missing Product Details --> SpecClarify[Product-Spec Clarification State Machine]
+    AmbiguityCheck -- Generic/Incomplete Product Description --> SpecClarify[Product-Spec Clarification State Machine]
     SpecClarify --> AskUserSpec["❓ Prompt User for specific details <br/> (e.g., Engine CC, Electric/Petrol, CBU/CKD)"]
     AskUserSpec --> SaveState2["Set product_clarification_needed = True <br/> Save clarification_entity & expected_terms"]
     
-    AmbiguityCheck -- Clear & Complete --> Rewrite[Smart Query Rewriter]
+    AmbiguityCheck -- Missing Calculation Parameters --> CalcSlotGate[Unified Sequential Slot-Collection Gate]
+    CalcSlotGate --> AskUserSlot["❓ Prompt User for next missing slot <br/> (Order: Product ➔ HS Code ➔ CIF Value)"]
+    AskUserSlot --> SaveState3["Update calc_slot_collection with missing slots <br/> Set pending_clarification = True"]
 ```
 
 ### A. Intent Ambiguity Ask-Back Gate
-* **Trigger**: Low intent classification confidence ($< 0.60$) or multiple conflicting intents detected by `WorkflowExecutor`.
+* **Trigger**: Low intent classification confidence ($< 0.60$), multiple conflicting intents, or matching a vague query in the **7-row Trade Data decision matrix** (confidence vs. NLU ambiguity vs. regex vague).
 * **Behavior**: Halts downstream microservice routing immediately and prompts the user to clarify their request intention.
 * **Tracked State**: `pending_clarification: bool`, `clarification_intents: List[str]`, `pending_rewritten_query: Optional[str]`, `ask_back_count: int`.
+* **Resolution**: When a user replies, it maps their choice back to the locked intent, merges the original pending query with the clarification response, locks the intent (`skip_intent_detection = True`), and proceeds.
+
+> [!NOTE]
+> **Rewrite Bypass Post-Merge**: Once a query has been resolved and merged through the clarification manager, the rewriter is skipped entirely. A clean, normalized query was already constructed during the merge, and running another LLM rewrite round-trip would waste 1–2s of latency.
 
 ### B. Product-Spec Clarification State Machine
-* **Trigger**: Required product technical specifications (e.g., engine CC, fuel type, vehicle assembly mode) are missing for accurate tariff lookup or calculation.
+* **Trigger**: Required product technical specifications (e.g., engine CC, fuel type, vehicle assembly mode) are missing for accurate tariff lookup.
 * **Retry Limit**: Capped at `MAX_PRODUCT_ASK_BACK_RETRIES = 2`.
 * **Tracked State**: `product_clarification_needed: bool`, `clarification_entity: Optional[str]`, `clarification_last_query: Optional[str]`, `product_ask_back_count: int`, `clarification_expected_terms: List[str]`.
 * **Spec Merging Logic**: Evaluates user input against `clarification_expected_terms` or category discriminators (`_SPEC_DISCRIMINATORS` for vehicle, food, textile). If valid detail is provided, it merges short answers with saved product entities:
   $$\text{"2000cc"} + \text{"Toyota Camry"} \longrightarrow \text{"2000cc Toyota Camry"}$$
-* **Topic-Switch Guard**: If the user ignores the spec question and asks an unrelated question (e.g., *"Where is the customs office?"*), the state machine recognizes the topic switch, cancels spec clarification, resets state, and routes the new topic immediately.
+
+### C. Unified Sequential Slot-Collection Gate (Calculation)
+* **Trigger**: Invoked when intent is `CALCULATION` but mandatory parameters are missing.
+* **Slot Order**: **Product Category/Description** $\rightarrow$ **HS Code** $\rightarrow$ **CIF Value**.
+* **Behavior**: Checks the enriched query and session context. If any slot is missing, it asks for exactly **one** parameter per turn, saving the rest in `calc_slot_collection` on the session. It halts calculation and returns `status = CLARIFICATION_REQUIRED`. Once all slots are filled, the buffer is cleared and routed to the Calculator service.
+* **Valuation Plausibility**: For CIF values, checks float parsing and applies currency-aware rules (e.g., KHR has no decimal subunit in practice).
 
 ---
 
-## 5. Detailed Processing Pipeline Summary
+## 5. Topic-Switch & Context Pollution Guards
 
-1. **Intake & Preparation**: Passes security validation, acquires per-session lock, loads session context (Redis/Disk), and translates Khmer queries to English.
-2. **Context & Rewriting**: Checks for follow-up spec answers (merging with saved product context), checks for small-talk fast-paths, strips filler words, and rewrites incomplete queries using Gemini.
-3. **Routing & Gating**: Evaluates query clarity. Ambiguous queries ($< 0.60$ confidence) trigger an Ask-Back gate. Clear queries check the hybrid cache and route to specialized microservices (Calculator, Trade Data, Retrieval, General Policy).
-4. **Response & Memory Update**: Formats the response into markdown, translates back to Khmer if requested, streams real-time tokens via SSE, updates the 8-turn active window, triggers background Gemini rolling summary on evicted turns, and persists state across Redis, local disk, and PostgreSQL.
+To prevent stale state (e.g., Turn 1's product info) from corrupting Turn 2's query when the user explicitly switches topics, the orchestrator implements active context validation:
+
+1. **Entity Token-Overlap Check**: Compares the incoming NLU entity tokens against the saved `last_entity` in session. If there is a complete mismatch (zero token overlap) and the user has not input a negation/correction keyword (e.g., `"actually"`, `"no"`, `"sorry"`), the system registers a **Topic Switch**.
+2. **Clear Context Slots**: Immediately resets short-term memory slots (`product_category`, `hs_code`, `cif_value`, `origin_country`, etc.) before passing the query to the rewriter or downstream service. This prevents the rewriter from gluing the old product's details to the new one.
 
 ---
 
@@ -150,7 +165,7 @@ graph TD
 ### Scenario B: Semantic Narrative Noise (Clean-up Track)
 * **User Question**: *"I was talking to my business partner yesterday, and he told me that we want to import laptops, what documents do we need?"*
 * **Analysis**: Narrative story markers (*"talking to my business partner"*, *"he told me"*).
-* **Action**: Handled by `RewriterService` using Gemini context prompt or pre-warmed cache to extract core intent.
+* **Action**: Handled by `RewriterService` using Gemini context prompt to extract core intent.
 * **Rewritten Result**: `"what documents do we need to import laptops?"` $\rightarrow$ Routed to General Policy Microservice (Port 8005).
 
 ### Scenario C: Contextual Follow-Up Query (Memory Track)
@@ -181,8 +196,14 @@ graph TD
 | Gate / Module | Trigger Criteria | Action Taken | Latency Impact |
 | :--- | :--- | :--- | :--- |
 | **Lexical Noise Cleaner** | Contains filler words (*"um"*, *"actually"*, *"please"*). | Regex string stripping in local code. | **0ms** (Instant local regex) |
-| **Smart Query Rewriter** | Relative prefix (*"what about"*, *"and for"*) OR pronoun (*"it"*, *"they"*) OR short query ($\le 3$ words). | Uses `RewriterService` with past context slots & rolling summary. | **~100-200ms** (LLM rewrite) |
-| **Intent Ask-Back Gate** | Intent confidence score $< 0.60$ OR multiple candidate intents. | Stops routing pipeline; prompts user to select target intent. | **0ms** (Halts execution early) |
+| **Early Validator Gate** | `ValidatorService` flags SQLi, prompt injection, or out-of-scope query. | Returns out-of-scope refusal early; response is never cached. | **~5ms** (Regex & keyword check) |
+| **Topic-Switch Detector** | Mismatch (zero overlap) in NLU entity tokens vs. saved `last_entity`. | Wipes short-term session slots (`hs_code`, `cif_value`, etc.) to avoid pollution. | **0ms** (Token match logic) |
+| **Clarification Resolver** | Session context has `pending_clarification = True` on incoming turn. | Resolves intent, merges query, sets `skip_intent_detection=True`. | **~10ms** (Local merging) |
+| **Smart Query Rewriter** | Relative prefix, pronouns, or short query ($\le 3$ words). Skipped if intent is locked post-merge. | Uses `RewriterService` to rewrite query; runs `_is_rewrite_valid` guard. | **~100-200ms** (LLM rewrite) |
+| **Intent Ask-Back Gate** | Intent confidence score $< 0.60$ OR Trade Data decision matrix. | Stops routing pipeline; prompts user to select target intent. | **0ms** (Halts execution early) |
 | **Product-Spec Clarification** | Missing required product parameters (engine CC, fuel type, assembly mode). | Asks clarifying spec question; saves entity and expected terms (`MAX_RETRIES = 2`). | **0ms** (Pauses until next user turn) |
+| **Calculation Slot Gate** | Missing product, HS code, or CIF value for a calculation request. | Asks for exactly **one** missing slot per turn; tracks in `calc_slot_collection`. | **0ms** (Halts execution early) |
 | **Async Rolling Summarizer** | Active turns array exceeds `max_turns = 8`. | Evicts oldest turns; generates Gemini background summary (max 1600 chars); updates DB. | **0ms** (Runs in background event loop) |
 | **Hybrid Response Cache** | Matching query & parameters in Redis/Memory Cache. | Returns pre-computed response deltas instantly; bypasses downstream microservices. | **< 5ms** (Instant cache hit) |
+
+

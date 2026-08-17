@@ -13,6 +13,35 @@ from app.services.main_chatbot_client import main_chatbot_client
 
 MAX_SHARED_MESSAGES = 200
 MAX_SHARED_MESSAGE_CHARS = 20_000
+MAX_SHARED_BLOCKS = 80
+MAX_SHARED_SOURCES = 80
+
+SHARED_SCALAR_FIELDS = {
+    "type": str,
+    "status": str,
+    "responseStatus": str,
+    "generationDurationMs": (int, float),
+    "requestId": str,
+    "chatId": str,
+    "responseMode": str,
+    "progressStage": str,
+    "progressMessage": str,
+    "streamingContent": str,
+    "error": str,
+    "coverage": str,
+    "confidence": str,
+}
+
+
+def has_renderable_blocks(message: dict[str, Any]) -> bool:
+    blocks = message.get("blocks")
+    if not isinstance(blocks, list):
+        return False
+    return any(isinstance(block, dict) and isinstance(block.get("type"), str) for block in blocks)
+
+
+def snapshot_has_renderable_assistant_blocks(messages: list[dict[str, Any]]) -> bool:
+    return any(message.get("role") == "assistant" and has_renderable_blocks(message) for message in messages)
 
 
 def serialize_share(item: ChatShare) -> dict[str, Any]:
@@ -58,14 +87,20 @@ def normalize_snapshot_messages(messages: list[Any]) -> list[dict[str, Any]]:
             "role": role,
             "content": content[:MAX_SHARED_MESSAGE_CHARS],
         }
+        for field, expected_type in SHARED_SCALAR_FIELDS.items():
+            value = raw.get(field)
+            if isinstance(value, expected_type):
+                message[field] = value
         if isinstance(raw.get("created_at"), str):
             message["createdAt"] = raw["created_at"]
         elif isinstance(raw.get("createdAt"), str):
             message["createdAt"] = raw["createdAt"]
         if isinstance(raw.get("blocks"), list):
-            message["blocks"] = raw["blocks"]
+            message["blocks"] = raw["blocks"][:MAX_SHARED_BLOCKS]
         if isinstance(raw.get("sources"), list):
-            message["sources"] = raw["sources"]
+            message["sources"] = raw["sources"][:MAX_SHARED_SOURCES]
+        if isinstance(raw.get("normalizedResponse"), dict):
+            message["normalizedResponse"] = raw["normalizedResponse"]
         normalized.append(message)
     return normalized
 
@@ -92,9 +127,13 @@ async def create_or_update_share(
 ) -> ChatShare:
     snapshot = []
     if visibility == "public":
-        snapshot = await get_orchestrator_snapshot(chat.id)
-        if not snapshot:
-            snapshot = normalize_snapshot_messages(client_snapshot)
+        client_messages = normalize_snapshot_messages(client_snapshot)
+        if snapshot_has_renderable_assistant_blocks(client_messages):
+            snapshot = client_messages
+        else:
+            snapshot = await get_orchestrator_snapshot(chat.id)
+            if not snapshot:
+                snapshot = client_messages
 
     share = await get_share_by_chat(db, chat.id)
     if share:

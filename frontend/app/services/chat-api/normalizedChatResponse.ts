@@ -124,18 +124,26 @@ function validatedNormalizedChatResponseToMessageParts(
   fallbackId: string,
 ): NormalizedChatMessageParts {
   const normalizedBlocks = normalizedMessageBlocks(response) ?? [];
-  const blocks = normalizedBlocks.length
+  const rawBlocks = normalizedBlocks.length
     ? normalizedBlocks.map((block, index) =>
-        normalizedBlockToMessageBlock(block, `${response.request_id || fallbackId}-${index}`),
+        normalizedBlockToMessageBlock(block, `${response.request_id || fallbackId}-${index}`, response),
       )
     : fallbackResponseContentBlocks(response, fallbackId);
+  const blocks = filterFinalResponseBlocks(rawBlocks, response);
   const hasUnreliableFallback = blocks.some(isUnreliableFallbackErrorBlock);
   // Visual rendering uses `blocks`; keep `response.content` as the canonical
   // copy/export/accessibility fallback when the backend provides it.
-  const content =
-    (hasUnreliableFallback ? '' : response.response?.content) ||
-    blocksToMarkerText(blocks) ||
-    markdownTextFromBlocks(normalizedBlocks);
+  const hasResponseContent = typeof response.response?.content === 'string';
+  const responseContent = response.response?.content ?? '';
+  const useResponseContent = hasResponseContent && !(
+    blocks.some(isUsefulAuthoritativeBlock) &&
+    isUnreliableServiceFallbackText(responseContent, response)
+  );
+  const content = hasUnreliableFallback
+    ? ''
+    : useResponseContent
+      ? responseContent
+      : blocksToMarkerText(blocks) || markdownTextFromBlocks(normalizedBlocks);
 
   return {
     content,
@@ -148,13 +156,42 @@ function validatedNormalizedChatResponseToMessageParts(
   };
 }
 
+function filterFinalResponseBlocks(
+  blocks: MessageBlock[],
+  context?: { service?: unknown; intent?: unknown },
+): MessageBlock[] {
+  const nonEmptyBlocks = blocks.filter((block) => !isEmptyTableBlock(block));
+  const usefulBlocks = nonEmptyBlocks.filter(isUsefulAuthoritativeBlock);
+  if (!usefulBlocks.length) return nonEmptyBlocks;
+  return nonEmptyBlocks.filter((block) => !isUnreliableFallbackErrorBlock(block));
+}
+
+function isUsefulAuthoritativeBlock(block: MessageBlock): boolean {
+  if (isUnreliableFallbackErrorBlock(block)) return false;
+  if (block.type === 'table') return hasPopulatedTableRows(block);
+  if (block.type === 'markdown') return typeof block.content === 'string' && block.content.trim().length > 0;
+  if (block.type === 'error' || block.type === 'fallback') return false;
+  return true;
+}
+
+function hasPopulatedTableRows(block: MessageBlock): boolean {
+  const content = block.content;
+  if (!content || typeof content !== 'object' || Array.isArray(content)) return false;
+  const rows = (content as Record<string, unknown>).rows;
+  return Array.isArray(rows) && rows.length > 0;
+}
+
+function isEmptyTableBlock(block: MessageBlock): boolean {
+  return block.type === 'table' && !hasPopulatedTableRows(block);
+}
+
 function fallbackResponseContentBlocks(
   response: ValidatedNormalizedChatResponse,
   fallbackId: string,
 ): MessageBlock[] {
   const text = response.response?.content;
   if (!text) return [];
-  if (isUnreliableServiceFallbackText(text)) {
+  if (isUnreliableServiceFallbackText(text, response)) {
     return [unreliableServiceFallbackErrorBlock(`${response.request_id || fallbackId}-response-unreliable-fallback`)];
   }
   return [{
@@ -193,9 +230,10 @@ type SafeNormalizedChatContentBlock = ValidatedNormalizedChatResponse['message']
 export function normalizedBlockToMessageBlock(
   block: unknown | SafeNormalizedChatContentBlock,
   id: string,
+  context?: { service?: unknown; intent?: unknown },
 ): MessageBlock {
   if (!isRecord(block) || typeof block.type !== 'string') return fallbackBlockToMessageBlock(block, id);
-  if (block.type === 'markdown') return markdownBlockToMessageBlock(block, id);
+  if (block.type === 'markdown') return markdownBlockToMessageBlock(block, id, context);
   if (block.type === 'summary') return passthroughBlockToMessageBlock(block, id);
   if (block.type === 'key_value') return passthroughBlockToMessageBlock(block, id);
   if (block.type === 'table') return tableBlockToMessageBlock(block, id);
@@ -226,9 +264,13 @@ function passthroughBlockToMessageBlock(block: NormalizedChatContentBlock, id: s
   };
 }
 
-function markdownBlockToMessageBlock(block: NormalizedMarkdownBlock, id: string): MessageBlock {
+function markdownBlockToMessageBlock(
+  block: NormalizedMarkdownBlock,
+  id: string,
+  context?: { service?: unknown; intent?: unknown },
+): MessageBlock {
   const content = normalizeAssistantContentForUi(typeof block.text === 'string' ? block.text : '');
-  if (isUnreliableServiceFallbackText(content)) {
+  if (isUnreliableServiceFallbackText(content, context)) {
     return unreliableServiceFallbackErrorBlock(`${id}-unreliable-fallback`);
   }
 

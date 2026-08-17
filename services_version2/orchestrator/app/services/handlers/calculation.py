@@ -198,8 +198,13 @@ class CalculationHandler:
             or getattr(session_context, 'product_category', None)
         )
 
+        # If the input is a pure HS code pattern, it is a parameter update, not an entity switch
+        is_pure_hs_code = False
+        if original_input:
+            is_pure_hs_code = bool(re.match(r"^\s*(?:hs\s*code|hs)?\s*(?:\d{4}\.\d{2}(?:\.\d{2})?|\d{8}|\d{4})\s*$", original_input.lower()))
+
         from app.utils.entity_utils import is_entity_changed
-        entity_changed = is_entity_changed(session_product, nlu_entity) 
+        entity_changed = False if is_pure_hs_code else is_entity_changed(session_product, nlu_entity) 
 
         if entity_changed:
             logger.info(
@@ -268,6 +273,16 @@ class CalculationHandler:
                 try:
                     from app.infrastructure.clients import CalculatorServiceClient
                     params = CalculatorServiceClient._parse_question_for_calculation(prev_q)
+                    
+                    # Stop history scan if entity changed
+                    from app.utils.entity_utils import extract_entity, is_entity_changed
+                    prev_entity = params.get("product_name") or extract_entity(prev_q)
+                    target_entity = nlu_entity or product
+                    if prev_entity and target_entity:
+                        if is_entity_changed(target_entity, prev_entity):
+                            logger.info(f"[{getattr(session_context, 'session_id', 'session')}] Stopping history scan at '{prev_q}' due to entity switch ('{target_entity}' vs '{prev_entity}')")
+                            break
+
                     if not cif_val and params.get("cif_value") is not None:
                         cif_val = params.get("cif_value")
                         if params.get("currency"):
@@ -999,13 +1014,33 @@ class CalculationHandler:
                 except (TypeError, ValueError):
                     _rate_float = 0.0
 
-                if _rate_float <= 1.0:
+                if raw_rate is None or _rate_float == 1.0 or _rate_float <= 0.0:
+                    effective_raw_rate = _rate_float if _rate_float > 0.0 else 1.0
+                    factor = _FALLBACK_RATE / effective_raw_rate
                     result["exchange_rate_usd_to_khr"] = _FALLBACK_RATE
                     result["exchange_rate_is_fallback"] = True #flag 
                     logger.warning(
                         f"[{context.request_id}] Calculator returned invalid exchange rate "
-                        f"({raw_rate!r}). Patching to {_FALLBACK_RATE:,.1f} KHR/USD."
+                        f"({raw_rate!r}). Patching to {_FALLBACK_RATE:,.1f} KHR/USD and scaling structured KHR values by factor {factor}."
                     )
+                    
+                    # Scale numeric KHR values in result, breakdown, and line_items
+                    if "total" in result and isinstance(result["total"], (int, float)):
+                        result["total"] = result["total"] * factor
+                        
+                    if "breakdown" in result and isinstance(result["breakdown"], dict):
+                        bd = result["breakdown"]
+                        for k, v in bd.items():
+                            if isinstance(v, (int, float)) and not k.endswith("_rate") and k != "rate" and k != "dq_factor":
+                                bd[k] = v * factor
+                                
+                    if "line_items" in result and isinstance(result["line_items"], list):
+                        for item in result["line_items"]:
+                            if isinstance(item, dict):
+                                if "amount" in item and isinstance(item["amount"], (int, float)):
+                                    item["amount"] = item["amount"] * factor
+                                if "base" in item and isinstance(item["base"], (int, float)) and item.get("tax_type") != "ATP":
+                                    item["base"] = item["base"] * factor
                     # Also fix the rate inside any pre-formatted text already built
                     # by the calculator service (human_readable, answer, final_answer …).
                     _bad_rate_re = re.compile(

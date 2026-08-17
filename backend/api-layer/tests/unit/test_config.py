@@ -32,6 +32,7 @@ def test_development_allows_default_settings():
 
     assert settings.environment == "development"
     assert settings.enable_docs is True
+    assert settings.use_standard_chat_stream is False
 
 
 # Production should accept a fully explicit, strong configuration.

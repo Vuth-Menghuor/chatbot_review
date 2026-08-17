@@ -36,7 +36,39 @@ class HsCodeLookupHandler:
                 service_query = f"what is hs code of {clean_query}"
                 clean_query = clean_hs_query_for_retrieval(service_query)
                 context.question = service_query
-            logger.info(f"[{context.request_id}] Cleaned retrieval query: '{service_query}' -> '{clean_query}'")
+            
+            # Detect if there is an explicit HS code in the query
+            explicit_hs = None
+            raw_q_lower = service_query.lower()
+            explicit_match = re.search(
+                r"\b(?:hs\s*code|hs)?\s*(\d{4}(?:\.\d{2}){0,2}|\d{6}|\d{8})\b",
+                raw_q_lower
+            )
+            if explicit_match:
+                explicit_hs = explicit_match.group(1).strip()
+            if not explicit_hs:
+                bare_match = re.search(r"\b(\d{4}\.\d{2}(?:\.\d{2})?)\b", service_query)
+                if bare_match:
+                    explicit_hs = bare_match.group(1).strip()
+                    
+            if explicit_hs and explicit_hs.isdigit():
+                if len(explicit_hs) == 8:
+                    explicit_hs = f"{explicit_hs[:4]}.{explicit_hs[4:6]}.{explicit_hs[6:8]}"
+                elif len(explicit_hs) == 6:
+                    explicit_hs = f"{explicit_hs[:4]}.{explicit_hs[4:6]}"
+            elif explicit_hs:
+                explicit_hs = explicit_hs.replace(" ", ".")
+
+            hs_mode = "best"
+            selected_code = None
+            if explicit_hs:
+                hs_mode = "select"
+                selected_code = explicit_hs
+                # If we have a clarification entity, preserve it as the query instead of any generalization
+                if context.session_context and getattr(context.session_context, "clarification_entity", None):
+                    clean_query = context.session_context.clarification_entity
+            
+            logger.info(f"[{context.request_id}] Cleaned retrieval query: '{service_query}' -> '{clean_query}' (hs_mode={hs_mode}, selected_code={selected_code})")
 
             timeout_sec = min(
                 coordinator.timeout_config.get_intent_timeout(context.intent),
@@ -45,7 +77,7 @@ class HsCodeLookupHandler:
 
             cache = get_cache_service()
             lang_tag = context.metadata.get("language") or getattr(context, "language", "en")
-            cache_key = f"{clean_query}:{lang_tag}"
+            cache_key = f"{clean_query}:{lang_tag}:{hs_mode}:{selected_code}"
             cached_result = cache.get_cached_response(cache_key, intent="hs_code_lookup")
             if cached_result:
                 context.set_result("retrieval", cached_result)
@@ -58,7 +90,8 @@ class HsCodeLookupHandler:
                         query=clean_query,
                         top_k=5,
                         generate_answer=True,
-                        hs_mode="best",
+                        hs_mode=hs_mode,
+                        selected_code=selected_code,
                         session_id=context.session_id
                     ),
                     timeout=timeout_sec
@@ -72,7 +105,8 @@ class HsCodeLookupHandler:
                     "query": clean_query,
                     "top_k": 5,
                     "generate_answer": True,
-                    "hs_mode": "best",
+                    "hs_mode": hs_mode,
+                    "selected_code": selected_code,
                     "session_id": context.session_id
                 }
             )
@@ -112,10 +146,18 @@ class HsCodeLookupHandler:
 
 
                     if current_round == 0:
-                        if context.metadata.get("has_nlu_entity", False):
-                            entity = context.metadata.get("nlu_entity") or context.original_input
-                        else:
-                            entity = extract_entity(context.original_input) or context.original_input
+                        # If the user's query is a pure HS code, preserve the clarification entity.
+                        # Otherwise, allow them to update the entity if they provided a new one.
+                        is_pure_hs = False
+                        if context.original_input:
+                            is_pure_hs = bool(re.match(r"^\s*(?:hs\s*code|hs)?\s*(?:\d{4}\.\d{2}(?:\.\d{2})?|\d{8}|\d{4})\s*$", context.original_input.lower()))
+                        
+                        entity = getattr(session, "clarification_entity", None) if is_pure_hs else None
+                        if not entity:
+                            if context.metadata.get("has_nlu_entity", False):
+                                entity = context.metadata.get("nlu_entity") or context.original_input
+                            else:
+                                entity = extract_entity(context.original_input) or context.original_input
                     else:
                         entity = context.original_input
 

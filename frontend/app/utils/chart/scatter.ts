@@ -1,11 +1,12 @@
 import type { EChartsOption, ExtendedChartOutput } from './types';
+import { chartPalette, seriesColor } from './palette';
 
 export function buildScatterOption(out: ExtendedChartOutput, isDark: boolean): EChartsOption {
   const textColor = isDark ? '#e4e4e7' : '#27272a';
   const gridLineColor = isDark ? '#27272a' : '#e4e4e7';
 
   const seriesList =
-    out.series?.map((s) => {
+    out.series?.map((s, index) => {
       const seriesData =
         out.data?.map((item) => {
           const xVal = item[out.xKey];
@@ -18,7 +19,7 @@ export function buildScatterOption(out: ExtendedChartOutput, isDark: boolean): E
         name: s.name,
         type: 'scatter',
         data: seriesData,
-        itemStyle: { color: s.color },
+        itemStyle: { color: seriesColor(s.color, index, isDark) },
       };
     }) || [];
 
@@ -40,6 +41,7 @@ export function buildScatterOption(out: ExtendedChartOutput, isDark: boolean): E
       left: 'center',
       textStyle: { color: textColor },
     },
+    color: chartPalette(isDark),
     grid: {
       left: '3%',
       right: '4%',

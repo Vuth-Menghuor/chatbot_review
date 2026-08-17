@@ -258,6 +258,16 @@ class Heuristics:
         if numeric_clean.isdigit():
             return True
 
+        # 2.5. Match a dotted or numeric HS code pattern (e.g. "6109.10.10", "61091010", "hs 6109.10.10")
+        # Ensure it is a valid HS code pattern (4, 6, or 8 digits with dots) and NOT a simple decimal price.
+        if re.search(r"\b(?:hs\s*code|hs)?\s*(?:\d{4}\.\d{2}\.\d{2}|\d{8})\b", low):
+            return True
+        if re.search(r"\b(?:hs\s*code|hs)\s*\d{4}\.\d{2}\b", low):
+            return True
+        if re.search(r"\b\d{4}\.\d{2}\b", low) and not re.search(r"[\$\u17db€£\d\.]+\s*(?:usd|khr|eur|gbp|cif|fob)|\b(?:cif|fob|usd|khr)\b", low):
+            if not low.endswith(".00"):
+                return True
+
         # 3. Match single-word country names or country list matches
         if low in _TRADE_COUNTRIES:
             return True

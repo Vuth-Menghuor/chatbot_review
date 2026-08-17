@@ -87,3 +87,26 @@ test('markdown renderer handles long answers without dropping content', () => {
   assert.match(html, new RegExp(`${'ក'.repeat(20)}`));
   assert.match(html, /Long paragraph/);
 });
+
+test('markdown renderer uses block content unless local typewriter is explicitly enabled', () => {
+  const rendererSource = readFileSync('app/components/renderers/MarkdownRenderer.vue', 'utf8');
+
+  assert.match(
+    rendererSource,
+    /const displayText = computed\(\(\) => \(typewriterEnabled\.value \? typedText\.value : textTarget\.value\)\);/,
+  );
+  assert.doesNotMatch(
+    rendererSource,
+    /const displayText = computed\(\(\) => \(props\.loading \? textTarget\.value : typedText\.value\)\);/,
+  );
+});
+
+test('markdown renderer only enables local typewriter from explicit block metadata', () => {
+  const rendererSource = readFileSync('app/components/renderers/MarkdownRenderer.vue', 'utf8');
+
+  assert.match(
+    rendererSource,
+    /const typewriterEnabled = computed\(\(\) =>\s*Boolean\(!props\.loading && props\.block\.meta\?\.typewriter === true\),\s*\);/,
+  );
+  assert.match(rendererSource, /displayText\.value/);
+});

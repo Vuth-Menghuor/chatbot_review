@@ -455,6 +455,41 @@ def test_trade_orchestrator_query_response_is_primary_contract():
     assert response.message.content[0].text == "Trade answer from orchestrator."
 
 
+def test_trade_response_content_wins_over_generic_top_level_answer():
+    response = normalize_chat_response(
+        {
+            "request_id": "trade-req-generic-answer",
+            "service": "trade",
+            "intent": "trade_query",
+            "answer": (
+                "SUMMARY OF KEY FINDINGS:\n\n"
+                "The provided trade data contains specific figures and statistics."
+            ),
+            "response": {
+                "type": "table",
+                "coverage": "unknown",
+                "content": "Cambodia's imports by partner country in 2026 are shown below.",
+                "limitations": [],
+            },
+            "table": {
+                "columns": [
+                    {"key": "period", "label": "period"},
+                    {"key": "partner_country", "label": "partner_country"},
+                    {"key": "display", "label": "display"},
+                ],
+                "rows": [
+                    {"period": "2026", "partner_country": "China", "display": "$3.28 billion"},
+                ],
+            },
+        }
+    )
+
+    assert response.response.content == "Cambodia's imports by partner country in 2026 are shown below."
+    assert block_types(response) == ["markdown", "table"]
+    assert response.message.content[0].text == response.response.content
+    assert "SUMMARY OF KEY FINDINGS" not in response.message.content[0].text
+
+
 def test_trade_top_level_table_is_primary_and_suppresses_structured_compatibility_table():
     response = normalize_chat_response(
         {

@@ -237,7 +237,7 @@ test('streamFromChatApi converts invalid versioned normalized contracts to safe 
   assert.equal(finalCall.content.includes('This must not be passed to the legacy parser.'), false);
 });
 
-test('streamFromChatApi leaves non-versioned responses for legacy parsing', async () => {
+test('streamFromChatApi rejects non-normalized stream done responses', async () => {
   const { calls } = await streamWithDonePayload({
     answer: 'Legacy answer from older endpoint.',
     status: 'completed',
@@ -245,10 +245,11 @@ test('streamFromChatApi leaves non-versioned responses for legacy parsing', asyn
   const finalCall = calls.at(-1);
 
   assert.ok(finalCall);
-  assert.equal(finalCall.meta?.blocks?.[0]?.content, 'Legacy answer from older endpoint.');
-  assert.equal(finalCall.meta?.status, 'completed');
-  assert.equal(finalCall.meta?.responseStatus, 'completed');
-  assert.deepEqual(finalCall.meta?.blocks?.map((block) => block.type), ['markdown']);
+  assert.equal(finalCall.meta?.status, 'error');
+  assert.equal(finalCall.meta?.responseStatus, 'failed');
+  assert.deepEqual(finalCall.meta?.blocks?.map((block) => block.type), ['error']);
+  assert.equal(finalCall.meta?.blocks?.[0]?.content?.message, 'The response format was not supported.');
+  assert.equal(finalCall.content.includes('Legacy answer'), false);
 });
 
 test('streamFromChatApi renders normalized start and done streams without delta events', async () => {
@@ -282,6 +283,7 @@ test('streamFromChatApi renders normalized start and done streams without delta 
   assert.deepEqual(startCall.meta?.blocks, []);
   assert.ok(finalCall);
   assert.ok(calls.filter((call) => call.meta?.status === 'streaming').length > 1);
+  assert.ok(calls.some((call) => call.meta?.progressStage === 'rendering'));
   assert.equal(finalCall.meta?.status, 'completed');
   assert.equal(finalCall.meta?.responseStatus, 'completed');
   assert.equal(finalCall.meta?.generationDurationMs, 1234);
@@ -292,7 +294,7 @@ test('streamFromChatApi renders normalized start and done streams without delta 
   assert.equal(currentRenderType.value, 'suggestions');
 });
 
-test('streamFromChatApi uses the authoritative send response for trade chart requests', async () => {
+test('streamFromChatApi streams normalized trade chart blocks through the SSE path', async () => {
   const response = normalizedResponse({
     request_id: 'request-trade-chart',
     service: 'trade',
@@ -325,19 +327,239 @@ test('streamFromChatApi uses the authoritative send response for trade chart req
       ],
     },
   });
-  const { calls } = await streamWithReactiveAssistant(
-    [],
-    'List the top 5 import partners for sea transport in 2024, show as pie chart!',
-    jsonResponse(response),
-  );
+  const { calls } = await streamWithEvents([
+    { event: 'start', data: { request_id: 'request-trade-chart', chat_id: 'chat-1', status: 'processing' } },
+    {
+      event: 'progress',
+      data: {
+        request_id: 'request-trade-chart',
+        status: 'processing',
+        mode: 'stream',
+        stage: 'rendering',
+        message: 'Rendering response...',
+      },
+    },
+    ...response.message.content.map((block) => ({ event: 'block', data: block })),
+    { event: 'done', data: response },
+  ], 'List the top 5 import partners for sea transport in 2024, show as pie chart!');
   const finalCall = calls.at(-1);
 
-  assert.equal(calls[0]?.meta?.progressMessage, 'Preparing trade report...');
+  assert.equal(calls[0]?.meta?.progressMessage, 'Starting response stream...');
   assert.ok(calls.some((call) => call.meta?.progressStage === 'rendering'));
   assert.ok(finalCall);
   assert.equal(finalCall.meta?.responseMode, 'stream');
   assert.deepEqual(finalCall.meta?.blocks?.map((block) => block.type), ['markdown', 'table', 'chart']);
   assert.equal(finalCall.meta?.blocks?.[0]?.content, 'China was Cambodia\'s top sea import partner in 2024.');
+});
+
+test('streamFromChatApi ignores generic trade markdown block and applies concise final response content', async () => {
+  const genericTradeMarkdown = [
+    'SUMMARY OF KEY FINDINGS:',
+    '',
+    'The provided trade data contains specific figures and statistics regarding international trade movements.',
+    '',
+    'DATA VISUALIZATION SUGGESTIONS:',
+    '',
+    'Bar charts to compare total import and export values.',
+  ].join('\n');
+  const response = normalizedResponse({
+    request_id: 'request-trade-breakdown-2026',
+    service: 'trade',
+    intent: 'trade_query',
+    response: {
+      type: 'table',
+      coverage: 'unknown',
+      content: 'Cambodia\'s imports by partner country in 2026 are shown below.',
+      limitations: [],
+    },
+    message: {
+      role: 'assistant',
+      content: [
+        { type: 'markdown', text: 'Cambodia\'s imports by partner country in 2026 are shown below.' },
+        {
+          type: 'table',
+          title: 'Imports by partner country',
+          columns: [
+            { key: 'period', label: 'Period' },
+            { key: 'partner_country', label: 'Partner country' },
+            { key: 'display', label: 'Value' },
+          ],
+          rows: [{ period: '2026', partner_country: 'China', display: '$3.28 billion' }],
+        },
+        {
+          type: 'chart',
+          title: 'Trade Share Breakdown',
+          data: {
+            chartType: 'bar',
+            data: [{ partner_country: 'China', trade_value_usd: 3282093061.95 }],
+            series: [{ key: 'trade_value_usd', name: 'Trade Value (USD)', type: 'bar' }],
+          },
+        },
+      ],
+    },
+  });
+  const { calls } = await streamWithEvents([
+    { event: 'start', data: { request_id: 'request-trade-breakdown-2026', chat_id: 'chat-1', status: 'processing' } },
+    { event: 'block', data: { type: 'markdown', text: genericTradeMarkdown } },
+    { event: 'block', data: response.message.content[1] },
+    { event: 'block', data: response.message.content[2] },
+    { event: 'done', data: response },
+  ], 'Show the breakdown of imports by partner country for 2026');
+  const finalCall = calls.at(-1);
+
+  assert.equal(calls.some((call) => call.content.includes('SUMMARY OF KEY FINDINGS')), false);
+  assert.ok(finalCall);
+  assert.equal(finalCall.content, 'Cambodia\'s imports by partner country in 2026 are shown below.');
+  assert.deepEqual(finalCall.meta?.blocks?.map((block) => block.type), ['markdown', 'table', 'chart']);
+  assert.equal(finalCall.meta?.blocks?.[0]?.content, 'Cambodia\'s imports by partner country in 2026 are shown below.');
+});
+
+test('streamFromChatApi suppresses generic trade deltas before final blocks', async () => {
+  const genericTradeDelta = 'SUMMARY OF KEY FINDINGS:- The raw trade data provided contains the statistical figures and values required for analysis.';
+  const { calls, currentRenderType } = await streamWithEvents([
+    { event: 'start', data: { request_id: 'request-trade-monthly', chat_id: 'chat-1', status: 'processing' } },
+    { event: 'delta', data: { content: genericTradeDelta } },
+    {
+      event: 'done',
+      data: normalizedResponse({
+        request_id: 'request-trade-monthly',
+        service: 'trade',
+        intent: 'trade_query',
+        response: {
+          type: 'table',
+          coverage: 'unknown',
+          content: 'China and Thailand monthly imports are shown below.',
+          limitations: [],
+        },
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'markdown', text: 'China and Thailand monthly imports are shown below.' },
+            {
+              type: 'table',
+              title: 'Monthly import trend',
+              columns: [
+                { key: 'month', label: 'Month' },
+                { key: 'china', label: 'China' },
+                { key: 'thailand', label: 'Thailand' },
+              ],
+              rows: [{ month: 'Jan', china: 1200000, thailand: 900000 }],
+            },
+            {
+              type: 'chart',
+              title: 'China vs Thailand imports',
+              data: {
+                chartType: 'line',
+                data: [{ month: 'Jan', china: 1200000, thailand: 900000 }],
+                series: [
+                  { key: 'china', name: 'China', type: 'line' },
+                  { key: 'thailand', name: 'Thailand', type: 'line' },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+    },
+  ], 'Show the monthly trend comparing China vs Thailand imports');
+
+  const genericStreamingCalls = calls.filter((call) => call.content.includes('SUMMARY OF KEY FINDINGS'));
+  const finalCall = calls.at(-1);
+
+  assert.equal(genericStreamingCalls.length, 0);
+  assert.ok(finalCall);
+  assert.deepEqual(finalCall.meta?.blocks?.map((block) => block.type), ['markdown', 'table', 'chart']);
+  assert.equal(finalCall.meta?.blocks?.[0]?.content, 'China and Thailand monthly imports are shown below.');
+});
+
+test('streamFromChatApi suppresses generic chart deltas before done', async () => {
+  const genericTradeDelta = 'SUMMARY OF KEY FINDINGS:- The provided trade data contains specific figures and insights regarding trade volumes and statistics.';
+  const { calls, currentRenderType } = await streamWithEvents([
+    { event: 'start', data: { request_id: 'request-bar-followup', chat_id: 'chat-1', status: 'processing' } },
+    { event: 'delta', data: { content: genericTradeDelta } },
+    {
+      event: 'done',
+      data: normalizedResponse({
+        request_id: 'request-bar-followup',
+        service: 'trade',
+        intent: 'trade_query',
+        response: {
+          type: 'chart',
+          coverage: 'unknown',
+          content: 'Here is the same data as a bar chart.',
+          limitations: [],
+        },
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'markdown', text: 'Here is the same data as a bar chart.' },
+            {
+              type: 'chart',
+              title: 'Imports by partner',
+              data: {
+                chartType: 'bar',
+                data: [{ label: 'China', trade_value_usd: 12419875213.99 }],
+                series: [{ key: 'trade_value_usd', name: 'Trade Value (USD)', type: 'bar' }],
+              },
+            },
+          ],
+        },
+      }),
+    },
+  ], 'now i want it as bar chart');
+
+  const genericStreamingCalls = calls.filter((call) => call.content.includes('SUMMARY OF KEY FINDINGS'));
+  const finalCall = calls.at(-1);
+
+  assert.equal(genericStreamingCalls.length, 0);
+  assert.ok(finalCall);
+  assert.deepEqual(finalCall.meta?.blocks?.map((block) => block.type), ['markdown', 'chart']);
+  assert.equal(finalCall.meta?.blocks?.[0]?.content, 'Here is the same data as a bar chart.');
+});
+
+test('streamFromChatApi suppresses split generic deltas then applies final trade-balance answer', async () => {
+  const genericTradeDelta = 'SUMMARY OF KEY FINDINGS: The provided trade data contains specific figures and insights.';
+  const { calls } = await streamWithEvents([
+    { event: 'start', data: { request_id: 'request-trade-balance', chat_id: 'chat-1', status: 'processing' } },
+    { event: 'delta', data: { content: 'SUMMARY OF' } },
+    { event: 'delta', data: { content: genericTradeDelta.slice('SUMMARY OF'.length) } },
+    {
+      event: 'done',
+      data: normalizedResponse({
+        request_id: 'request-trade-balance',
+        service: 'trade',
+        intent: 'trade_query',
+        response: { type: 'markdown', coverage: 'unknown', content: 'The 2025 trade balance is shown below.', limitations: [] },
+        message: { role: 'assistant', content: [{ type: 'markdown', text: 'The 2025 trade balance is shown below.' }] },
+      }),
+    },
+  ], 'What is the trade balance with Thailand for 2025?');
+
+  const genericStreamingCalls = calls.filter((call) => call.content.includes('SUMMARY OF KEY FINDINGS'));
+  const finalStreamingCalls = calls.filter((call) => call.content.includes('The 2025 trade balance'));
+
+  assert.equal(genericStreamingCalls.length, 0);
+  assert.ok(finalStreamingCalls.length > 0);
+  assert.equal(calls.at(-1)?.meta?.blocks?.[0]?.content, 'The 2025 trade balance is shown below.');
+});
+
+test('streamFromChatApi renders a genuine trade delta before done', async () => {
+  const liveTradeDelta = 'Cambodia recorded a trade deficit with Thailand in 2025. ';
+  const { calls } = await streamWithEvents([
+    { event: 'start', data: { request_id: 'request-live-trade', chat_id: 'chat-1', status: 'processing' } },
+    { event: 'delta', data: { content: liveTradeDelta } },
+    {
+      event: 'done',
+      data: normalizedResponse({
+        request_id: 'request-live-trade', service: 'trade', intent: 'trade_query',
+        response: { type: 'markdown', coverage: 'unknown', content: 'Final trade balance.', limitations: [] },
+        message: { role: 'assistant', content: [{ type: 'markdown', text: 'Final trade balance.' }] },
+      }),
+    },
+  ], 'What is the trade balance with Thailand for 2025?');
+
+  assert.ok(calls.some((call) => call.content.includes(liveTradeDelta)));
+  assert.equal(calls.at(-1)?.content, 'Final trade balance.');
 });
 
 test('streamFromChatApi streams simple markdown-only done responses when no delta arrives', async () => {
@@ -366,9 +588,7 @@ test('streamFromChatApi streams simple markdown-only done responses when no delt
   const streamingCalls = calls.filter((call) => call.meta?.progressStage === 'streaming' && call.content);
   const finalCall = calls.at(-1);
 
-  assert.ok(streamingCalls.length > 2);
-  assert.equal(streamingCalls[0]?.content, 'He');
-  assert.equal(streamingCalls.at(-1)?.content, 'Hello! How can I help you today?');
+  assert.ok(streamingCalls.length > 0);
   assert.ok(finalCall);
   assert.equal(finalCall.meta?.status, 'completed');
   assert.equal(finalCall.meta?.responseStatus, 'completed');
@@ -485,6 +705,59 @@ test('streamFromChatApi treats delta text as temporary and done message.content 
   assert.equal(finalCall.content.includes('Temporary plain text'), false);
 });
 
+test('streamFromChatApi replaces temporary delta with rich calculator done blocks', async () => {
+  const temporaryText = 'Temporary plain text';
+  const { calls, assistant } = await streamWithReactiveAssistant([
+    { event: 'start', data: { request_id: 'request-calculator-rich', status: 'processing' } },
+    { event: 'delta', data: { content: temporaryText } },
+    {
+      event: 'done',
+      data: normalizedResponse({
+        request_id: 'request-calculator-rich',
+        service: 'calculator',
+        intent: 'calculation',
+        response: {
+          type: 'markdown',
+          coverage: 'complete',
+          content: 'Import tax calculation complete.',
+          limitations: [],
+        },
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'summary', title: 'Import Tax Calculation', data: { total_tax: 123 } },
+            { type: 'key_value', title: 'Product Information', items: [{ key: 'HS Code', value: '8703.24.00' }] },
+            { type: 'key_value', title: 'Input Parameters', items: [{ key: 'CIF', value: '40000 USD' }] },
+            {
+              type: 'table',
+              title: 'Tax Breakdown',
+              columns: [{ key: 'component', label: 'Component' }],
+              rows: [{ component: 'Customs duty' }],
+            },
+            { type: 'details', title: 'Calculation Details', items: [{ title: 'Step 1', content: 'Calculate duty.' }] },
+            { type: 'details', title: 'Assumptions & Notes', items: [{ title: 'Note', content: 'ACFTA applied.' }] },
+          ],
+        },
+      }),
+    },
+  ], 'calculate import tax for hs code 8703.24.00 cif 40000 USD from China ACFTA DV=0 DQ=40%');
+
+  const finalCall = calls.at(-1);
+
+  assert.ok(finalCall);
+  assert.deepEqual(finalCall.meta?.blocks?.map((block) => block.type), [
+    'summary',
+    'key_value',
+    'key_value',
+    'table',
+    'details',
+    'details',
+  ]);
+  assert.equal(finalCall.content.includes(temporaryText), false);
+  assert.equal(finalCall.meta?.streamingContent, '');
+  assert.equal(assistant.streamingContent, '');
+});
+
 test('streamFromChatApi updates assistant mode and status from progress events before final done', async () => {
   const { calls, assistant } = await streamWithReactiveAssistant([
     { event: 'start', data: { request_id: 'request-progress', chat_id: 'chat-1', status: 'pending', mode: 'stream' } },
@@ -539,7 +812,7 @@ test('streamFromChatApi updates assistant mode and status from progress events b
   assert.equal(assistant.progressStage, 'completed');
 });
 
-test('streamFromChatApi progressively reveals final structured blocks after streamed text', async () => {
+test('streamFromChatApi applies final structured blocks immediately after streamed text', async () => {
   const { calls, assistant } = await streamWithReactiveAssistant([
     { event: 'start', data: { request_id: 'request-progressive-blocks', chat_id: 'chat-1', status: 'processing' } },
     { event: 'delta', data: { content: 'Temporary preliminary answer.' } },
@@ -571,37 +844,21 @@ test('streamFromChatApi progressively reveals final structured blocks after stre
     },
   ]);
 
-  const revealCalls = calls.filter((call) => call.meta?.progressStage === 'rendering');
   const finalCall = calls.at(-1);
 
-  const markdownCalls = revealCalls.filter((call) =>
-    call.meta?.blocks?.length === 1 && call.meta.blocks[0]?.type === 'markdown',
-  );
-  assert.ok(markdownCalls.length > 1);
-  assert.equal(revealCalls[0]?.meta?.blocks?.[0]?.id, 'assistant-1-streaming-markdown');
-  assert.equal(markdownCalls.at(-1)?.meta?.blocks?.[0]?.content, 'The HS code for a laptop is shown below.');
-  const tableShell = revealCalls.find((call) => call.meta?.blocks?.[1]?.type === 'table' && call.meta.blocks[1]?.isComplete === false);
-  const completedTable = revealCalls.find((call) => call.meta?.blocks?.[1]?.type === 'table' && call.meta.blocks[1]?.isComplete === true);
-  assert.ok(tableShell);
-  assert.ok(completedTable);
-  assert.equal(revealCalls.at(-1)?.meta?.blocks?.[2]?.type, 'suggestions');
-  assert.equal(revealCalls.at(-1)?.meta?.blocks?.[2]?.isComplete, false);
-  assert.equal(revealCalls[0]?.meta?.status, 'streaming');
-  assert.equal(revealCalls[0]?.meta?.responseStatus, 'processing');
-  assert.equal(revealCalls[0]?.meta?.streamingContent, 'Temporary preliminary answer.');
+  assert.equal(calls.some((call) => call.meta?.progressStage === 'rendering'), false);
   assert.ok(finalCall);
   assert.equal(finalCall.meta?.status, 'completed');
   assert.equal(finalCall.meta?.responseStatus, 'completed');
   assert.equal(finalCall.meta?.progressStage, 'completed');
   assert.deepEqual(finalCall.meta?.blocks?.map((block) => block.type), ['markdown', 'table', 'suggestions']);
-  assert.equal(finalCall.meta?.blocks?.[0]?.id, 'assistant-1-streaming-markdown');
   assert.equal(finalCall.meta?.blocks?.[0]?.content, 'The HS code for a laptop is shown below.');
   assert.equal(finalCall.meta?.streamingContent, '');
   assert.equal(assistant.blocks?.length, 3);
   assert.equal(assistant.streamingContent, '');
 });
 
-test('streamFromChatApi does not replay blocks when done confirms an SSE block stream', async () => {
+test('streamFromChatApi ignores SSE block events and uses done as the only structured source', async () => {
   const finalPayload = normalizedResponse({
     request_id: 'request-block-stream',
     service: 'retrieval',
@@ -634,19 +891,12 @@ test('streamFromChatApi does not replay blocks when done confirms an SSE block s
   ]);
 
   const renderingCalls = calls.filter((call) => call.meta?.progressStage === 'rendering');
-  const markdownStreamingCalls = calls.filter((call) =>
-    call.meta?.progressStage === 'streaming' && call.meta.blocks?.[0]?.type === 'markdown',
-  );
   const finalCall = calls.at(-1);
 
-  assert.ok(markdownStreamingCalls.length > 1);
-  assert.equal(markdownStreamingCalls[0]?.meta?.blocks?.[0]?.content, 'Ca');
-  assert.equal(markdownStreamingCalls.at(-1)?.meta?.blocks?.[0]?.content, 'Candidate HS codes are preliminary.');
-  assert.equal(renderingCalls.length, 3);
-  assert.deepEqual(renderingCalls.map((call) => call.meta?.blocks?.map((block) => block.type)), [
-    ['markdown'],
-    ['markdown', 'clarification'],
-    ['markdown', 'clarification'],
+  assert.ok(renderingCalls.length > 0);
+  assert.deepEqual(renderingCalls.at(-1)?.meta?.blocks?.map((block) => block.type), [
+    'markdown',
+    'clarification',
   ]);
   assert.ok(finalCall);
   assert.equal(finalCall.meta?.progressStage, 'completed');
@@ -692,9 +942,122 @@ test('streamFromChatApi does not replay markdown blocks that duplicate streamed 
   assert.ok(finalCall);
   assert.deepEqual(finalCall.meta?.blocks?.map((block) => block.type), ['markdown', 'suggestions']);
   assert.equal(finalCall.meta?.blocks?.[0]?.id, 'assistant-1-streaming-markdown');
+  assert.equal(finalCall.meta?.blocks?.[0]?.content, deltaText);
+  assert.equal(finalCall.meta?.blocks?.[0]?.isComplete, true);
 });
 
-test('streamFromChatApi streams table content cell by cell and row by row', async () => {
+test('streamFromChatApi keeps general answer visible after matching done markdown', async () => {
+  const answer =
+    'Hello! I’m here to help you with Cambodia customs and trade questions. How can I assist you today?';
+
+  const { calls, assistant } = await streamWithReactiveAssistant([
+    {
+      event: 'start',
+      data: {
+        request_id: 'hello-general',
+        status: 'processing',
+      },
+    },
+    {
+      event: 'delta',
+      data: {
+        content: answer,
+      },
+    },
+    {
+      event: 'done',
+      data: normalizedResponse({
+        request_id: 'hello-general',
+        service: 'general',
+        intent: 'general',
+        status: 'completed',
+        response: {
+          type: 'markdown',
+          coverage: 'unknown',
+          content: answer,
+          limitations: [],
+        },
+        message: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'markdown',
+              text: answer,
+            },
+          ],
+        },
+      }),
+    },
+  ], 'Hello');
+
+  const finalCall = calls.at(-1);
+
+  assert.ok(finalCall);
+  assert.equal(finalCall.content, answer);
+  assert.equal(finalCall.meta?.status, 'completed');
+  assert.equal(finalCall.meta?.responseStatus, 'completed');
+  assert.equal(finalCall.meta?.streamingContent, '');
+  assert.deepEqual(finalCall.meta?.blocks?.map((block) => block.type), ['markdown']);
+  assert.equal(finalCall.meta?.blocks?.[0]?.id, 'assistant-1-streaming-markdown');
+  assert.equal(finalCall.meta?.blocks?.[0]?.content, answer);
+  assert.equal(finalCall.meta?.blocks?.[0]?.isComplete, true);
+  assert.equal(assistant.content, answer);
+  assert.equal(assistant.blocks?.[0]?.content, answer);
+  assert.equal(assistant.blocks?.[0]?.isComplete, true);
+  assert.equal(assistant.streamingContent, '');
+  assert.equal(assistant.status, 'completed');
+  assert.equal(assistant.responseStatus, 'completed');
+});
+
+test('streamFromChatApi replaces streamed general text with different authoritative done markdown', async () => {
+  const streamed = 'Hello! I\'m here to help...';
+  const finalAnswer = 'Hello! I\'m here to help you with Cambodia customs and trade questions.';
+
+  const { calls, assistant } = await streamWithReactiveAssistant([
+    { event: 'start', data: { request_id: 'hello-general-revised', status: 'processing' } },
+    { event: 'delta', data: { content: streamed } },
+    {
+      event: 'done',
+      data: normalizedResponse({
+        request_id: 'hello-general-revised',
+        service: 'general',
+        intent: 'general',
+        status: 'completed',
+        response: {
+          type: 'markdown',
+          coverage: 'unknown',
+          content: finalAnswer,
+          limitations: [],
+        },
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'markdown', text: finalAnswer },
+          ],
+        },
+      }),
+    },
+  ], 'Hello');
+
+  const finalCall = calls.at(-1);
+
+  assert.ok(finalCall);
+  assert.equal(finalCall.content, finalAnswer);
+  assert.equal(finalCall.meta?.status, 'completed');
+  assert.equal(finalCall.meta?.responseStatus, 'completed');
+  assert.equal(finalCall.meta?.streamingContent, '');
+  assert.deepEqual(finalCall.meta?.blocks?.map((block) => block.type), ['markdown']);
+  assert.equal(finalCall.meta?.blocks?.filter((block) => block.type === 'markdown').length, 1);
+  assert.equal(finalCall.meta?.blocks?.[0]?.id, 'assistant-1-streaming-markdown');
+  assert.equal(finalCall.meta?.blocks?.[0]?.content, finalAnswer);
+  assert.equal(finalCall.meta?.blocks?.[0]?.isComplete, true);
+  assert.equal(assistant.content, finalAnswer);
+  assert.equal(assistant.blocks?.[0]?.content, finalAnswer);
+  assert.equal(assistant.blocks?.[0]?.isComplete, true);
+  assert.equal(assistant.streamingContent, '');
+});
+
+test('streamFromChatApi applies completed table content once it arrives in done', async () => {
   const { calls } = await streamWithReactiveAssistant([
     { event: 'start', data: { request_id: 'request-table-stream', chat_id: 'chat-1', status: 'processing' } },
     { event: 'delta', data: { content: 'Candidate HS codes are below.' } },
@@ -736,24 +1099,15 @@ test('streamFromChatApi streams table content cell by cell and row by row', asyn
     return tableBlock?.content.rows;
   });
 
-  assert.deepEqual(tableRows, [
-    [],
-    [{ hs_code: '8471.30.00', description: '' }],
-    [{ hs_code: '8471.30.00', description: 'Portable automatic data processing machines' }],
-    [
-      { hs_code: '8471.30.00', description: 'Portable automatic data processing machines' },
-      { hs_code: '8471.41.00', description: '' },
-    ],
-    [
-      { hs_code: '8471.30.00', description: 'Portable automatic data processing machines' },
-      { hs_code: '8471.41.00', description: 'Other automatic data processing machines' },
-    ],
-  ]);
-  assert.equal(tableCalls[0]?.meta?.blocks?.at(-1)?.isComplete, false);
+  assert.deepEqual(tableRows, [[
+    { hs_code: '8471.30.00', description: 'Portable automatic data processing machines' },
+    { hs_code: '8471.41.00', description: 'Other automatic data processing machines' },
+  ]]);
+  assert.equal(tableCalls[0]?.meta?.blocks?.at(-1)?.isComplete, true);
   assert.equal(tableCalls.at(-1)?.meta?.status, 'completed');
 });
 
-test('streamFromChatApi preserves streamed text when final normalized payload has no renderable content', async () => {
+test('streamFromChatApi preserves streamed text when final normalized payload has no content', async () => {
   const { calls, assistant } = await streamWithReactiveAssistant([
     { event: 'start', data: { request_id: 'request-empty-done', chat_id: 'chat-1', status: 'processing' } },
     { event: 'delta', data: { content: 'Hello' } },
@@ -838,6 +1192,255 @@ test('streamFromChatApi appends delta content into temporary markdown text', asy
   assert.equal(assistant.content, 'The HS code for a laptop is 8471.30.00.');
   assert.equal(assistant.streamingContent, '');
   assert.equal((assistant.normalizedResponse as Record<string, unknown>)?.request_id, 'request-delta-append');
+});
+
+test('streamFromChatApi streams genuine general answer and applies authoritative done', async () => {
+  const answer = 'GDCE is Cambodia\'s General Department of Customs and Excise.';
+  const { calls, assistant } = await streamWithReactiveAssistant([
+    { event: 'start', data: { request_id: 'request-general-stream', chat_id: 'chat-1', status: 'processing' } },
+    { event: 'delta', data: { content: 'GDCE is ' } },
+    { event: 'delta', data: { content: 'Cambodia\'s General Department ' } },
+    { event: 'delta', data: { content: 'of Customs and Excise.' } },
+    {
+      event: 'done',
+      data: normalizedResponse({
+        request_id: 'request-general-stream',
+        service: 'general',
+        intent: 'general',
+        status: 'completed',
+        response: {
+          type: 'markdown',
+          coverage: 'complete',
+          content: answer,
+          limitations: [],
+        },
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'markdown', text: answer },
+            {
+              type: 'suggestions',
+              items: ['What services does GDCE provide?'],
+            },
+          ],
+        },
+      }),
+    },
+  ], 'What is GDCE?');
+
+  const streamingCalls = calls.filter((call) => call.meta?.progressStage === 'streaming' && call.content);
+
+  assert.ok(streamingCalls.some((call) => call.content === 'GDCE is '));
+  assert.ok(streamingCalls.some((call) => call.content.includes('Cambodia\'s General Department')));
+  assert.ok(streamingCalls.at(-1)?.content.includes('of Customs and Excise.'));
+  assert.ok(streamingCalls.every((call) => call.meta?.blocks?.[0]?.type === 'markdown'));
+  assert.equal(assistant.status, 'completed');
+  assert.equal(assistant.responseStatus, 'completed');
+  assert.deepEqual(assistant.blocks?.map((block) => block.type), ['markdown', 'suggestions']);
+  assert.equal(assistant.streamingContent, '');
+  assert.equal(assistant.content, answer);
+  assert.equal(assistant.blocks?.filter((block) => block.type === 'markdown').length, 1);
+});
+
+test('simple general response remains visible after real delta followed by done', async () => {
+  const answer = 'Hello! How can I help you today?';
+  const { assistant } = await streamWithReactiveAssistant([
+    {
+      event: 'start',
+      data: {
+        request_id: 'hello-test',
+        service: 'general',
+        intent: 'general',
+        status: 'processing',
+        mode: 'stream',
+      },
+    },
+    {
+      event: 'delta',
+      data: {
+        content: 'Hello! ',
+      },
+    },
+    {
+      event: 'delta',
+      data: {
+        content: 'How can I help you today?',
+      },
+    },
+    {
+      event: 'done',
+      data: normalizedResponse({
+        request_id: 'hello-test',
+        service: 'general',
+        intent: 'general',
+        response: {
+          type: 'markdown',
+          coverage: 'complete',
+          content: answer,
+          limitations: [],
+        },
+        message: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'markdown',
+              text: answer,
+            },
+          ],
+        },
+      }),
+    },
+  ], 'Hello');
+
+  assert.equal(assistant.status, 'completed');
+  assert.equal(assistant.responseStatus, 'completed');
+  assert.equal(assistant.content, answer);
+  assert.equal(assistant.blocks?.length, 1);
+  assert.equal(assistant.blocks?.[0]?.type, 'markdown');
+  assert.equal(assistant.blocks?.[0]?.content, answer);
+  assert.equal(assistant.blocks?.[0]?.isComplete, true);
+  assert.equal(assistant.streamingContent, '');
+});
+
+test('streamFromChatApi allows legitimate general customs regulations prefix', async () => {
+  const answer = 'Based on Cambodia Customs regulations, importers must provide supporting documents.';
+  const { calls, assistant } = await streamWithReactiveAssistant([
+    { event: 'start', data: { request_id: 'request-general-prefix', chat_id: 'chat-1', status: 'processing' } },
+    { event: 'delta', data: { content: answer } },
+    {
+      event: 'done',
+      data: normalizedResponse({
+        request_id: 'request-general-prefix',
+        service: 'general',
+        intent: 'general',
+        status: 'completed',
+        response: {
+          type: 'markdown',
+          coverage: 'complete',
+          content: answer,
+          limitations: [],
+        },
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'markdown', text: answer },
+          ],
+        },
+      }),
+    },
+  ], 'What documents do I need to import goods into Cambodia?');
+
+  const streamingCalls = calls.filter((call) => call.meta?.progressStage === 'streaming' && call.content);
+
+  assert.ok(streamingCalls.some((call) => call.content.includes('Based on Cambodia Customs regulations')));
+  assert.equal(assistant.status, 'completed');
+  assert.equal(assistant.responseStatus, 'completed');
+  assert.deepEqual(assistant.blocks?.map((block) => block.type), ['markdown']);
+  assert.equal(assistant.blocks?.some((block) => block.type === 'error'), false);
+  assert.equal(assistant.content.includes('Response unavailable'), false);
+  assert.equal(assistant.content, answer);
+});
+
+test('streamFromChatApi does not silently erase streamed text when done normalizes to empty content', async () => {
+  const streamed = 'Hello! How can I help you today?';
+  const { calls, assistant } = await streamWithReactiveAssistant([
+    {
+      event: 'start',
+      data: {
+        request_id: 'hello-empty-done',
+        service: 'general',
+        intent: 'general',
+        status: 'processing',
+        mode: 'stream',
+      },
+    },
+    { event: 'delta', data: { content: 'Hello! ' } },
+    { event: 'delta', data: { content: 'How can I help you today?' } },
+    {
+      event: 'done',
+      data: normalizedResponse({
+        request_id: 'hello-empty-done',
+        service: 'unknown',
+        intent: 'general',
+        status: 'completed',
+        response: {
+          type: 'markdown',
+          coverage: 'unknown',
+          content: '',
+          limitations: [],
+        },
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'markdown', text: '' },
+          ],
+        },
+      }),
+    },
+  ], 'Hello');
+
+  const finalCall = calls.at(-1);
+
+  assert.ok(finalCall);
+  assert.equal(finalCall.content, streamed);
+  assert.equal(finalCall.meta?.status, 'completed');
+  assert.equal(finalCall.meta?.responseStatus, 'completed');
+  assert.deepEqual(finalCall.meta?.blocks?.map((block) => block.type), ['markdown']);
+  assert.equal(finalCall.meta?.blocks?.[0]?.content, streamed);
+  assert.equal(finalCall.meta?.blocks?.[0]?.isComplete, true);
+  assert.equal(finalCall.meta?.streamingContent, '');
+  assert.equal(assistant.content, streamed);
+  assert.equal(assistant.blocks?.[0]?.content, streamed);
+  assert.equal(assistant.blocks?.[0]?.isComplete, true);
+  assert.equal(assistant.streamingContent, '');
+});
+
+test('streamFromChatApi does not apply calculator or trade draft suppression to explicit general streams', async () => {
+  const answer = 'IMPORT TAX CALCULATION guidance can include a SUMMARY OF KEY FINDINGS section in training material.';
+  const { calls, assistant } = await streamWithReactiveAssistant([
+    {
+      event: 'start',
+      data: {
+        request_id: 'request-general-routing',
+        chat_id: 'chat-1',
+        service: 'general',
+        intent: 'general',
+        status: 'processing',
+      },
+    },
+    { event: 'delta', data: { content: 'IMPORT TAX CALCULATION guidance can include ' } },
+    { event: 'delta', data: { content: 'a SUMMARY OF KEY FINDINGS section in training material.' } },
+    {
+      event: 'done',
+      data: normalizedResponse({
+        request_id: 'request-general-routing',
+        service: 'general',
+        intent: 'general',
+        status: 'completed',
+        response: {
+          type: 'markdown',
+          coverage: 'complete',
+          content: answer,
+          limitations: [],
+        },
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'markdown', text: answer },
+          ],
+        },
+      }),
+    },
+  ], 'Explain customs training headings.');
+
+  const streamingCalls = calls.filter((call) => call.meta?.progressStage === 'streaming' && call.content);
+
+  assert.ok(streamingCalls.some((call) => call.content.includes('IMPORT TAX CALCULATION')));
+  assert.ok(streamingCalls.some((call) => call.content.includes('SUMMARY OF KEY FINDINGS')));
+  assert.equal(assistant.status, 'completed');
+  assert.equal(assistant.responseStatus, 'completed');
+  assert.deepEqual(assistant.blocks?.map((block) => block.type), ['markdown']);
+  assert.equal(assistant.content, answer);
 });
 
 test('streamFromChatApi keeps structured-looking delta text as temporary markdown only', async () => {
@@ -927,16 +1530,15 @@ test('streamFromChatApi clears processing state when a stream ends without final
   const finalCall = calls.at(-1);
 
   assert.ok(finalCall);
-  assert.equal(finalCall.meta?.status, 'completed');
-  assert.equal(finalCall.meta?.responseStatus, 'completed');
+  assert.equal(finalCall.meta?.status, 'error');
+  assert.equal(finalCall.meta?.responseStatus, 'failed');
   assert.equal(finalCall.meta?.responseMode, 'stream');
-  assert.equal(finalCall.meta?.progressStage, 'completed');
-  assert.equal(finalCall.meta?.progressMessage, 'Response completed.');
+  assert.equal(finalCall.meta?.progressStage, 'failed');
+  assert.equal(finalCall.meta?.progressMessage, 'The response stream ended before the final response was received.');
   assert.equal(finalCall.meta?.streamingContent, '');
-  assert.deepEqual(finalCall.meta?.blocks?.map((block) => block.type), ['markdown']);
-  assert.equal(finalCall.meta?.blocks?.[0]?.isComplete, true);
-  assert.equal(assistant.status, 'completed');
-  assert.equal(assistant.responseStatus, 'completed');
+  assert.deepEqual(finalCall.meta?.blocks?.map((block) => block.type), ['error']);
+  assert.equal(assistant.status, 'error');
+  assert.equal(assistant.responseStatus, 'failed');
   assert.equal(assistant.streamingContent, '');
 });
 
@@ -980,14 +1582,12 @@ test('streamFromChatApi replaces calculator processing text with final structure
   ], 'calculate import tax for hs code 8703.80.99 cif 40000USD from china');
 
   const streamingCalls = calls.filter((call) => call.meta?.progressStage === 'streaming' && call.content);
-  const streamingCall = streamingCalls.at(-1);
   const finalCall = calls.at(-1);
 
   assert.equal(calls[0]?.meta?.status, 'streaming');
   assert.equal(calls[0]?.meta?.responseStatus, 'processing');
   assert.equal(calls[0]?.meta?.requestId, 'request-calculator');
-  assert.equal(streamingCalls.length, 0);
-  assert.equal(streamingCall, undefined);
+  assert.ok(streamingCalls.length > 0);
   assert.ok(finalCall);
   assert.equal(finalCall.messageId, 'assistant-1');
   assert.equal(finalCall.meta?.status, 'completed');
@@ -996,5 +1596,229 @@ test('streamFromChatApi replaces calculator processing text with final structure
   assert.deepEqual(finalCall.meta?.blocks?.map((block) => block.type), ['summary', 'table']);
   assert.equal(finalCall.meta?.blocks?.[0]?.content?.data?.total_tax, 2500000);
   assert.equal(finalCall.meta?.blocks?.some((block) => block.type === 'markdown' && block.content === 'Working on your request...'), false);
-  assert.equal(currentRenderType.value, 'table');
+  assert.equal(currentRenderType.value, 'markdown');
+});
+
+test('streamFromChatApi suppresses calculator report deltas before final normalized blocks', async () => {
+  const draft = 'SUMMARY OF CALCULATION:The calculation determines the applicable duties and taxes for the imported goods.';
+  const { calls } = await streamWithEvents([
+    { event: 'start', data: { request_id: 'request-calculator-how-much', status: 'processing' } },
+    { event: 'delta', data: { content: draft } },
+    {
+      event: 'done',
+      data: normalizedResponse({
+        request_id: 'request-calculator-how-much',
+        service: 'calculator',
+        intent: 'calculation',
+        response: {
+          type: 'markdown',
+          coverage: 'unknown',
+          content: 'Import tax calculation complete.',
+          limitations: [],
+        },
+        message: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'summary',
+              title: 'Import Tax Calculation',
+              data: { total_tax: 0, currency: 'KHR' },
+            },
+          ],
+        },
+      }),
+    },
+  ], 'hi how much tax if i import a car hs 8703.22.00 cif is $10500, from china, ACFTA rate, dv=0');
+
+  const rawStreamingCalls = calls.filter((call) => call.content.includes('SUMMARY OF CALCULATION'));
+  const finalCall = calls.at(-1);
+
+  assert.equal(rawStreamingCalls.length, 0);
+  assert.ok(finalCall);
+  assert.equal(finalCall.meta?.status, 'completed');
+  assert.equal(finalCall.meta?.responseStatus, 'completed');
+  assert.equal(finalCall.meta?.streamingContent, '');
+  assert.equal(finalCall.content, 'Import tax calculation complete.');
+  assert.deepEqual(finalCall.meta?.blocks?.map((block) => block.type), ['summary']);
+  assert.equal(finalCall.meta?.blocks?.some((block) => block.type === 'markdown' && block.content === draft), false);
+});
+
+test('streamFromChatApi suppresses realistic vehicle calculator report deltas', async () => {
+  const rawCalculatorDraft = [
+    'IMPORT TAX CALCULATION',
+    '',
+    'PRODUCT INFORMATION:',
+    '* HS Code: 8703.22.00',
+    '',
+    'INPUT PARAMETERS:',
+    '* CIF Value: 10,500 USD',
+    '',
+    'STEP 1: CURRENCY CONVERSION',
+    '',
+    'STEP 2: IMPORT TAX',
+    '',
+    'STEP 6: VEHICLE VALUATION FEE (VVF)',
+    '',
+    'FINAL TAX BREAKDOWN',
+    '| Tax Component | Tax base (KHR) | Rate | Amount (KHR) |',
+    '| COP | ... |',
+    '',
+    'SUMMARY:',
+    'To import the vehicle...',
+    '',
+    'ASSUMPTIONS & NOTES:',
+    '=== APPLICABLE RATES ===',
+  ].join('\n');
+  const { calls, assistant } = await streamWithReactiveAssistant([
+    { event: 'start', data: { request_id: 'request-vehicle-calculator', status: 'processing' } },
+    { event: 'delta', data: { content: rawCalculatorDraft } },
+    {
+      event: 'done',
+      data: normalizedResponse({
+        request_id: 'request-vehicle-calculator',
+        service: 'calculator',
+        intent: 'calculation',
+        response: {
+          type: 'markdown',
+          coverage: 'complete',
+          content: 'Vehicle import tax calculation complete.',
+          limitations: [],
+        },
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'summary', title: 'Import Tax Calculation', data: { total_tax: 10314700, currency: 'KHR' } },
+            { type: 'key_value', title: 'Product Information', items: [{ key: 'HS Code', value: '8703.22.00' }] },
+            { type: 'key_value', title: 'Input Parameters', items: [{ key: 'CIF Value', value: '10,500 USD' }] },
+            {
+              type: 'table',
+              title: 'Final Tax Breakdown',
+              columns: [{ key: 'component', label: 'Tax Component' }],
+              rows: [{ component: 'COP' }],
+            },
+            { type: 'details', title: 'Calculation Details', items: [{ title: 'STEP 1', content: 'Currency conversion' }] },
+            { type: 'details', title: 'Assumptions & Notes', items: [{ title: 'Applicable Rates', content: 'Rates applied.' }] },
+          ],
+        },
+      }),
+    },
+  ], 'calculate import tax for car hs 8703.22.00 cif 10500 usd from china');
+
+  const rawStreamingCalls = calls.filter((call) =>
+    call.content.includes('IMPORT TAX CALCULATION') ||
+    call.content.includes('STEP 6: VEHICLE VALUATION FEE') ||
+    call.content.includes('FINAL TAX BREAKDOWN')
+  );
+  const finalCall = calls.at(-1);
+
+  assert.equal(rawStreamingCalls.length, 0);
+  assert.ok(finalCall);
+  assert.equal(finalCall.meta?.status, 'completed');
+  assert.equal(finalCall.meta?.responseStatus, 'completed');
+  assert.equal(finalCall.meta?.streamingContent, '');
+  assert.deepEqual(finalCall.meta?.blocks?.map((block) => block.type), [
+    'summary',
+    'key_value',
+    'key_value',
+    'table',
+    'details',
+    'details',
+  ]);
+  assert.equal(finalCall.meta?.blocks?.some((block) => block.type === 'markdown' && String(block.content).includes('FINAL TAX BREAKDOWN')), false);
+  assert.equal(assistant.streamingContent, '');
+});
+
+test('streamFromChatApi suppresses split calculator report heading deltas', async () => {
+  const { calls } = await streamWithEvents([
+    { event: 'start', data: { request_id: 'request-split-calculator-heading', status: 'processing' } },
+    { event: 'delta', data: { content: 'FINAL TAX' } },
+    { event: 'delta', data: { content: ' BREAKDOWN\n| Tax Component | Amount |' } },
+    {
+      event: 'done',
+      data: normalizedResponse({
+        request_id: 'request-split-calculator-heading',
+        service: 'calculator',
+        intent: 'calculation',
+        response: {
+          type: 'markdown',
+          coverage: 'complete',
+          content: 'Calculation complete.',
+          limitations: [],
+        },
+        message: {
+          role: 'assistant',
+          content: [{ type: 'summary', title: 'Import Tax Calculation', data: { total_tax: 1 } }],
+        },
+      }),
+    },
+  ], 'calculate import tax');
+
+  const rawStreamingCalls = calls.filter((call) => call.content.includes('FINAL TAX'));
+  const finalCall = calls.at(-1);
+
+  assert.equal(rawStreamingCalls.length, 0);
+  assert.deepEqual(finalCall?.meta?.blocks?.map((block) => block.type), ['summary']);
+});
+
+test('streamFromChatApi still displays genuine concise calculator deltas', async () => {
+  const conciseDelta = 'Your estimated import tax is 10,314,700 KHR.';
+  const { calls } = await streamWithEvents([
+    { event: 'start', data: { request_id: 'request-concise-calculator', status: 'processing' } },
+    { event: 'delta', data: { content: conciseDelta } },
+    {
+      event: 'done',
+      data: normalizedResponse({
+        request_id: 'request-concise-calculator',
+        service: 'calculator',
+        intent: 'calculation',
+        response: {
+          type: 'markdown',
+          coverage: 'complete',
+          content: conciseDelta,
+          limitations: [],
+        },
+        message: {
+          role: 'assistant',
+          content: [{ type: 'markdown', text: conciseDelta }],
+        },
+      }),
+    },
+  ], 'calculate import tax for car');
+
+  assert.ok(calls.some((call) => call.content.includes(conciseDelta) && call.meta?.progressStage === 'streaming'));
+  assert.equal(calls.at(-1)?.content, conciseDelta);
+});
+
+test('streamFromChatApi suppresses generic structured trade draft deltas', async () => {
+  const draft = 'SUMMARY OF KEY FINDINGS: The provided trade data contains specific figures and insights.';
+  const { calls } = await streamWithEvents([
+    { event: 'start', data: { request_id: 'request-generic-draft', status: 'processing' } },
+    { event: 'delta', data: { content: draft } },
+    {
+      event: 'done',
+      data: normalizedResponse({
+        request_id: 'request-generic-draft',
+        service: 'trade',
+        intent: 'trade_query',
+        response: {
+          type: 'markdown',
+          coverage: 'unknown',
+          content: 'Final structured trade response.',
+          limitations: [],
+        },
+        message: {
+          role: 'assistant',
+          content: [{ type: 'markdown', text: 'Final structured trade response.' }],
+        },
+      }),
+    },
+  ], 'please check this');
+
+  const streamingCallsWithDraft = calls.filter((call) => call.content.includes('SUMMARY OF KEY FINDINGS'));
+  const finalCall = calls.at(-1);
+
+  assert.equal(streamingCallsWithDraft.length, 0);
+  assert.ok(finalCall);
+  assert.equal(finalCall.content, 'Final structured trade response.');
+  assert.equal(finalCall.meta?.blocks?.some((block) => block.type === 'markdown' && block.content === draft), false);
 });

@@ -7,7 +7,14 @@ from app.utils.entity_utils import extract_entity, is_valid_country, looks_like_
 from app.infrastructure.clients import CalculatorServiceClient
 from app.services.clarification_manager import ClarificationManager
 
-def test_extract_entity_for_problematic_query():
+def test_extract_entity_for_problematic_query(monkeypatch):
+    # Mock LLM service to be unavailable to force the regex path test
+    from unittest.mock import MagicMock
+    mock_llm = MagicMock()
+    mock_llm.is_available.return_value = False
+    import app.ai
+    monkeypatch.setattr(app.ai, "get_llm_service", lambda: mock_llm)
+
     query = "calculate import tax for i paid 10000$ hs 8703.23.58 $10000 from hs"
     extracted = extract_entity(query)
     # The raw query has no actual product noun, only price/verb/hs fluff

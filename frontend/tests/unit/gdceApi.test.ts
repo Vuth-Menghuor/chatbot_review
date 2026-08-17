@@ -27,6 +27,7 @@ async function captureStreamBody(options: {
   message?: string;
   presentation?: {
     preferred_blocks: string[];
+    chart_type?: 'pie' | 'donut' | 'bar' | 'line' | 'area';
     fallback: 'markdown';
   };
   context?: Record<string, unknown>;
@@ -227,6 +228,21 @@ test('presentationPreferenceFromMessage detects explicit output format requests 
   });
   assert.deepEqual(presentationPreferenceFromMessage('Show import data as a chart.'), {
     preferred_blocks: ['chart'],
+    fallback: 'markdown',
+  });
+  assert.deepEqual(presentationPreferenceFromMessage('Show import data as a pie chart.'), {
+    preferred_blocks: ['chart'],
+    chart_type: 'pie',
+    fallback: 'markdown',
+  });
+  assert.deepEqual(presentationPreferenceFromMessage('Show import data as a donut chart.'), {
+    preferred_blocks: ['chart'],
+    chart_type: 'donut',
+    fallback: 'markdown',
+  });
+  assert.deepEqual(presentationPreferenceFromMessage('Show import data as a line chart.'), {
+    preferred_blocks: ['chart'],
+    chart_type: 'line',
     fallback: 'markdown',
   });
   assert.deepEqual(presentationPreferenceFromMessage('Show the result as a card.'), {

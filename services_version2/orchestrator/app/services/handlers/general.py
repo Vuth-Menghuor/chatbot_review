@@ -14,14 +14,15 @@ logger = logging.getLogger(__name__)
 _prompt_manager = DynamicPromptManager()
 
 
-class DefinitionHandler:
+class GeneralHandler:
     @staticmethod
-    async def generate_parametric_definition_answer(coordinator: ServiceCoordinator, query: str) -> str:
+    async def generate_parametric_definition_answer(coordinator: ServiceCoordinator, query: str, entity: str | None = None) -> str:
         """Generates a direct LLM parametric answer for general terminology/definition queries when RAG has no document info."""
         if coordinator.llm_service and coordinator.llm_service.is_available():
             prompt = _prompt_manager.render(
                 "generate_parametric_definition",
                 query=query,
+                entity=entity or "None",
             )
             try:
                 provider = coordinator.llm_service.router.providers.get("gemini")
@@ -60,13 +61,15 @@ class DefinitionHandler:
                 context.status = WorkflowStatus.COMPLETED
                 return
             
+            nlu_entity = context.metadata.get("nlu_entity") if context.metadata else None
             async def run_call():
                 return await asyncio.wait_for(
                     coordinator.general_client.definition(
                         query=service_query,
                         top_k=5,
                         generate_answer=True,
-                        session_id=context.session_id
+                        session_id=context.session_id,
+                        entity=nlu_entity,
                     ),
                     timeout=timeout_sec
                 )
@@ -78,12 +81,34 @@ class DefinitionHandler:
                 request_payload={"query": service_query, "top_k": 5, "generate_answer": True, "session_id": context.session_id}
             )
 
-            # Fallback check: If RAG returned no document info, use direct LLM parametric knowledge
+            # Fallback check: If RAG returned no document info or missed the entity, use direct LLM parametric knowledge
             if result and isinstance(result, dict):
+                import re
                 ans_text = result.get("final_answer") or result.get("answer") or ""
-                if coordinator._is_rag_no_info_response(ans_text, result):
-                    logger.info(f"[{context.request_id}] RAG returned no document info for query '{service_query}'. Invoking LLM parametric fallback.")
-                    parametric_ans = await DefinitionHandler.generate_parametric_definition_answer(coordinator, service_query)
+                
+                nlu_entity = context.metadata.get("nlu_entity") if context.metadata else None
+                entity_conf = context.metadata.get("nlu_entity_confidence") if context.metadata else None
+                entity_miss = False
+                if nlu_entity and entity_conf == "high":
+                    entity_lower = nlu_entity.lower()
+                    entity_words = set(re.findall(r"\b[a-z0-9]{3,}\b", entity_lower))
+                    if not entity_words:
+                        entity_words = {entity_lower}
+                    
+                    documents = result.get("documents", [])
+                    has_mention = False
+                    for doc in documents:
+                        content = str(doc.get("content", "")).lower()
+                        if any(word in content for word in entity_words):
+                            has_mention = True
+                            break
+                    if not has_mention:
+                        entity_miss = True
+                        logger.info(f"[{context.request_id}] Entity '{nlu_entity}' (high confidence) not mentioned in RAG documents. Triggering entity miss fallback.")
+                
+                if coordinator._is_rag_no_info_response(ans_text, result) or entity_miss:
+                    logger.info(f"[{context.request_id}] RAG returned no document info or entity miss for query '{service_query}'. Invoking LLM parametric fallback.")
+                    parametric_ans = await GeneralHandler.generate_parametric_definition_answer(coordinator, service_query, nlu_entity)
                     result["answer"] = parametric_ans
                     result["final_answer"] = parametric_ans
                     result["source"] = "llm_parametric_knowledge"

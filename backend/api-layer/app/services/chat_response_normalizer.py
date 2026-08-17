@@ -41,7 +41,7 @@ from app.services.normalizers.calculator.errors import (
 from app.services.normalizers.calculator.normalizer import CalculatorNormalizer
 from app.services.normalizers.charts import normalize_chart
 from app.services.normalizers.citations import dedupe_citations, normalize_citations
-from app.services.normalizers.fallback import FallbackNormalizer
+from app.services.normalizers.fallback import FallbackNormalizer, normalize_service_name
 from app.services.normalizers.general import GeneralNormalizer
 from app.services.normalizers.metrics import normalize_summary_metrics
 from app.services.normalizers.registry import NormalizerRegistry
@@ -294,9 +294,17 @@ def build_response_body(payload: dict[str, Any], *, service: str | None = None) 
     source = response_value or answer_value
 
     summary = first_text(source, "summary", "overview", "direct_answer") if isinstance(source, dict) else None
-    content = preserved_plain_answer(payload) or (
-        first_text(source, "content", "markdown", "text") if isinstance(source, dict) else None
-    ) or first_text(payload, "content", "human_readable", "summary") or summary or ""
+    source_content = first_text(source, "content", "markdown", "text") if isinstance(source, dict) else None
+    if service == "trade" and source_content:
+        content = normalize_plain_answer_text(source_content)
+    else:
+        content = (
+            preserved_plain_answer(payload)
+            or source_content
+            or first_text(payload, "content", "human_readable", "summary")
+            or summary
+            or ""
+        )
     source_limitations = source.get("limitations") if isinstance(source, dict) else None
     source_missing = source.get("missing") if isinstance(source, dict) else None
     limitations = normalize_limitations(
@@ -377,6 +385,9 @@ def sanitize_unsafe_html(value: str) -> str:
 
 
 def assert_orchestrator_answer_unchanged(payload: dict[str, Any], response_body: NormalizedResponseBody) -> None:
+    service = normalize_service_name(payload.get("service") or payload.get("intent") or payload.get("route"))
+    if service == "trade" and isinstance(payload.get("response"), dict) and payload["response"].get("content"):
+        return
     answer = payload.get("answer")
     if not isinstance(answer, str):
         return
@@ -1151,9 +1162,10 @@ def build_general_content_blocks(
 ) -> list[ChatContentBlock]:
     blocks = normalize_general_message_content_blocks(payload)
     has_explicit_blocks = bool(blocks)
+    has_primary_answer = has_primary_general_answer_block(blocks)
 
-    if not blocks and response_body.content:
-        blocks.append(MarkdownBlock(text=response_body.content))
+    if not has_primary_answer and response_body.content:
+        blocks.insert(0, MarkdownBlock(text=response_body.content))
 
     if not has_explicit_blocks:
         clarification_block = normalize_clarification_block(
@@ -1187,6 +1199,21 @@ def build_general_content_blocks(
         blocks.append(ErrorBlock(message="Request failed"))
 
     return blocks
+
+
+def has_primary_general_answer_block(blocks: list[ChatContentBlock]) -> bool:
+    for block in blocks:
+        if isinstance(block, MarkdownBlock):
+            if block.text.strip():
+                return True
+            continue
+        if isinstance(block, TableBlock):
+            if block.rows:
+                return True
+            continue
+        if isinstance(block, (SummaryBlock, KeyValueBlock, DetailsBlock, ChartBlock, PredictionBlock)):
+            return True
+    return False
 
 
 def normalize_general_error_messages(

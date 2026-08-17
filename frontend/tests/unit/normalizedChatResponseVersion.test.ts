@@ -71,34 +71,30 @@ test('successful general response preserves markdown, status, latency, and has n
   assert.equal(parts!.latencyMs, 125);
 });
 
-test('customs service fallback is shown as an error instead of an answer', () => {
-  const collapsed =
-    'Based on Cambodia Customs regulations: ### Conditions for Import or Export * Import or export of any item in the list is subject to: * Absolute prohibition on import or export; or, * License, permit, or certificates as well as other legal documents in similar form, prior to its import or export, or under other specific treatment required by competent authorities.';
+test('legitimate general answer with customs regulations prefix remains completed markdown', () => {
+  const answer =
+    'Based on Cambodia Customs regulations, importers must provide supporting documents such as invoices, packing lists, and transport documents.';
   const response = baseGeneralResponse({
     response: {
       type: 'markdown',
-      content: collapsed,
+      content: answer,
       coverage: 'partial',
       confidence: 'medium',
       limitations: [],
     },
     message: {
       role: 'assistant',
-      content: [{ type: 'markdown', text: collapsed }],
+      content: [{ type: 'markdown', text: answer }],
     },
   });
 
   const parts = handleNormalizedChatResponse(response, 'fallback-id');
 
   assert.notEqual(parts, null);
-  assert.equal(parts!.status, 'failed');
-  assert.equal(parts!.blocks[0].type, 'error');
-  assert.equal(parts!.blocks[0].content.title, 'Response unavailable');
-  assert.equal(
-    parts!.blocks[0].content.message,
-    'The service could not generate a reliable answer for this request. Please try again.',
-  );
-  assert.equal(parts!.content.includes('Conditions for Import or Export'), false);
+  assert.equal(parts!.status, 'completed');
+  assert.deepEqual(parts!.blocks.map((block) => block.type), ['markdown']);
+  assert.equal(parts!.blocks[0].content, answer);
+  assert.equal(parts!.content, answer);
 });
 
 test('normalized response renders suggestions only from message content when top-level suggestions also exist', () => {
@@ -882,6 +878,18 @@ test('chat render flow uses message blocks as the visual source before content f
     source.indexOf('if (props.message.blocks?.length) return props.message.blocks;') <
       source.indexOf('return parseBlocks(props.message.content);'),
   );
+});
+
+test('chat render flow does not hide completed markdown when streaming content is cleared', () => {
+  const source = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'app', 'composables', 'chat', 'useChatMessageRenderFlow.ts'),
+    'utf8',
+  );
+
+  assert.match(source, /if \(!hasNonReasoningBlocks\.value\) return !props\.loading && !reasoningBlock\.value;/);
+  assert.match(source, /if \(hasStreamingRichContent\.value\) return true;/);
+  assert.match(source, /return !props\.loading \|\| !isStillReasoning\.value;/);
+  assert.doesNotMatch(source, /streamingContent\s*&&\s*nonReasoningBlocks/);
 });
 
 test('renderer registry supports normalized data blocks without a service-specific renderer', () => {

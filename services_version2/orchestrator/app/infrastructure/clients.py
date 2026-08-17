@@ -600,6 +600,7 @@ class GeneralServiceClient(HttpxServiceClient):
         generate_answer: bool = True,
         session_id: Optional[str] = None,
         intent: str = "general",
+        entity: Optional[str] = None,
     ) -> Dict[str, Any]:
         # Determine if the query is a general policy/procedure/cost inquiry that does not need a trade time period
         q_lower = (query or "").lower()
@@ -662,10 +663,12 @@ class GeneralServiceClient(HttpxServiceClient):
                 
                 context_text = "\n\n".join(context_blocks)
                 
+                _prompt_manager.reload()
                 prompt = _prompt_manager.render(
                     "orchestrator_general_answering",
                     query=query,
-                    context=context_text
+                    context=context_text,
+                    entity=entity or "None"
                 )
 
                 llm_answer = None
@@ -733,10 +736,11 @@ class GeneralServiceClient(HttpxServiceClient):
         top_k: int = 5,
         generate_answer: bool = True,
         session_id: Optional[str] = None,
+        entity: Optional[str] = None,
     ) -> Dict[str, Any]:
         logger.info(f"[Ask] Querying: {query[:80]}... (top_k={top_k})")
         try:
-            result = await self._ask(query, top_k, generate_answer, session_id, intent="general")
+            result = await self._ask(query, top_k, generate_answer, session_id, intent="general", entity=entity)
             logger.info(
                 f"[Ask] Result: status={result.get('status', 'unknown')}, "
                 f"final_answer_present={'final_answer' in result}"
@@ -752,9 +756,10 @@ class GeneralServiceClient(HttpxServiceClient):
         top_k: int = 5,
         generate_answer: bool = True,
         session_id: Optional[str] = None,
+        entity: Optional[str] = None,
     ) -> Dict[str, Any]:
         logger.info(f"[Definition] Querying: {query[:80]}... (top_k={top_k})")
-        return await self._ask(query, top_k, generate_answer, session_id, intent="definition")
+        return await self._ask(query, top_k, generate_answer, session_id, intent="definition", entity=entity)
 
     async def policy_inquiry(
         self,
@@ -762,9 +767,10 @@ class GeneralServiceClient(HttpxServiceClient):
         top_k: int = 5,
         generate_answer: bool = True,
         session_id: Optional[str] = None,
+        entity: Optional[str] = None,
     ) -> Dict[str, Any]:
         logger.info(f"[Policy] Querying: {query[:80]}... (top_k={top_k})")
-        return await self._ask(query, top_k, generate_answer, session_id, intent="policy_query")
+        return await self._ask(query, top_k, generate_answer, session_id, intent="policy_query", entity=entity)
 
     async def general(
         self,
@@ -1004,8 +1010,8 @@ class CalculatorServiceClient(HttpxServiceClient):
                     params["origin_country"] = country
                     break
 
-        # Final fallback default: keep KHR when currency and country are not provided.
-        if not params["currency"] and not params["origin_country"]:
+        # Final fallback default: keep KHR when currency and country are not provided and cif_value is present.
+        if not params["currency"] and not params["origin_country"] and params["cif_value"] is not None:
             params["currency"] = "KHR"
         
         # Detect explicit FTA mentions (e.g., ACFTA, ATIGA) and set flags
@@ -1067,6 +1073,12 @@ class CalculatorServiceClient(HttpxServiceClient):
             unit_match = re.search(r'(\d+)\s*(\w+)$', qty_match.group(0))
             if unit_match:
                 params["unit"] = unit_match.group(2).lower()
+        else:
+            # Fallback for "quantity 10" or "qty 10"
+            qty_fallback = re.search(r'\b(?:quantity|qty)\s*(\d+)\b', q_lower)
+            if qty_fallback:
+                params["quantity"] = float(qty_fallback.group(1))
+                params["unit"] = "units"
 
         # Check if the CIF value is a unit price and multiply by quantity if present
         if params["cif_value"] is not None and params["quantity"] is not None:
@@ -1173,7 +1185,15 @@ class CalculatorServiceClient(HttpxServiceClient):
             payload = {k: v for k, v in payload.items() if v is not None}
             
             logger.info(f"Sending to calculator query: {payload}")
-            result = await self._post("query", payload)
+            raw_response = await self._post("query", payload)
+            if isinstance(raw_response, dict) and "result" in raw_response and isinstance(raw_response["result"], dict):
+                result = raw_response["result"]
+                result["success"] = raw_response.get("success", True)
+                result["needs_clarification"] = raw_response.get("needs_clarification", False)
+                if not result.get("human_readable") and raw_response.get("answer"):
+                    result["human_readable"] = raw_response["answer"]
+            else:
+                result = raw_response
             
             # Add original CIF value and currency to response for proper formatting
             result["original_cif_value"] = original_cif_value
@@ -1211,7 +1231,15 @@ class CalculatorServiceClient(HttpxServiceClient):
         try:
             payload = {"question": question}
             payload.update(kwargs)
-            result = await self._post("query", payload)
+            raw_response = await self._post("query", payload)
+            if isinstance(raw_response, dict) and "result" in raw_response and isinstance(raw_response["result"], dict):
+                result = raw_response["result"]
+                result["success"] = raw_response.get("success", True)
+                result["needs_clarification"] = raw_response.get("needs_clarification", False)
+                if not result.get("human_readable") and raw_response.get("answer"):
+                    result["human_readable"] = raw_response["answer"]
+            else:
+                result = raw_response
             logger.info(f"Calculator service returned results")
             return result
         except httpx.HTTPStatusError as e:

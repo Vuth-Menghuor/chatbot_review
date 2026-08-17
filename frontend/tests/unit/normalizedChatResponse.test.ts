@@ -443,9 +443,66 @@ test('normalizedChatResponse turns unknown and malformed blocks into fallback bl
 
   const parts = normalizedChatResponseToMessageParts(response, 'fallback-id');
 
-  assert.deepEqual(parts.blocks.map((block) => block.type), ['fallback', 'fallback', 'table', 'error']);
-  assert.equal(parts.blocks[2].content.rows.length, 0);
-  assert.equal(parts.blocks[3].content.message, 'Request failed');
+  assert.deepEqual(parts.blocks.map((block) => block.type), ['fallback', 'fallback', 'error']);
+  assert.equal(parts.blocks[2].content.message, 'Request failed');
+});
+
+test('normalizedChatResponse drops unreliable markdown and empty tables when useful final trade blocks exist', () => {
+  const response: NormalizedChatResponse = {
+    ...baseResponse,
+    request_id: 'trade-ranking-screenshot',
+    service: 'trade',
+    intent: 'trade_query',
+    status: 'completed',
+    response: {
+      type: 'chart',
+      coverage: 'partial',
+      content: 'In 2024, Cambodia\'s top five import partners via sea transport were China, Thailand, Indonesia, Singapore, and Malaysia.',
+      limitations: [],
+    },
+    message: {
+      role: 'assistant',
+      content: [
+        { type: 'markdown', text: 'SUMMARY OF KEY FINDINGS:\nThe provided trade data contains specific figures and insights.' },
+        {
+          type: 'table',
+          title: 'Trade Volume Ranking',
+          columns: [{ key: 'country', label: 'Country' }],
+          rows: [],
+        },
+        {
+          type: 'chart',
+          title: 'Trade Volume Ranking',
+          data: {
+            chartType: 'pie',
+            data: [
+              { label: 'China', value: 9830000000 },
+              { label: 'Thailand', value: 1170000000 },
+              { label: 'Indonesia', value: 869590000 },
+              { label: 'Singapore', value: 763150000 },
+              { label: 'Malaysia', value: 640850000 },
+            ],
+          },
+        },
+        {
+          type: 'coverage',
+          title: 'Data availability',
+          tone: 'warning',
+          items: ['Some sea transport records may be incomplete.'],
+        },
+      ],
+    },
+  };
+
+  const parts = normalizedChatResponseToMessageParts(response, 'fallback-id');
+
+  assert.equal(parts.status, 'completed');
+  assert.equal(parts.content, response.response?.content);
+  assert.deepEqual(parts.blocks.map((block) => block.type), ['chart', 'coverage']);
+  assert.equal(parts.blocks.some((block) => block.type === 'error'), false);
+  assert.equal(parts.blocks.some((block) => block.type === 'table'), false);
+  assert.equal(parts.blocks[0].content.chartType, 'pie');
+  assert.equal(parts.blocks[0].content.data.length, 5);
 });
 
 test('normalizedChatResponse rejects envelopes without message content arrays', () => {

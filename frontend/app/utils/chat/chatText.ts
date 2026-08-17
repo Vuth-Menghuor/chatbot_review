@@ -48,7 +48,84 @@ export function normalizeAssistantContentForUi(raw: unknown): string {
 export const UNRELIABLE_SERVICE_FALLBACK_MESSAGE =
   'The service could not generate a reliable answer for this request. Please try again.';
 
-export function isUnreliableServiceFallbackText(text: unknown): boolean {
+type ServiceFallbackContext = {
+  service?: unknown;
+  intent?: unknown;
+};
+
+function normalizedContextValue(value: unknown) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+export function isUnreliableServiceFallbackText(text: unknown, context: ServiceFallbackContext = {}): boolean {
   if (typeof text !== 'string') return false;
-  return /^Based on Cambodia Customs regulations:/i.test(text.trim());
+  const service = normalizedContextValue(context.service);
+  const intent = normalizedContextValue(context.intent);
+  if (service === 'general' || intent === 'general') return false;
+  return isUnreliableTradeFormatterDraftText(text);
+}
+
+const TRADE_FORMATTER_HEADINGS = [
+  'SUMMARY OF KEY FINDINGS',
+  'DATA VISUALIZATION SUGGESTIONS',
+  'YEAR-OVER-YEAR OR BILATERAL COMPARISONS',
+  'TRENDS AND INSIGHTS',
+];
+
+export function isUnreliableTradeFormatterDraftText(text: unknown): boolean {
+  if (typeof text !== 'string') return false;
+  const normalized = text
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+  if (!normalized) return false;
+
+  if (TRADE_FORMATTER_HEADINGS.some((heading) =>
+    normalized.includes(heading) || (normalized.length >= 8 && heading.startsWith(normalized))
+  )) {
+    return true;
+  }
+
+  const lower = normalized.toLowerCase();
+  return (
+    lower.includes('the provided trade data contains') ||
+    lower.includes('the provided trade data includes') ||
+    lower.includes('contact gdce') ||
+    lower.includes('contact the gdce') ||
+    lower.includes('contact the general department of customs and excise') ||
+    lower.includes('detailed figures require the full dataset') ||
+    lower.includes('requires the full dataset') ||
+    lower.includes('require the full dataset') ||
+    lower.includes('full dataset for detailed figures')
+  );
+}
+
+const CALCULATOR_REPORT_HEADINGS = [
+  'IMPORT TAX CALCULATION',
+  'EXPORT TAX CALCULATION',
+  'SUMMARY OF CALCULATION',
+  'PRODUCT INFORMATION',
+  'INPUT PARAMETERS',
+  'FINAL TAX BREAKDOWN',
+  'ASSUMPTIONS & NOTES',
+  'APPLICABLE RATES',
+  'REFERENCES & CITATIONS',
+  'DATA SOURCES',
+];
+
+export function isCalculatorReportDraftText(text: unknown): boolean {
+  if (typeof text !== 'string') return false;
+  const normalized = text
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+  if (!normalized) return false;
+
+  if (CALCULATOR_REPORT_HEADINGS.some((heading) =>
+    normalized.includes(heading) || (normalized.length >= 8 && heading.startsWith(normalized))
+  )) {
+    return true;
+  }
+
+  return /\bSTEP\s+\d+\s*:/i.test(text);
 }

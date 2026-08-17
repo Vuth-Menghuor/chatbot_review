@@ -114,8 +114,12 @@ class ClarificationManager:
                     unit = None
 
                 # Check if entity has changed compared to history (session_last_entity)
+                is_pure_hs_code = False
+                if clarification_response:
+                    is_pure_hs_code = bool(re.match(r"^\s*(?:hs\s*code|hs)?\s*(?:\d{4}\.\d{2}(?:\.\d{2})?|\d{8}|\d{4})\s*$", clarification_response.lower()))
+
                 from app.utils.entity_utils import is_entity_changed
-                is_different_entity = is_entity_changed(entity, session_last_entity)
+                is_different_entity = False if is_pure_hs_code else is_entity_changed(entity, session_last_entity)
 
                 if session_context:
                     has_confirmed_hs = bool(getattr(session_context, "hs_code", None))
@@ -143,6 +147,15 @@ class ClarificationManager:
                             try:
                                 from ..infrastructure.clients import CalculatorServiceClient
                                 params = CalculatorServiceClient._parse_question_for_calculation(q)
+                                
+                                # Stop history scan if entity changed
+                                from app.utils.entity_utils import is_entity_changed
+                                prev_entity = params.get("product_name") or extract_entity(q)
+                                if prev_entity and entity:
+                                    if is_entity_changed(entity, prev_entity):
+                                        logger.info(f"Stopping history scan in clarification manager at '{q}' due to entity switch ('{entity}' vs '{prev_entity}')")
+                                        break
+
                                 if cif_val is None and params.get("cif_value") is not None:
                                     cif_val = params.get("cif_value")
                                     if not currency and params.get("currency"):
