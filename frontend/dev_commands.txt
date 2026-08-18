@@ -1,15 +1,22 @@
 -- frontend
-pnpm build 
-pnpm dev
+cd frontend && pnpm build && pnpm dev
 
 -- api layer
-docker compose build
-docker compose up -d 
+cd backend/api-layer && docker compose up --build
 
--- orchestrator, calculator, general, retrieval, trade, dal
-docker compose build
-docker compose up -d 
+-- services and data access layer
 
+cd data/dal && docker compose up --build
+
+cd services_version2/orchestrator && docker compose up --build
+
+cd services_version2/general && docker compose up --build
+
+cd services_version2/calculator && docker compose up --build
+
+cd services_version2/trade && docker compose up --build
+
+cd services_version2/retrieval && docker compose up --build
 
 # Restart only the orchestrator container so it reloads config/network connections
 docker compose restart orchestrator-service-orches

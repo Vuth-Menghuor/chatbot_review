@@ -91,6 +91,24 @@ export const useChatStore = defineStore('chat', () => {
     return newChat;
   }
 
+  function setBackendChatId(localChatId: string, backendChatId: string) {
+    const chat = recentChats.value.find((item) => item.id === localChatId);
+    if (!chat) return;
+    chat.backendId = backendChatId;
+    if (isLoaded.value) {
+      writeJson(storageKeys.chatHistory, recentChats.value);
+    }
+  }
+
+  function setBackendProjectId(localChatId: string, backendProjectId: string) {
+    const chat = recentChats.value.find((item) => item.id === localChatId);
+    if (!chat) return;
+    chat.backendProjectId = backendProjectId;
+    if (isLoaded.value) {
+      writeJson(storageKeys.chatHistory, recentChats.value);
+    }
+  }
+
   function deriveChatTitleFromMessages(messages: Message[]) {
     const firstUserMessage = messages.find((message) => message.role === 'user');
     const candidate = firstUserMessage?.content?.trim() ?? '';
@@ -194,6 +212,8 @@ export const useChatStore = defineStore('chat', () => {
     isLoadingChats,
     loadChatHistory,
     createChat,
+    setBackendChatId,
+    setBackendProjectId,
     deleteChat,
     renameChat,
     togglePin,

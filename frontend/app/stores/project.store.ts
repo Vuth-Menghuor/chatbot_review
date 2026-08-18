@@ -23,7 +23,7 @@ export const useProjectStore = defineStore('project', () => {
     { deep: true },
   );
 
-  function addProject(name: string, description?: string) {
+  function addProject(name: string, description?: string, backendId?: string) {
     const slug = name.toLowerCase().replace(/\s+/g, '-');
     // Generate a 32-character random hex-like hash
     const hash = Array.from({ length: 4 }, () => Math.random().toString(16).substring(2, 10)).join(
@@ -32,12 +32,22 @@ export const useProjectStore = defineStore('project', () => {
     const id = `g-p-${hash}-${slug}`;
     const newProject: Project = {
       id,
+      backendId,
       name,
       description,
       createdAt: new Date().toISOString(),
     };
     projects.value.unshift(newProject);
     return newProject;
+  }
+
+  function setBackendProjectId(localProjectId: string, backendId: string) {
+    const project = projects.value.find((p) => p.id === localProjectId);
+    if (!project) return;
+    project.backendId = backendId;
+    if (isLoaded.value) {
+      writeJson(storageKeys.projectList, projects.value);
+    }
   }
 
   function deleteProject(id: string) {
@@ -59,6 +69,7 @@ export const useProjectStore = defineStore('project', () => {
   return {
     projects,
     addProject,
+    setBackendProjectId,
     deleteProject,
     renameProject,
     clearAll,

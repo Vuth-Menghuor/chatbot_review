@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from contextlib import suppress
 from uuid import uuid4
 
@@ -37,6 +38,7 @@ def orchestrator_query_payload(payload: ChatRequest, chat) -> dict:
         "question": payload.message,
         "session_id": str(chat.id),
         "chat_id": str(chat.id),
+        "project_id": str(chat.project_id) if chat.project_id else None,
     }
     if payload.presentation:
         body["presentation"] = payload.presentation
@@ -72,6 +74,11 @@ def normalized_block_types(normalized: dict) -> list[str]:
         for block in blocks or []
         if isinstance(block, dict) and block.get("type")
     ]
+
+
+def normalized_suggestions(normalized: dict) -> list[str]:
+    suggestions = normalized.get("suggestions")
+    return [str(item) for item in suggestions or [] if str(item).strip()] if isinstance(suggestions, list) else []
 
 
 def has_primary_answer_block(block: object) -> bool:
@@ -148,13 +155,92 @@ def has_unreliable_trade_final_text(normalized: dict) -> bool:
     )
 
 
-def stream_final_fallback_reason(raw_stream_done: dict, normalized: dict) -> str | None:
+def looks_like_calculator_request(question: object) -> bool:
+    if not isinstance(question, str):
+        return False
+    text = " ".join(question.lower().replace(",", " ").split())
+    if not text:
+        return False
+    has_calculation_verb = any(term in text for term in ("calculate", "calculator", "tax", "duty"))
+    has_specific_calculator_input = any(
+        term in text
+        for term in (
+            "cif",
+            "usd",
+            "declared value",
+            " dv",
+            "dv ",
+            "acfta",
+            "atiga",
+            "origin",
+            "china",
+            "hs ",
+            "hscode",
+            "hs code",
+        )
+    ) or bool(re.search(r"\b\d{4}\.\d{2}\.\d{2}\b|\b\d{6,10}\b", text))
+    return has_calculation_verb and has_specific_calculator_input
+
+
+def is_generic_orchestrator_fallback_suggestions(normalized: dict) -> bool:
+    generic = {
+        "how do i classify my goods?",
+        "how is customs duty calculated?",
+        "what documents do i need to import?",
+    }
+    values = {item.strip().lower() for item in normalized_suggestions(normalized)}
+    if generic.issubset(values):
+        return True
+    message = normalized.get("message")
+    blocks = message.get("content") if isinstance(message, dict) else []
+    for block in blocks or []:
+        if not isinstance(block, dict) or block.get("type") != "suggestions":
+            continue
+        items = block.get("items")
+        block_values = {str(item).strip().lower() for item in items or [] if str(item).strip()} if isinstance(items, list) else set()
+        if generic.issubset(block_values):
+            return True
+    return False
+
+
+def has_meaningful_calculator_structured_content(raw_stream_done: dict, normalized: dict) -> bool:
+    calculator_raw_keys = {"calculator_result", "structured_result", "product", "inputs", "tax_breakdown", "phases"}
+    if has_any_key(raw_stream_done, calculator_raw_keys):
+        return True
+    block_types = set(normalized_block_types(normalized))
+    if "summary" not in block_types:
+        return False
+    return bool(block_types.intersection({"key_value", "details", "table"}))
+
+
+def stream_final_fallback_reason(
+    raw_stream_done: dict,
+    normalized: dict,
+    *,
+    question: str | None = None,
+) -> str | None:
     status = str(normalized.get("status") or "").lower()
     if status in {"failed", "clarification_required"}:
         return None
     service = str(normalized.get("service") or raw_stream_done.get("service") or "").lower()
     intent = str(normalized.get("intent") or raw_stream_done.get("intent") or "").lower()
     block_types = set(normalized_block_types(normalized))
+    expected_calculator = (
+        service == "calculator"
+        or "calc" in intent
+        or looks_like_calculator_request(question)
+    )
+
+    if expected_calculator:
+        if service in {"general", "unknown", ""} or intent in {"general", "small_talk", "smalltalk", ""}:
+            return "calculator_stream_done_unexpected_general_result"
+        if is_generic_orchestrator_fallback_suggestions(normalized):
+            return "calculator_stream_done_generic_fallback_suggestions"
+        if not has_primary_answer(normalized):
+            return "calculator_stream_done_missing_primary_answer"
+        if not has_meaningful_calculator_structured_content(raw_stream_done, normalized):
+            return "calculator_stream_done_missing_structured_payload"
+        return None
 
     if service == "general" or intent in {"general", "small_talk", "smalltalk"}:
         if not has_primary_answer(normalized):
@@ -163,17 +249,6 @@ def stream_final_fallback_reason(raw_stream_done: dict, normalized: dict) -> str
 
     if status == "completed" and not has_primary_answer(normalized):
         return "stream_done_missing_primary_answer"
-
-    # Temporary compatibility check for current Main Chatbot streaming: the
-    # final stream event must contain the data needed for the normalizer to
-    # produce the same contract as /query. Deltas remain visual-only.
-    if service == "calculator" or "calc" in intent:
-        calculator_raw_keys = {"calculator_result", "product", "inputs", "tax_breakdown", "phases"}
-        if has_any_key(raw_stream_done, calculator_raw_keys):
-            return None
-        if block_types.intersection({"summary", "key_value", "table"}):
-            return None
-        return "calculator_stream_done_missing_structured_payload"
 
     if service == "trade" or intent.startswith("trade"):
         if has_unreliable_trade_final_text(normalized):
@@ -217,6 +292,42 @@ def log_normalization_trace(orchestrator_response: dict, normalized_response: di
             "normalization_changed_orchestrator_answer %s",
             json.dumps(trace, ensure_ascii=False),
         )
+
+
+def log_stream_final_decision(
+    *,
+    request_id: str,
+    chat,
+    question: str,
+    stream_start_service: str | None,
+    stream_start_intent: str | None,
+    stream_done: dict | None,
+    stream_normalized: dict | None,
+    fallback_used: bool,
+    fallback_reason: str | None,
+    authoritative: dict,
+) -> None:
+    logger.info(
+        "stream_final_decision %s",
+        json.dumps(
+            {
+                "request_id": request_id,
+                "chat_id": str(chat.id),
+                "question": question,
+                "stream_start_service": stream_start_service,
+                "stream_start_intent": stream_start_intent,
+                "stream_done_service": (stream_normalized or {}).get("service") or (stream_done or {}).get("service"),
+                "stream_done_intent": (stream_normalized or {}).get("intent") or (stream_done or {}).get("intent"),
+                "stream_done_block_types": normalized_block_types(stream_normalized or {}),
+                "authoritative_fallback_used": fallback_used,
+                "authoritative_fallback_reason": fallback_reason,
+                "authoritative_service": authoritative.get("service"),
+                "authoritative_intent": authoritative.get("intent"),
+                "authoritative_block_types": normalized_block_types(authoritative),
+            },
+            ensure_ascii=False,
+        ),
+    )
 
 
 def is_stream_endpoint_unavailable(exc: httpx.HTTPStatusError) -> bool:
@@ -316,12 +427,21 @@ async def stream_chat(payload: ChatRequest, request: Request, user: User = Depen
 
             upstream_events = main_chatbot_client.stream_chat(body)
             try:
+                stream_start_service: str | None = None
+                stream_start_intent: str | None = None
                 try:
                     async for upstream_event in upstream_events:
                         if await request.is_disconnected():
                             return
                         if upstream_event.type == "delta" and upstream_event.content:
                             yield sse_event("delta", {"content": upstream_event.content})
+                        elif upstream_event.type == "progress" and isinstance(upstream_event.data, dict):
+                            stream_start_service = stream_start_service or (
+                                str(upstream_event.data.get("service")) if upstream_event.data.get("service") else None
+                            )
+                            stream_start_intent = stream_start_intent or (
+                                str(upstream_event.data.get("intent")) if upstream_event.data.get("intent") else None
+                            )
                         elif upstream_event.type == "done" and isinstance(upstream_event.data, dict):
                             data = upstream_event.data
                             data.setdefault("chat_id", str(chat.id))
@@ -332,18 +452,35 @@ async def stream_chat(payload: ChatRequest, request: Request, user: User = Depen
                                 user=user,
                                 request_presentation=payload.presentation,
                             )
-                            fallback_reason = stream_final_fallback_reason(data, normalized)
+                            fallback_reason = stream_final_fallback_reason(data, normalized, question=payload.message)
                             if fallback_reason:
-                                logger.info(
-                                    "stream_final_fallback request_id=%s intent=%s service=%s reason=%s raw_keys=%s blocks=%s",
-                                    request_id,
-                                    normalized.get("intent"),
-                                    normalized.get("service"),
-                                    fallback_reason,
-                                    sorted(str(key) for key in data.keys()),
-                                    normalized_block_types(normalized),
+                                authoritative = await query_fallback_response()
+                                log_stream_final_decision(
+                                    request_id=request_id,
+                                    chat=chat,
+                                    question=payload.message,
+                                    stream_start_service=stream_start_service,
+                                    stream_start_intent=stream_start_intent,
+                                    stream_done=data,
+                                    stream_normalized=normalized,
+                                    fallback_used=True,
+                                    fallback_reason=fallback_reason,
+                                    authoritative=authoritative,
                                 )
-                                normalized = await query_fallback_response()
+                                normalized = authoritative
+                            else:
+                                log_stream_final_decision(
+                                    request_id=request_id,
+                                    chat=chat,
+                                    question=payload.message,
+                                    stream_start_service=stream_start_service,
+                                    stream_start_intent=stream_start_intent,
+                                    stream_done=data,
+                                    stream_normalized=normalized,
+                                    fallback_used=False,
+                                    fallback_reason=None,
+                                    authoritative=normalized,
+                                )
                             log_normalization_trace(data, normalized)
                             yield sse_event("done", normalized)
                             return

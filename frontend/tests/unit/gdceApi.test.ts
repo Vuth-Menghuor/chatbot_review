@@ -44,8 +44,8 @@ async function captureStreamBody(options: {
       baseUrl: 'http://localhost:8000',
       apiToken: 'test-token',
       message: options.message ?? 'What documents do I need?',
-      chatId: options.chatId,
-      projectId: options.projectId,
+      backendChatId: options.chatId,
+      backendProjectId: options.projectId,
       presentation: options.presentation,
       context: options.context,
     });

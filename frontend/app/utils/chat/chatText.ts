@@ -62,7 +62,10 @@ export function isUnreliableServiceFallbackText(text: unknown, context: ServiceF
   const service = normalizedContextValue(context.service);
   const intent = normalizedContextValue(context.intent);
   if (service === 'general' || intent === 'general') return false;
-  return isUnreliableTradeFormatterDraftText(text);
+  if (service === 'calculator' || intent.includes('calc')) {
+    return isCalculatorReportDraftText(text);
+  }
+  return isUnreliableTradeFormatterDraftText(text) || isCalculatorReportDraftText(text);
 }
 
 const TRADE_FORMATTER_HEADINGS = [

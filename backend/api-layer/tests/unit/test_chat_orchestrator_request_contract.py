@@ -130,6 +130,62 @@ class FullContractMainChatbotClient(FakeMainChatbotClient):
         }
 
 
+class CalculatorFallbackContractClient(FakeMainChatbotClient):
+    def __init__(self):
+        super().__init__(intent="calculation")
+        self.query_payload = {
+            "request_id": "req-calculator-authoritative",
+            "session_id": "",
+            "service": "calculator",
+            "intent": "calculation",
+            "status": "completed",
+            "answer": "Import tax calculation completed.",
+            "calculator_result": {
+                "summary": {"total_tax": 1470, "currency": "USD", "phase_gap": 0},
+                "product": {
+                    "hs_code": "8703.22.00",
+                    "description": "Motor cars and other motor vehicles",
+                    "origin_country": "China",
+                    "trade_agreement": "ACFTA",
+                },
+                "inputs": {"declared_value": 0, "cif_value": 10500, "currency": "USD"},
+                "tax_breakdown": [
+                    {"component": "Customs Duty", "rate": "0%", "amount": 0},
+                    {"component": "VAT", "rate": "10%", "amount": 1050},
+                ],
+                "phases": [{"title": "Step 1: Duty", "lines": ["ACFTA duty is 0%."]}],
+                "assumptions": ["CIF value was used as the taxable base."],
+            },
+            "suggestions": [
+                "Calculate another vehicle tax scenario",
+                "Compare ACFTA and MFN duty for this HS code",
+            ],
+        }
+
+    async def request(self, method: str, path: str, **kwargs):
+        self.calls.append((method, path, kwargs))
+        payload = dict(self.query_payload)
+        payload["session_id"] = kwargs["json"]["session_id"]
+        payload["chat_id"] = kwargs["json"]["chat_id"]
+        payload["project_id"] = kwargs["json"].get("project_id")
+        return payload
+
+    async def stream_sse(self, method: str, path: str, **kwargs):
+        self.calls.append((method, path, kwargs))
+        yield "event: delta\ndata: " + json.dumps({"content": "Generic calculator guidance."}) + "\n\n"
+        yield "event: done\ndata: " + json.dumps({
+            "status": "completed",
+            "service": "general",
+            "intent": "general",
+            "answer": "Generic calculator guidance.",
+            "suggestions": [
+                "How do I classify my goods?",
+                "How is customs duty calculated?",
+                "What documents do I need to import?",
+            ],
+        }) + "\n\n"
+
+
 def patch_chat_dependencies(monkeypatch, chat: FakeChat, upstream: FakeMainChatbotClient) -> None:
     async def fake_create_or_get_chat(*_args, **_kwargs):
         return chat
@@ -191,11 +247,13 @@ async def _send_forwards_calculation_and_followup_raw_with_stable_ids(monkeypatc
         "question": first,
         "session_id": str(chat.id),
         "chat_id": str(chat.id),
+        "project_id": str(chat.project_id),
     }
     assert followup_body == {
         "question": followup,
         "session_id": str(chat.id),
         "chat_id": str(chat.id),
+        "project_id": str(chat.project_id),
     }
     assert first_body["session_id"] == followup_body["session_id"]
     assert first_body["chat_id"] == followup_body["chat_id"]
@@ -230,6 +288,7 @@ async def _send_forwards_general_retrieval_and_trade_raw(monkeypatch):
         assert body["question"] == message
         assert body["session_id"] == str(chat.id)
         assert body["chat_id"] == str(chat.id)
+        assert body["project_id"] == str(chat.project_id)
 
 
 def test_send_preserves_generic_presentation_and_context(monkeypatch):
@@ -254,6 +313,7 @@ async def _send_preserves_generic_presentation_and_context(monkeypatch):
         "question": "Cotton fabric",
         "session_id": str(chat.id),
         "chat_id": str(chat.id),
+        "project_id": str(chat.project_id),
         "presentation": presentation,
         "context": context,
     }
@@ -396,3 +456,40 @@ async def _stream_forwards_future_internal_stream_request_shape(monkeypatch):
         "context": context,
     }
     assert f'"request_id": "{sent_body["request_id"]}"'.encode() in body
+
+
+def test_calculator_stream_done_matches_send_after_authoritative_fallback(monkeypatch):
+    asyncio.run(_calculator_stream_done_matches_send_after_authoritative_fallback(monkeypatch))
+
+
+async def _calculator_stream_done_matches_send_after_authoritative_fallback(monkeypatch):
+    chat = FakeChat()
+    user = FakeUser()
+    message = "can u calculate tax for 8703.22.00 china cif10500usd acfta dv 0"
+
+    send_upstream = CalculatorFallbackContractClient()
+    patch_chat_dependencies(monkeypatch, chat, send_upstream)
+    send_payload = await chat_endpoint.send_chat(
+        ChatRequest(chat_id=chat.id, message=message),
+        FakeRequest(),
+        user=user,
+        db=FakeDb(),
+    )
+
+    stream_upstream = CalculatorFallbackContractClient()
+    patch_chat_dependencies(monkeypatch, chat, stream_upstream)
+    stream_response = await chat_endpoint.stream_chat(
+        ChatRequest(chat_id=chat.id, message=message),
+        FakeRequest(),
+        user=user,
+        db=FakeDb(),
+    )
+    stream_events = await read_sse_events(stream_response)
+    done_payload = next(data for event, data in stream_events if event == "done")
+
+    for key in ("service", "intent", "status", "response", "message", "suggestions"):
+        assert done_payload[key] == send_payload[key]
+    assert done_payload["service"] == "calculator"
+    assert done_payload["intent"] == "calculation"
+    assert stream_upstream.calls[0][0:2] == ("POST", "/query/stream")
+    assert stream_upstream.calls[1][0:2] == ("POST", "/query")

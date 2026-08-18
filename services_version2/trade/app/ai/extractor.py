@@ -415,13 +415,19 @@ def parse_and_resolve_parameters(raw: Dict[str, Any], question: str) -> Dict[str
         params["group_by"] = [group_by]
         params["dimensions"] = [group_by]
 
-    # Explicit product-level growth override to ensure 'product/products' queries map to hs_heading
-    if params.get("intent") == "growth":
-        q_lower = question.lower()
-        if any(term in q_lower for term in ["product", "products"]):
-            params["group_by"] = ["hs_heading"]
-            params["dimensions"] = ["hs_heading"]
+    # Explicit product-level override to ensure generic 'product/products' queries map to hs_chapter (the supported commodity dimension)
+    q_lower = question.lower()
+    if any(term in q_lower for term in ["product", "products", "commodity", "commodities"]):
+        has_country_signal = any(term in q_lower for term in ["country", "countries", "partner", "partners", "destination", "origin"])
+        has_transport_signal = any(term in q_lower for term in ["transport", "mot", "mode", "ship", "plane", "flight", "air", "sea", "road", "rail"])
+        has_sitc_signal = any(term in q_lower for term in ["sitc", "sector", "industry"])
+        if not has_country_signal and not has_transport_signal and not has_sitc_signal:
+            gb = params.get("group_by")
+            if not gb or (isinstance(gb, list) and any(g.lower() in ("hs_heading", "hs_code", "product", "products") for g in gb)):
+                params["group_by"] = ["hs_chapter"]
+                params["dimensions"] = ["hs_chapter"]
 
+    if params.get("intent") == "growth":
         # Decline/decrease directional context detection
         # Route stays as "growth" (math is identical), but NLG uses this flag
         # to confirm/correct the user's directional expectation.
@@ -432,7 +438,6 @@ def parse_and_resolve_parameters(raw: Dict[str, Any], question: str) -> Dict[str
 
     # Explicit override for ranking queries asking for "both" flows to ensure flow grouping is included
     if params.get("intent") == "ranking":
-        q_lower = question.lower()
         if "both" in q_lower or ("import" in q_lower and "export" in q_lower):
             if "group_by" not in params:
                 params["group_by"] = ["partner_country"]
@@ -441,7 +446,7 @@ def parse_and_resolve_parameters(raw: Dict[str, Any], question: str) -> Dict[str
             params["dimensions"] = params["group_by"]
 
     # Explicit override for breakdown queries asking for "product breakdown" to use hs_chapter
-    if "product breakdown" in question.lower():
+    if "product breakdown" in q_lower:
         params["group_by"] = ["hs_chapter"]
         params["dimensions"] = ["hs_chapter"]
 

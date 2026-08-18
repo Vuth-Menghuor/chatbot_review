@@ -6,8 +6,8 @@ export interface GdceStreamOptions {
   baseUrl: string;
   apiToken?: string;
   message: string;
-  chatId?: string;
-  projectId?: string;
+  backendChatId?: string | null;
+  backendProjectId?: string | null;
   attachments?: unknown[];
   presentation?: GdcePresentationPreference;
   context?: Record<string, unknown>;
@@ -29,8 +29,8 @@ export interface GdceSendOptions {
   baseUrl: string;
   apiToken?: string;
   message: string;
-  chatId?: string;
-  projectId?: string;
+  backendChatId?: string | null;
+  backendProjectId?: string | null;
   attachments?: unknown[];
   presentation?: GdcePresentationPreference;
   context?: Record<string, unknown>;
@@ -64,8 +64,8 @@ export async function streamGdceChat(options: GdceStreamOptions): Promise<void> 
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
-      chat_id: options.chatId || null,
-      project_id: options.projectId || null,
+      chat_id: options.backendChatId ?? null,
+      project_id: options.backendProjectId ?? null,
       message: options.message,
       attachments: options.attachments ?? [],
       metadata: { client: 'gdce-nuxt-frontend' },
@@ -117,8 +117,8 @@ export async function sendGdceChat(options: GdceSendOptions): Promise<Record<str
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
-      chat_id: options.chatId || null,
-      project_id: options.projectId || null,
+      chat_id: options.backendChatId ?? null,
+      project_id: options.backendProjectId ?? null,
       message: options.message,
       attachments: options.attachments ?? [],
       metadata: { client: 'gdce-nuxt-frontend', presentation: 'progressive' },

@@ -132,8 +132,8 @@ def parse_orchestrator_sse_block(block: str) -> ChatStreamEvent | None:
     except json.JSONDecodeError:
         data = {"content": "\n".join(data_lines)}
 
-    if event == "start":
-        return None
+    if event == "start" and isinstance(data, dict):
+        return ChatStreamEvent(type="progress", data={"stage": "start", **data})
 
     if isinstance(data, dict) and event in {"message", "delta"}:
         content = first_present_text(data, "content", "delta", "text", "chunk")

@@ -96,13 +96,35 @@ export function useChat(chatId?: string) {
 
   function friendlyChatError(error: unknown) {
     if (error instanceof ChatApiRequestError) {
+      if (import.meta.dev) {
+        console.error('[GDCE chat request failed]', {
+          status: error.status,
+          body: error.body,
+          message: error.message,
+        });
+      }
+      if (error.status === 400) {
+        return 'Invalid chat request. Please check your message and try again.';
+      }
       if (error.status === 401) {
         return 'Your session has expired. Please sign in again to continue.';
+      }
+      if (error.status === 403) {
+        return 'You do not have access to this chat or project.';
+      }
+      if (error.status === 404) {
+        return 'This chat or project does not exist anymore.';
+      }
+      if (error.status === 422) {
+        return 'Invalid request data. Please refresh the page and try again.';
       }
       if (error.status === 503) {
         return 'The chat service is temporarily unavailable. Please try again in a moment.';
       }
       return 'The chat request could not be completed. Please try again.';
+    }
+    if (error instanceof Error && error.message.includes('Project workspace')) {
+      return error.message;
     }
     if (error instanceof TypeError) {
       return 'We could not reach the chat service. Please check your connection and try again.';

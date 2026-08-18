@@ -12,15 +12,21 @@ import {
   streamGdceChat,
 } from '~/services/chat-api';
 import { uploadImageFile } from '~/services/files-api';
+import { createProjectRequest } from '~/services/projects-api';
 import { useAuthStore } from '~/stores/auth.store';
+import { useChatStore } from '~/stores/chat.store';
 import { useNotificationStore } from '~/stores/notification.store';
+import { useProjectStore } from '~/stores/project.store';
 import { getImageUploadLimits, validateImageFile } from '~/utils/file/imageUpload';
 import { isCalculatorReportDraftText, isUnreliableTradeFormatterDraftText } from '~/utils/chat';
+import { backendUuidOrNull } from '~/utils/id/backendIdentity';
 
 type NormalizedChatMessageParts = NonNullable<ReturnType<typeof handleNormalizedChatResponse>>;
 
 export function useChatStreaming(deps: StreamingDeps) {
   const notificationStore = useNotificationStore();
+  const chatStore = useChatStore();
+  const projectStore = useProjectStore();
 
   function notifyResponseCompleted() {
     notificationStore.showToast({
@@ -145,6 +151,70 @@ export function useChatStreaming(deps: StreamingDeps) {
 
   function normalizedRoutingValue(value: unknown) {
     return typeof value === 'string' ? value.trim().toLowerCase() : '';
+  }
+
+  function localChat() {
+    return deps.chatId ? chatStore.recentChats.find((chat) => chat.id === deps.chatId) : undefined;
+  }
+
+  function localProjectId() {
+    return localChat()?.projectId ?? deps.projectId;
+  }
+
+  function localProject() {
+    const projectId = localProjectId();
+    return projectId ? projectStore.projects.find((project) => project.id === projectId) : undefined;
+  }
+
+  async function syncProjectForChat() {
+    const project = localProject();
+    if (!project) return null;
+
+    const existingBackendId = backendUuidOrNull(project.backendId);
+    if (existingBackendId) return existingBackendId;
+
+    const authStore = useAuthStore();
+    const token = await authStore.getValidAccessToken();
+    if (!token) {
+      throw new Error('Please sign in before using this project workspace.');
+    }
+
+    try {
+      const result = await createProjectRequest(deps.chatApi!.baseUrl, token, {
+        name: project.name,
+        description: project.description,
+      });
+      authStore.accessToken = result.accessToken;
+      authStore.refreshToken = result.refreshToken;
+
+      const backendProjectId = backendUuidOrNull(result.data.id);
+      if (!backendProjectId) {
+        throw new Error('Project synchronization did not return a valid backend project ID.');
+      }
+
+      projectStore.setBackendProjectId(project.id, backendProjectId);
+      if (deps.chatId) chatStore.setBackendProjectId(deps.chatId, backendProjectId);
+      return backendProjectId;
+    } catch (error) {
+      if (import.meta.dev && error instanceof Error) {
+        console.error('[GDCE project synchronization failed]', error);
+      }
+      throw new Error('Project workspace could not be synchronized. Please try creating the project again.');
+    }
+  }
+
+  async function resolveBackendRoutingIds() {
+    const chat = localChat();
+    const project = localProject();
+    const backendProjectId = project ? await syncProjectForChat() : null;
+    if (backendProjectId && deps.chatId) {
+      chatStore.setBackendProjectId(deps.chatId, backendProjectId);
+    }
+
+    return {
+      backendChatId: backendUuidOrNull(chat?.backendId),
+      backendProjectId,
+    };
   }
 
   function isTableBlock(block: MessageBlock) {
@@ -488,6 +558,8 @@ export function useChatStreaming(deps: StreamingDeps) {
     let streamIntent = '';
     let deltaRenderTail: Promise<void> = Promise.resolve();
     const attachments = await prepareAttachments(files);
+    const routing = await resolveBackendRoutingIds();
+    const currentLocalProjectId = localProjectId();
 
     function rememberStreamRouting(data: Record<string, unknown>) {
       streamService = normalizedRoutingValue(data.service) || streamService;
@@ -503,8 +575,8 @@ export function useChatStreaming(deps: StreamingDeps) {
         baseUrl: deps.chatApi.baseUrl,
         apiToken: deps.chatApi.apiToken,
         message: text,
-        chatId: deps.chatId,
-        projectId: deps.projectId,
+        backendChatId: routing.backendChatId,
+        backendProjectId: routing.backendProjectId,
         attachments,
         presentation: presentationPreferenceFromMessage(text),
         context,
@@ -512,6 +584,15 @@ export function useChatStreaming(deps: StreamingDeps) {
         onStart: (data) => {
           if (deps.stopStreaming.value) return;
           rememberStreamRouting(data);
+          const backendChatId = backendUuidOrNull(typeof data.chat_id === 'string' ? data.chat_id : null);
+          const backendProjectId = backendUuidOrNull(typeof data.project_id === 'string' ? data.project_id : null);
+          if (deps.chatId && backendChatId) {
+            chatStore.setBackendChatId(deps.chatId, backendChatId);
+          }
+          if (currentLocalProjectId && backendProjectId) {
+            projectStore.setBackendProjectId(currentLocalProjectId, backendProjectId);
+            if (deps.chatId) chatStore.setBackendProjectId(deps.chatId, backendProjectId);
+          }
           deps.currentRenderType.value = 'response';
           const responseStatus = coerceResponseStatus(data.status);
           const responseMode = coerceResponseMode(data.mode);

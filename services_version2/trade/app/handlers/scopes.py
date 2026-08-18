@@ -261,6 +261,21 @@ def apply_intent_scoping(enriched_plan: EnrichedQueryPlan) -> ScopedQueryPlan:
             else:
                 raw_dims = ["HS_CHAPTER"]
                 raw_group = ["HS_CHAPTER"]
+        elif intent == "ranking":
+            question_lower = (enriched_plan.question or "").lower()
+            if any(term in question_lower for term in ["transport", "mot", "mode", "ship", "plane", "flight", "air", "sea", "road", "rail"]):
+                raw_dims = ["MODE_OF_TRANSPORT"]
+                raw_group = ["MODE_OF_TRANSPORT"]
+            elif any(term in question_lower for term in ["product", "products", "commodity", "commodities"]):
+                if classification_system == "SITC" or any(term in question_lower for term in ["sector", "industry", "sitc"]):
+                    raw_dims = ["SITC_DIVISION"]
+                    raw_group = ["SITC_DIVISION"]
+                else:
+                    raw_dims = ["HS_CHAPTER"]
+                    raw_group = ["HS_CHAPTER"]
+            elif strategy:
+                raw_dims = strategy.default_dimensions
+                raw_group = strategy.default_group_by
         elif strategy:
             raw_dims = strategy.default_dimensions
             raw_group = strategy.default_group_by

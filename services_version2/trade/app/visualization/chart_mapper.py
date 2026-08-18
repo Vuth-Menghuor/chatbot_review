@@ -205,33 +205,34 @@ def generate_visualizations(
             }
 
     # Dynamic Visual Suitability Overrides
-    if intent == "summary":
-        test_rows = rows
-        requested_flow = params.get("trade_direction") or \
-                         params.get("filters", {}).get("FLOW")
-        if requested_flow:
-            test_rows = [
-                r for r in rows
-                if str(r.get("FLOW", r.get("flow", ""))).upper()
-                   == requested_flow.upper()
-            ]
-        if len(test_rows) <= 1:
-            chart_type = "kpi"
-        else:
-            chart_type = "bar"
-    elif intent == "breakdown":
-        if str(label_col).upper() in ["MODE_OF_TRANSPORT", "SITC_SECTION", "FLOW"]:
-            chart_type = "pie"
-        else:
-            chart_type = "bar"
-    elif intent in ("growth", "comparison"):
-        if is_time_series_comparison:
-            chart_type = "line"
-        elif str(label_col).upper() == "PERIOD":
-            if not is_single_period:
-                chart_type = "line"
+    if not user_pref:
+        if intent == "summary":
+            test_rows = rows
+            requested_flow = params.get("trade_direction") or \
+                             params.get("filters", {}).get("FLOW")
+            if requested_flow:
+                test_rows = [
+                    r for r in rows
+                    if str(r.get("FLOW", r.get("flow", ""))).upper()
+                       == requested_flow.upper()
+                ]
+            if len(test_rows) <= 1:
+                chart_type = "kpi"
             else:
                 chart_type = "bar"
+        elif intent == "breakdown":
+            if str(label_col).upper() in ["MODE_OF_TRANSPORT", "SITC_SECTION", "FLOW"]:
+                chart_type = "pie"
+            else:
+                chart_type = "bar"
+        elif intent in ("growth", "comparison"):
+            if is_time_series_comparison:
+                chart_type = "line"
+            elif str(label_col).upper() == "PERIOD":
+                if not is_single_period:
+                    chart_type = "line"
+                else:
+                    chart_type = "bar"
 
     # For line charts, resolve a secondary series column from group_by
     # (e.g. MODE_OF_TRANSPORT or PARTNER_COUNTRY) so transform_to_line_chart can build one

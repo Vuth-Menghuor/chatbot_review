@@ -4,6 +4,8 @@ import { setActivePinia, createPinia } from 'pinia';
 
 import { useChatStreaming } from '../../app/composables/chat/useChatStreaming';
 import { useAuthStore } from '../../app/stores/auth.store';
+import { useChatStore } from '../../app/stores/chat.store';
+import { useProjectStore } from '../../app/stores/project.store';
 import type { Message, MessageBlock, MessageSource, StreamingDeps } from '../../app/types/message';
 
 type UpsertCall = {
@@ -142,6 +144,74 @@ async function streamWithEvents(
 
 async function streamWithDonePayload(payload: unknown) {
   return streamWithEvents([{ event: 'done', data: payload }]);
+}
+
+async function captureStreamRequestWithLocalState(setup: {
+  chatBackendId?: string;
+  projectBackendId?: string;
+  includeProject?: boolean;
+  startChatId?: string;
+}) {
+  installRuntimeConfig();
+  setActivePinia(createPinia());
+  const authStore = useAuthStore();
+  authStore.accessToken = 'test-token';
+  const chatStore = useChatStore();
+  const projectStore = useProjectStore();
+  const project = setup.includeProject
+    ? projectStore.addProject('Customs Project', 'Project workspace', setup.projectBackendId)
+    : undefined;
+  const chat = chatStore.createChat('New Chat', project?.id);
+  if (setup.chatBackendId) chatStore.setBackendChatId(chat.id, setup.chatBackendId);
+
+  let captured: Record<string, unknown> | null = null;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    captured = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+    return sseResponse([
+      {
+        event: 'start',
+        data: {
+          request_id: 'request-1',
+          chat_id: setup.startChatId ?? '11111111-1111-4111-8111-111111111111',
+          ...(setup.projectBackendId ? { project_id: setup.projectBackendId } : {}),
+        },
+      },
+      { event: 'done', data: normalizedResponse() },
+    ]);
+  }) as typeof fetch;
+
+  const deps: StreamingDeps = {
+    chatId: chat.id,
+    projectId: project?.id,
+    chatApi: {
+      enabled: true,
+      baseUrl: 'http://localhost:8000',
+      apiToken: 'test-token',
+      transport: 'gdce',
+    },
+    stopStreaming: { value: false },
+    streamController: { value: null },
+    currentRenderType: { value: 'idle' },
+    typing: {
+      config: {},
+      sleep: async () => {},
+      applyNaturalPause: async () => {},
+      getPiecePause: () => 0,
+    },
+    upsertAssistantMessage: () => {},
+    getAssistantMessage: () => null,
+    getUiBlockDelay: () => 0,
+  };
+
+  try {
+    await useChatStreaming(deps).streamFromChatApi('hello', [], 'assistant-1');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.notEqual(captured, null);
+  return { body: captured!, chatStore, chat, project };
 }
 
 async function streamWithReactiveAssistant(
@@ -1638,8 +1708,9 @@ test('streamFromChatApi suppresses calculator report deltas before final normali
   assert.equal(finalCall.meta?.status, 'completed');
   assert.equal(finalCall.meta?.responseStatus, 'completed');
   assert.equal(finalCall.meta?.streamingContent, '');
-  assert.equal(finalCall.content, 'Import tax calculation complete.');
   assert.deepEqual(finalCall.meta?.blocks?.map((block) => block.type), ['summary']);
+  assert.equal(finalCall.meta?.blocks?.[0]?.content?.data?.total_tax, 0);
+  assert.equal(finalCall.content.includes('Import Tax Calculation'), true);
   assert.equal(finalCall.meta?.blocks?.some((block) => block.type === 'markdown' && block.content === draft), false);
 });
 
@@ -1821,4 +1892,113 @@ test('streamFromChatApi suppresses generic structured trade draft deltas', async
   assert.ok(finalCall);
   assert.equal(finalCall.content, 'Final structured trade response.');
   assert.equal(finalCall.meta?.blocks?.some((block) => block.type === 'markdown' && block.content === draft), false);
+});
+
+test('streamFromChatApi sends null backend ids for a brand-new normal chat', async () => {
+  const { body } = await captureStreamRequestWithLocalState({});
+
+  assert.equal(body.chat_id, null);
+  assert.equal(body.project_id, null);
+});
+
+test('streamFromChatApi sends backend chat id for an existing normal chat', async () => {
+  const backendChatId = '22222222-2222-4222-8222-222222222222';
+  const { body } = await captureStreamRequestWithLocalState({ chatBackendId: backendChatId });
+
+  assert.equal(body.chat_id, backendChatId);
+  assert.equal(body.project_id, null);
+});
+
+test('streamFromChatApi sends backend project id and null chat id for a new project chat', async () => {
+  const backendProjectId = '33333333-3333-4333-8333-333333333333';
+  const { body, project } = await captureStreamRequestWithLocalState({
+    includeProject: true,
+    projectBackendId: backendProjectId,
+  });
+
+  assert.equal(body.chat_id, null);
+  assert.equal(body.project_id, backendProjectId);
+  assert.notEqual(body.project_id, project?.id);
+});
+
+test('streamFromChatApi sends backend chat and project ids for an existing project chat', async () => {
+  const backendChatId = '44444444-4444-4444-8444-444444444444';
+  const backendProjectId = '55555555-5555-4555-8555-555555555555';
+  const { body } = await captureStreamRequestWithLocalState({
+    includeProject: true,
+    chatBackendId: backendChatId,
+    projectBackendId: backendProjectId,
+  });
+
+  assert.equal(body.chat_id, backendChatId);
+  assert.equal(body.project_id, backendProjectId);
+});
+
+test('streamFromChatApi stores backend chat id from SSE start event', async () => {
+  const returnedBackendChatId = '66666666-6666-4666-8666-666666666666';
+  const { chatStore, chat } = await captureStreamRequestWithLocalState({
+    startChatId: returnedBackendChatId,
+  });
+
+  const storedChat = chatStore.recentChats.find((item) => item.id === chat.id);
+  assert.equal(storedChat?.backendId, returnedBackendChatId);
+});
+
+test('streamFromChatApi synchronizes an old local project before project chat send', async () => {
+  installRuntimeConfig();
+  setActivePinia(createPinia());
+  const authStore = useAuthStore();
+  authStore.accessToken = 'test-token';
+  const chatStore = useChatStore();
+  const projectStore = useProjectStore();
+  const project = projectStore.addProject('Legacy Project', 'Local only');
+  const chat = chatStore.createChat('New Chat', project.id);
+  const backendProjectId = '77777777-7777-4777-8777-777777777777';
+  const originalFetch = globalThis.fetch;
+  const capturedBodies: Record<string, unknown>[] = [];
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    capturedBodies.push(JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>);
+    if (url.endsWith('/api/v1/projects')) {
+      return jsonResponse({ id: backendProjectId, name: project.name, description: project.description });
+    }
+    return sseResponse([
+      { event: 'start', data: { request_id: 'request-1', chat_id: '88888888-8888-4888-8888-888888888888', project_id: backendProjectId } },
+      { event: 'done', data: normalizedResponse() },
+    ]);
+  }) as typeof fetch;
+
+  try {
+    await useChatStreaming({
+      chatId: chat.id,
+      projectId: project.id,
+      chatApi: {
+        enabled: true,
+        baseUrl: 'http://localhost:8000',
+        apiToken: 'test-token',
+        transport: 'gdce',
+      },
+      stopStreaming: { value: false },
+      streamController: { value: null },
+      currentRenderType: { value: 'idle' },
+      typing: {
+        config: {},
+        sleep: async () => {},
+        applyNaturalPause: async () => {},
+        getPiecePause: () => 0,
+      },
+      upsertAssistantMessage: () => {},
+      getAssistantMessage: () => null,
+      getUiBlockDelay: () => 0,
+    }).streamFromChatApi('hello', [], 'assistant-1');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  const chatRequestBody = capturedBodies.at(-1);
+  assert.equal(chatRequestBody?.chat_id, null);
+  assert.equal(chatRequestBody?.project_id, backendProjectId);
+  assert.notEqual(chatRequestBody?.project_id, project.id);
+  assert.equal(projectStore.projects.find((item) => item.id === project.id)?.backendId, backendProjectId);
 });

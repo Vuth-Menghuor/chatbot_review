@@ -121,8 +121,8 @@ function onCreateChat() {
   navigateTo('/');
 }
 
-function onCreateProject(name: string, category: string) {
-  const project = createProject(name, category);
+async function onCreateProject(name: string, category: string) {
+  const project = await createProject(name, category);
   createProjectOpen.value = false;
   navigateTo(`/projects/${project.id}`);
 }

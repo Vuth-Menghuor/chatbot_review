@@ -216,8 +216,10 @@ export interface UseTypewriterResult {
 // ─── Stores / projects ───────────────────────────────────────────────────────
 export interface Chat {
   id: string;
+  backendId?: string;
   title: string;
   projectId?: string;
+  backendProjectId?: string;
   createdAt: string;
   lastMessage?: string;
   pinned?: boolean;
@@ -225,6 +227,7 @@ export interface Chat {
 
 export interface Project {
   id: string;
+  backendId?: string;
   name: string;
   description?: string;
   createdAt: string;
