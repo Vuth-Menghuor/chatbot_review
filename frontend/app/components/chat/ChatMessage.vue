@@ -34,7 +34,7 @@ defineExpose({ scrollToBottom });
 <template>
   <div ref="scrollContainer" class="relative h-full w-full overflow-y-auto custom-scrollbar">
     <div class="flex min-h-full flex-col">
-      <div class="mx-auto w-full max-w-4xl flex-1 space-y-6 px-2 pt-2 sm:px-8 md:px-10">
+      <div class="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-y-6 px-2 pt-2 sm:px-8 md:px-10">
         <div
           v-for="(msg, i) in messages"
           :key="msg.id ?? i"

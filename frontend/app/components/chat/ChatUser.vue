@@ -111,7 +111,9 @@ function toggleExpanded() {
       </BaseButton>
     </v-sheet>
 
-    <div class="mt-2 opacity-0 transition-opacity group-hover/user:opacity-100">
+    <div
+      class="absolute right-4 top-full z-10 mt-2 opacity-0 transition-opacity hover:opacity-100 group-hover/user:opacity-100 group-focus-within/user:opacity-100 focus-within:opacity-100"
+    >
       <ChatAction
         v-if="showUserActions"
         :message="message"
