@@ -41,7 +41,10 @@ export function useChatStreaming(deps: StreamingDeps) {
     return status === 'failed' ? 'error' : 'completed';
   }
 
-  function coerceResponseStatus(value: unknown, fallback: ResponseStatus = 'processing'): ResponseStatus {
+  function coerceResponseStatus(
+    value: unknown,
+    fallback: ResponseStatus = 'processing',
+  ): ResponseStatus {
     const status = String(value || '').toLowerCase();
     if (status === 'completed' || status === 'success' || status === 'done') return 'completed';
     if (status === 'failed' || status === 'error' || status === 'cancelled') return 'failed';
@@ -70,40 +73,51 @@ export function useChatStreaming(deps: StreamingDeps) {
   }
 
   function streamingMarkdownBlock(messageId: string, content: string) {
-    return [{
-      id: `${messageId}-streaming-markdown`,
-      type: 'markdown' as const,
-      content,
-      isComplete: false,
-    }];
+    return [
+      {
+        id: `${messageId}-streaming-markdown`,
+        type: 'markdown' as const,
+        content,
+        isComplete: false,
+      },
+    ];
   }
 
   function completedStreamingMarkdownBlock(messageId: string, content: string) {
-    return [{
-      id: `${messageId}-streaming-markdown`,
-      type: 'markdown' as const,
-      content,
-      isComplete: true,
-    }];
+    return [
+      {
+        id: `${messageId}-streaming-markdown`,
+        type: 'markdown' as const,
+        content,
+        isComplete: true,
+      },
+    ];
   }
 
   function streamErrorBlock(messageId: string, detail: string) {
-    return [{
-      id: `${messageId}-stream-error`,
-      type: 'error' as const,
-      content: {
-        title: 'Response unavailable',
-        message: detail,
+    return [
+      {
+        id: `${messageId}-stream-error`,
+        type: 'error' as const,
+        content: {
+          title: 'Response unavailable',
+          message: detail,
+        },
+        isComplete: true,
       },
-      isComplete: true,
-    }];
+    ];
   }
 
   function isRenderableMessageBlock(block: MessageBlock) {
-    if (block.type === 'markdown') return typeof block.content === 'string' && block.content.trim().length > 0;
+    if (block.type === 'markdown')
+      return typeof block.content === 'string' && block.content.trim().length > 0;
     if (block.type === 'table') return isTableBlock(block);
     if (block.type === 'error') {
-      return isRecord(block.content) && typeof block.content.message === 'string' && block.content.message.trim().length > 0;
+      return (
+        isRecord(block.content) &&
+        typeof block.content.message === 'string' &&
+        block.content.message.trim().length > 0
+      );
     }
     if (block.type === 'fallback') return false;
     return true;
@@ -163,7 +177,9 @@ export function useChatStreaming(deps: StreamingDeps) {
 
   function localProject() {
     const projectId = localProjectId();
-    return projectId ? projectStore.projects.find((project) => project.id === projectId) : undefined;
+    return projectId
+      ? projectStore.projects.find((project) => project.id === projectId)
+      : undefined;
   }
 
   async function syncProjectForChat() {
@@ -199,7 +215,9 @@ export function useChatStreaming(deps: StreamingDeps) {
       if (import.meta.dev && error instanceof Error) {
         console.error('[GDCE project synchronization failed]', error);
       }
-      throw new Error('Project workspace could not be synchronized. Please try creating the project again.');
+      throw new Error(
+        'Project workspace could not be synchronized. Please try creating the project again.',
+      );
     }
   }
 
@@ -230,7 +248,11 @@ export function useChatStreaming(deps: StreamingDeps) {
     return 130;
   }
 
-  function tableBlockWithRows(block: MessageBlock, rows: Record<string, unknown>[], isComplete: boolean) {
+  function tableBlockWithRows(
+    block: MessageBlock,
+    rows: Record<string, unknown>[],
+    isComplete: boolean,
+  ) {
     if (!isRecord(block.content)) return withBlockCompletion(block, isComplete);
     return {
       ...block,
@@ -251,7 +273,11 @@ export function useChatStreaming(deps: StreamingDeps) {
     const columnKeys = columns
       .map((column) => (isRecord(column) ? String(column.key ?? '') : ''))
       .filter(Boolean);
-    const snapshots: Array<{ rows: Record<string, unknown>[]; phase: 'cell' | 'row'; isComplete: boolean }> = [];
+    const snapshots: Array<{
+      rows: Record<string, unknown>[];
+      phase: 'cell' | 'row';
+      isComplete: boolean;
+    }> = [];
     const completedRows: Record<string, unknown>[] = [];
 
     rows.forEach((rawRow, rowIndex) => {
@@ -288,7 +314,11 @@ export function useChatStreaming(deps: StreamingDeps) {
     if (streamedContent.trim()) return false;
     if (parts.blocks.length !== 1) return false;
     const [block] = parts.blocks;
-    return block.type === 'markdown' && typeof block.content === 'string' && block.content.trim().length > 0;
+    return (
+      block.type === 'markdown' &&
+      typeof block.content === 'string' &&
+      block.content.trim().length > 0
+    );
   }
 
   function markdownFallbackChunks(content: string) {
@@ -337,7 +367,8 @@ export function useChatStreaming(deps: StreamingDeps) {
     startedAt: number,
   ) {
     const block = parts.blocks[0];
-    const finalContent = typeof block.content === 'string' ? block.content.trim() : parts.content.trim();
+    const finalContent =
+      typeof block.content === 'string' ? block.content.trim() : parts.content.trim();
     let visibleContent = '';
 
     for (const chunk of markdownFallbackChunks(finalContent)) {
@@ -398,7 +429,9 @@ export function useChatStreaming(deps: StreamingDeps) {
       responseMode: 'stream',
       progressStage: isFinal ? 'completed' : 'rendering',
       progressMessage: isFinal
-        ? (parts.status === 'completed' ? 'Response completed.' : 'Response finished.')
+        ? parts.status === 'completed'
+          ? 'Response completed.'
+          : 'Response finished.'
         : 'Formatting response...',
       streamingContent: isFinal ? '' : streamedContent,
       normalizedResponse: normalizedDone,
@@ -438,7 +471,9 @@ export function useChatStreaming(deps: StreamingDeps) {
           startedAt,
           false,
         );
-        await deps.typing.sleep(isTableBlock(block) ? tableRevealDelay(block, 'shell') : finalBlockRevealDelay(block));
+        await deps.typing.sleep(
+          isTableBlock(block) ? tableRevealDelay(block, 'shell') : finalBlockRevealDelay(block),
+        );
         if (deps.stopStreaming.value || deps.streamController.value?.signal.aborted) return;
       }
 
@@ -584,8 +619,12 @@ export function useChatStreaming(deps: StreamingDeps) {
         onStart: (data) => {
           if (deps.stopStreaming.value) return;
           rememberStreamRouting(data);
-          const backendChatId = backendUuidOrNull(typeof data.chat_id === 'string' ? data.chat_id : null);
-          const backendProjectId = backendUuidOrNull(typeof data.project_id === 'string' ? data.project_id : null);
+          const backendChatId = backendUuidOrNull(
+            typeof data.chat_id === 'string' ? data.chat_id : null,
+          );
+          const backendProjectId = backendUuidOrNull(
+            typeof data.project_id === 'string' ? data.project_id : null,
+          );
           if (deps.chatId && backendChatId) {
             chatStore.setBackendChatId(deps.chatId, backendChatId);
           }
@@ -604,7 +643,8 @@ export function useChatStreaming(deps: StreamingDeps) {
             chatId: typeof data.chat_id === 'string' ? data.chat_id : undefined,
             responseMode,
             progressStage: 'starting',
-            progressMessage: responseMode === 'stream' ? 'Starting response stream...' : 'Starting response...',
+            progressMessage:
+              responseMode === 'stream' ? 'Starting response stream...' : 'Starting response...',
             streamingContent: '',
             error: null,
           });
@@ -620,7 +660,9 @@ export function useChatStreaming(deps: StreamingDeps) {
           deps.upsertAssistantMessage(assistantMsgId, existingContent, {
             status: responseStatusToStreamingUiStatus(responseStatus),
             responseStatus,
-            blocks: existing?.blocks ?? (existingContent ? streamingMarkdownBlock(assistantMsgId, existingContent) : []),
+            blocks:
+              existing?.blocks ??
+              (existingContent ? streamingMarkdownBlock(assistantMsgId, existingContent) : []),
             requestId: typeof data.request_id === 'string' ? data.request_id : undefined,
             chatId: typeof data.chat_id === 'string' ? data.chat_id : undefined,
             responseMode,
@@ -633,20 +675,28 @@ export function useChatStreaming(deps: StreamingDeps) {
         onDelta: (content) => {
           receivedDeltaContent = `${receivedDeltaContent}${content}`;
           const allowDraftSuppression = !isExplicitGeneralStream();
-          const suppressCalculatorReportDraft = allowDraftSuppression && isCalculatorReportDraftText(receivedDeltaContent);
-          const suppressTradeFormatterDraft = allowDraftSuppression && isUnreliableTradeFormatterDraftText(receivedDeltaContent);
+          const suppressCalculatorReportDraft =
+            allowDraftSuppression && isCalculatorReportDraftText(receivedDeltaContent);
+          const suppressTradeFormatterDraft =
+            allowDraftSuppression && isUnreliableTradeFormatterDraftText(receivedDeltaContent);
           if (suppressCalculatorReportDraft || suppressTradeFormatterDraft) {
             suppressedDeltaContent = receivedDeltaContent;
             const existing = deps.getAssistantMessage(assistantMsgId);
             const existingContent = existing?.content ?? currentContent;
-            deps.currentRenderType.value = suppressCalculatorReportDraft ? 'calculator' : 'response';
+            deps.currentRenderType.value = suppressCalculatorReportDraft
+              ? 'calculator'
+              : 'response';
             deps.upsertAssistantMessage(assistantMsgId, existingContent, {
               status: 'streaming',
               responseStatus: 'processing',
-              blocks: existing?.blocks ?? (existingContent ? streamingMarkdownBlock(assistantMsgId, existingContent) : []),
+              blocks:
+                existing?.blocks ??
+                (existingContent ? streamingMarkdownBlock(assistantMsgId, existingContent) : []),
               responseMode: 'stream',
               progressStage: 'streaming',
-              progressMessage: suppressCalculatorReportDraft ? 'Calculating taxes...' : 'Preparing response...',
+              progressMessage: suppressCalculatorReportDraft
+                ? 'Calculating taxes...'
+                : 'Preparing response...',
               streamingContent: existingContent,
               error: null,
             });
@@ -687,7 +737,10 @@ export function useChatStreaming(deps: StreamingDeps) {
           streamFailed = true;
           const detail = String(data.detail ?? 'Chat stream failed');
           const existing = deps.getAssistantMessage(assistantMsgId);
-          const preservedContent = (suppressedDeltaContent ? '' : receivedDeltaContent) || currentContent || existing?.content;
+          const preservedContent =
+            (suppressedDeltaContent ? '' : receivedDeltaContent) ||
+            currentContent ||
+            existing?.content;
           const nextContent = preservedContent || detail;
           deps.upsertAssistantMessage(assistantMsgId, nextContent, {
             status: 'error',
@@ -715,7 +768,8 @@ export function useChatStreaming(deps: StreamingDeps) {
       const detail = streamFailed
         ? 'Chat stream failed'
         : 'The response stream ended before the final response was received.';
-      const preservedContent = (suppressedDeltaContent ? '' : receivedDeltaContent) || currentContent;
+      const preservedContent =
+        (suppressedDeltaContent ? '' : receivedDeltaContent) || currentContent;
       deps.upsertAssistantMessage(assistantMsgId, preservedContent || detail, {
         generationDurationMs: Date.now() - startedAt,
         status: 'error',
@@ -733,12 +787,21 @@ export function useChatStreaming(deps: StreamingDeps) {
     }
 
     const normalizedParts = handleNormalizedChatResponse(normalizedDone, assistantMsgId);
+    console.log('[GDCE STREAM][DONE RAW]', normalizedDone);
+
+    console.log('[GDCE STREAM][NORMALIZED PARTS]', normalizedParts);
+
+    console.log('[GDCE STREAM][FINAL CONTENT]', normalizedParts?.content);
+
+    console.log('[GDCE STREAM][FINAL BLOCKS]', normalizedParts?.blocks);
+
     if (normalizedParts) {
       const finalHasContent = normalizedParts.content.trim().length > 0;
       const finalHasBlocks = normalizedParts.blocks.some(isRenderableMessageBlock);
       if (!finalHasContent && !finalHasBlocks) {
         const existing = deps.getAssistantMessage(assistantMsgId);
-        const streamedText = (suppressedDeltaContent ? '' : receivedDeltaContent) ||
+        const streamedText =
+          (suppressedDeltaContent ? '' : receivedDeltaContent) ||
           currentContent ||
           existing?.streamingContent ||
           existing?.content ||
@@ -747,16 +810,15 @@ export function useChatStreaming(deps: StreamingDeps) {
           console.error('[chat-stream] done payload normalized to empty response', normalizedDone);
         }
         deps.upsertAssistantMessage(assistantMsgId, streamedText, {
-          blocks: streamedText
-            ? completedStreamingMarkdownBlock(assistantMsgId, streamedText)
-            : [],
+          blocks: streamedText ? completedStreamingMarkdownBlock(assistantMsgId, streamedText) : [],
           sources: normalizedParts.sources,
           generationDurationMs: normalizedParts.latencyMs ?? Date.now() - startedAt,
           status: responseStatusToUiStatus(normalizedParts.status),
           responseStatus: normalizedParts.status,
           responseMode: 'stream',
           progressStage: 'completed',
-          progressMessage: normalizedParts.status === 'completed' ? 'Response completed.' : 'Response finished.',
+          progressMessage:
+            normalizedParts.status === 'completed' ? 'Response completed.' : 'Response finished.',
           streamingContent: '',
           normalizedResponse: normalizedDone,
           error: null,
@@ -779,7 +841,12 @@ export function useChatStreaming(deps: StreamingDeps) {
           return;
         }
         if (shouldStreamFinalMarkdown(normalizedParts, currentContent)) {
-          await streamFinalMarkdownFallback(assistantMsgId, normalizedParts, normalizedDone, startedAt);
+          await streamFinalMarkdownFallback(
+            assistantMsgId,
+            normalizedParts,
+            normalizedDone,
+            startedAt,
+          );
           if (normalizedParts.status === 'completed') notifyResponseCompleted();
           return;
         }
@@ -794,7 +861,8 @@ export function useChatStreaming(deps: StreamingDeps) {
         responseStatus: normalizedParts.status,
         responseMode: 'stream',
         progressStage: 'completed',
-        progressMessage: normalizedParts.status === 'completed' ? 'Response completed.' : 'Response finished.',
+        progressMessage:
+          normalizedParts.status === 'completed' ? 'Response completed.' : 'Response finished.',
         streamingContent: '',
         normalizedResponse: normalizedDone,
         error: null,
@@ -829,7 +897,8 @@ export function presentationPreferenceFromMessage(message: string) {
   if (/\b(table|tabular)\b/.test(normalized)) preferredBlocks.push('table');
   if (/\b(card|prediction)\b/.test(normalized)) preferredBlocks.push('prediction');
   if (/\b(report)\b/.test(normalized)) preferredBlocks.push('report');
-  if (/\b(chart|graph|pie|donut|doughnut|bar|line|area|visuali[sz]e|plot)\b/.test(normalized)) preferredBlocks.push('chart');
+  if (/\b(chart|graph|pie|donut|doughnut|bar|line|area|visuali[sz]e|plot)\b/.test(normalized))
+    preferredBlocks.push('chart');
   if (!preferredBlocks.length) return undefined;
   const chartType = requestedChartType(normalized);
   return {
@@ -839,7 +908,9 @@ export function presentationPreferenceFromMessage(message: string) {
   };
 }
 
-function requestedChartType(normalizedMessage: string): 'pie' | 'donut' | 'bar' | 'line' | 'area' | undefined {
+function requestedChartType(
+  normalizedMessage: string,
+): 'pie' | 'donut' | 'bar' | 'line' | 'area' | undefined {
   if (/\b(donut|doughnut)\b/.test(normalizedMessage)) return 'donut';
   if (/\bpie\b/.test(normalizedMessage)) return 'pie';
   if (/\bbar\b/.test(normalizedMessage)) return 'bar';

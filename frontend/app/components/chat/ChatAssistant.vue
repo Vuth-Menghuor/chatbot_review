@@ -113,7 +113,7 @@ const handleRegenerateImage = (messageId: string | number) => {
           <FilePreview :files="message.files" readonly />
         </div>
 
-        <div v-if="showAssistantActions" class="mt-6">
+        <div v-if="showAssistantActions">
           <ChatAction
             :message="message"
             @like="handleLike"

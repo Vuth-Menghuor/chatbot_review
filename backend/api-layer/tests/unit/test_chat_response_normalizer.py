@@ -1913,3 +1913,40 @@ def test_include_debug_collects_internal_metadata():
     assert response.debug.latency_ms == 42.5
     assert response.debug.confidence == "medium"
     assert response.debug.metadata["language"] == "en"
+
+def test_retrieval_clarification_required_without_questions_becomes_completed():
+    response = normalize_chat_response({
+        "service": "retrieval",
+        "intent": "hs_code_lookup",
+        "status": "clarification_required",
+        "answer": "HS 8471.30.20",
+        "clarifications": [],
+    })
+
+    assert response.status == "completed"
+    assert response.clarifications == []
+
+def test_khmer_gdce_tariff_url_creates_official_reference_block():
+    response = normalize_chat_response({
+        "service": "retrieval",
+        "intent": "hs_code_lookup",
+        "status": "completed",
+        "language": "km",
+        "answer": (
+            "ចម្លើយជាភាសាខ្មែរ...\n\n"
+            "សូមពិនិត្យផ្ទៀងផ្ទាត់លើគេហទំព័រផ្លូវការរបស់ GDCE៖ "
+            "https://customs.gov.kh/en/publications/"
+            "14037-customs-tariff-of-cambodia-km-2022"
+        ),
+    })
+
+    assert [block.type for block in response.message.content] == [
+        "markdown",
+        "official_reference",
+    ]
+
+    official_block = response.message.content[1]
+
+    assert official_block.title == "Official GDCE tariff lookup"
+    assert official_block.agency == "GDCE"
+    assert official_block.source_type == "official_tariff"

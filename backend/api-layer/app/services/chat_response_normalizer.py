@@ -131,6 +131,14 @@ def normalize_chat_response(
         citations = dedupe_citations(citations)
     suggestions = normalize_suggestions(payload)
     clarifications = normalize_clarifications(payload)
+
+    if (
+        service == "retrieval"
+        and status == "clarification_required"
+        and not clarifications
+    ):
+        status = "completed"
+
     metrics = normalize_metrics(payload)
 
     debug = build_debug_info(payload) if include_debug else None
@@ -371,8 +379,10 @@ HS_CANDIDATE_LINE_RE = re.compile(
     r"\s*(?:[-–—:]\s*)?(?P<description>.+?)\s*$"
 )
 OFFICIAL_GDCE_REFERENCE_RE = re.compile(
-    r"(?im)^\s*(?:verify\s+on\s+the\s+)?official\s+GDCE\s+tariff\s+lookup\s*:\s*"
-    r"(?P<url>https?://\S+)\s*$"
+    r"(?im)^.*?"
+    r"(?P<url>https?://(?:www\.)?customs\.gov\.kh/"
+    r"en/publications/14037-customs-tariff-of-cambodia-km-2022)"
+    r"[^\n]*$"
 )
 
 

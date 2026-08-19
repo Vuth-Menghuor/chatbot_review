@@ -80,6 +80,27 @@ def normalized_suggestions(normalized: dict) -> list[str]:
     suggestions = normalized.get("suggestions")
     return [str(item) for item in suggestions or [] if str(item).strip()] if isinstance(suggestions, list) else []
 
+def normalized_primary_text(normalized: dict) -> str:
+    response = normalized.get("response")
+
+    if isinstance(response, dict):
+        content = response.get("content")
+        if isinstance(content, str) and content.strip():
+            return content.strip()
+
+    message = normalized.get("message")
+    blocks = message.get("content") if isinstance(message, dict) else []
+
+    for block in blocks or []:
+        if (
+            isinstance(block, dict)
+            and block.get("type") == "markdown"
+            and isinstance(block.get("text"), str)
+            and block["text"].strip()
+        ):
+            return block["text"].strip()
+
+    return ""
 
 def has_primary_answer_block(block: object) -> bool:
     if not isinstance(block, dict):
@@ -220,8 +241,22 @@ def stream_final_fallback_reason(
     question: str | None = None,
 ) -> str | None:
     status = str(normalized.get("status") or "").lower()
+
     if status in {"failed", "clarification_required"}:
         return None
+    
+    question_is_khmer = contains_khmer(question)
+
+    final_text = normalized_primary_text(normalized)
+    final_is_khmer = contains_khmer(final_text)
+
+    if (
+        question_is_khmer
+        and final_text
+        and not final_is_khmer
+    ):
+        return "stream_done_language_mismatch"
+
     service = str(normalized.get("service") or raw_stream_done.get("service") or "").lower()
     intent = str(normalized.get("intent") or raw_stream_done.get("intent") or "").lower()
     block_types = set(normalized_block_types(normalized))
@@ -365,6 +400,11 @@ def normalize_final_response(raw: dict, *, chat, user: User, request_presentatio
         request_presentation=request_presentation,
     ).model_dump(mode="json", exclude_none=True)
 
+def contains_khmer(text: object) -> bool:
+    if not isinstance(text, str):
+        return False
+
+    return any("\u1780" <= char <= "\u17ff" for char in text)
 
 @router.post("/send")
 async def send_chat(payload: ChatRequest, request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
@@ -392,6 +432,7 @@ async def send_chat(payload: ChatRequest, request: Request, user: User = Depends
 async def stream_chat(payload: ChatRequest, request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     await enforce_rate_limit(f"chat_stream:{user.id}", 30, request=request, user_id=user.id)
     chat = await create_or_get_chat(db, user.id, payload.chat_id, payload.project_id, payload.message)
+    question_is_khmer = contains_khmer(payload.message)
     if payload.chat_id is None:
         add_audit_log(db, "chat_created", "chat", user.id, {"chat_id": str(chat.id)})
     await touch_chat(db, chat, payload.message)
@@ -400,15 +441,15 @@ async def stream_chat(payload: ChatRequest, request: Request, user: User = Depen
     body = orchestrator_stream_payload(payload, chat, request_id)
 
     async def query_fallback_response() -> dict:
-        result = await main_chatbot_client.request("POST", "/query", json=orchestrator_query_payload(payload, chat))
+        data = await main_chatbot_client.request("POST", "/query", json=orchestrator_query_payload(payload, chat))
         normalized = normalize_final_response(
-            result,
+            data,
             chat=chat,
             user=user,
             request_presentation=payload.presentation,
         )
-        if isinstance(result, dict):
-            log_normalization_trace(result, normalized)
+        if isinstance(data, dict):
+            log_normalization_trace(data, normalized)
         return normalized
 
     async def events():
@@ -434,7 +475,8 @@ async def stream_chat(payload: ChatRequest, request: Request, user: User = Depen
                         if await request.is_disconnected():
                             return
                         if upstream_event.type == "delta" and upstream_event.content:
-                            yield sse_event("delta", {"content": upstream_event.content})
+                            if not question_is_khmer:
+                                yield sse_event("delta", {"content": upstream_event.content})
                         elif upstream_event.type == "progress" and isinstance(upstream_event.data, dict):
                             stream_start_service = stream_start_service or (
                                 str(upstream_event.data.get("service")) if upstream_event.data.get("service") else None

@@ -10,9 +10,22 @@ class ExtractedTable:
         self.table = table
 
 
-# Extract the legacy final tax breakdown table while preserving the text ranges around it.
-def extract_final_tax_breakdown_table(content: str) -> ExtractedTable | None:
-    marker_match = re.search(r"(?im)^FINAL TAX BREAKDOWN\s*$", content)
+FINAL_TAX_BREAKDOWN_RE = re.compile(
+    r"(?im)^(?:"
+    r"FINAL TAX BREAKDOWN"
+    r"|សេចក្តីសង្ខេបនៃការគណនាពន្ធចុងក្រោយ"
+    r"|សេចក្តីលម្អិតនៃពន្ធចុងក្រោយ"
+    r")\s*$"
+)
+
+def extract_final_tax_breakdown_table(
+    content: str,
+) -> ExtractedTable | None:
+    marker_match = FINAL_TAX_BREAKDOWN_RE.search(content)
+
+    if not marker_match:
+        return None
+    
     if not marker_match:
         return None
 
@@ -104,10 +117,46 @@ def split_pipe_row(line: str) -> list[str]:
 
 
 # Convert table headers into stable snake_case row keys.
-def table_header_key(header: str, index: int) -> str:
-    key = re.sub(r"[^a-z0-9]+", "_", header.strip().lower()).strip("_")
-    return key or f"column_{index + 1}"
+CALCULATOR_TABLE_HEADER_ALIASES = {
+    # English
+    "tax component": "tax_component",
+    "tax base (khr)": "tax_base_khr",
+    "rate": "rate",
+    "amount (khr)": "amount_khr",
 
+    # Khmer
+    "ប្រភេទពន្ធ": "tax_component",
+    "មូលដ្ឋានគិតពន្ធ (khr)": "tax_base_khr",
+
+    "អត្រាពន្ធ": "rate",
+    "អត្រា (%)": "rate",
+
+    "ចំនួនទឹកប្រាក់ (khr)": "amount_khr",
+    "ចំនួន (khr)": "amount_khr",
+}
+
+def table_header_key(
+    header: str,
+    index: int,
+) -> str:
+    normalized = " ".join(
+        header.strip().lower().split()
+    )
+
+    alias = CALCULATOR_TABLE_HEADER_ALIASES.get(
+        normalized
+    )
+
+    if alias:
+        return alias
+
+    key = re.sub(
+        r"[^a-z0-9]+",
+        "_",
+        normalized
+    ).strip("_")
+
+    return key or f"column_{index + 1}"
 
 # Preserve old behavior where numeric rate cells become percentages.
 def normalize_table_cell(key: str, value: str) -> str:

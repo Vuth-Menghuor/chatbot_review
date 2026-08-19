@@ -34,25 +34,49 @@ def parse_calculator_text_sections(content: str) -> dict[str, list[str]]:
     return sections
 
 
-# Normalize the known legacy section headings while preserving Step headings.
+CALCULATOR_SECTION_ALIASES = {
+    # English
+    "IMPORT TAX CALCULATION": "IMPORT TAX CALCULATION",
+    "EXPORT TAX CALCULATION": "EXPORT TAX CALCULATION",
+    "PRODUCT INFORMATION": "PRODUCT INFORMATION",
+    "INPUT PARAMETERS": "INPUT PARAMETERS",
+    "FINAL TAX BREAKDOWN": "FINAL TAX BREAKDOWN",
+    "SUMMARY": "SUMMARY",
+    "ASSUMPTIONS & NOTES": "ASSUMPTIONS & NOTES",
+    "REFERENCES & CITATIONS": "REFERENCES & CITATIONS",
+    "DATA SOURCES": "DATA SOURCES",
+
+    # Khmer
+    "ការគណនាពន្ធនាំចូល": "IMPORT TAX CALCULATION",
+    "ការគណនាពន្ធនាំចេញ": "EXPORT TAX CALCULATION",
+    "ព័ត៌មានផលិតផល": "PRODUCT INFORMATION",
+    "ប៉ារ៉ាម៉ែត្របញ្ចូល": "INPUT PARAMETERS",
+    "សេចក្តីសង្ខេបនៃការគណនាពន្ធចុងក្រោយ": "FINAL TAX BREAKDOWN",
+    "សេចក្តីសង្ខេប": "SUMMARY",
+    "ការសន្មត និងកំណត់សម្គាល់": "ASSUMPTIONS & NOTES",
+    "ការសន្មត និងចំណាំ": "ASSUMPTIONS & NOTES",
+    "ឯកសារយោង និងសម្រង់": "REFERENCES & CITATIONS",
+    "ឯកសារយោង": "REFERENCES & CITATIONS",
+    "ប្រភពទិន្នន័យ": "DATA SOURCES",
+}
+
+
 def normalized_calculator_section_title(line: str) -> str | None:
-    title = line.strip().rstrip(":")
+    title = line.strip().rstrip(":៖").strip()
     upper = title.upper()
-    known = {
-        "IMPORT TAX CALCULATION",
-        "EXPORT TAX CALCULATION",
-        "PRODUCT INFORMATION",
-        "INPUT PARAMETERS",
-        "FINAL TAX BREAKDOWN",
-        "SUMMARY",
-        "ASSUMPTIONS & NOTES",
-        "REFERENCES & CITATIONS",
-        "DATA SOURCES",
-    }
-    if upper in known:
-        return upper
+
+    if upper in CALCULATOR_SECTION_ALIASES:
+        return CALCULATOR_SECTION_ALIASES[upper]
+
+    if title in CALCULATOR_SECTION_ALIASES:
+        return CALCULATOR_SECTION_ALIASES[title]
+
     if upper.startswith("STEP "):
         return title
+
+    if title.startswith("ជំហានទី"):
+        return title
+
     return None
 
 
@@ -63,13 +87,30 @@ def calculator_report_title(sections: dict[str, list[str]]) -> str:
     return "Import Tax Calculation"
 
 
+def is_total_tax_label(value: object) -> bool:
+    normalized = " ".join(
+        str(value or "").strip().lower().split()
+    )
+
+    return normalized in {
+        "total tax",
+        "ពន្ធសរុប",
+        "សរុបពន្ធ",
+    }
+
+def first_mapping_value(mapping: dict[str, str], *keys: str,) -> str | None: 
+    for key in keys: 
+        value = mapping.get(key) 
+        if value: return value 
+    return None
+
 # Extract summary fields from legacy text without changing the visible answer content.
 def calculator_summary_data(sections: dict[str, list[str]], content: str) -> dict[str, str | int | float | bool | None]:
     data: dict[str, str | int | float | bool | None] = {}
     table_section = extract_final_tax_breakdown_table(content)
     if table_section:
         total_row = next(
-            (row for row in table_section.table.rows if str(row.get("tax_component", "")).upper() == "TOTAL TAX"),
+            (row for row in table_section.table.rows if is_total_tax_label(row.get("tax_component"))),
             None,
         )
         if total_row:
@@ -78,20 +119,54 @@ def calculator_summary_data(sections: dict[str, list[str]], content: str) -> dic
 
     product = section_key_value_map(sections.get("PRODUCT INFORMATION", []))
     inputs = section_key_value_map(sections.get("INPUT PARAMETERS", []))
+
     hs_code_value = product.get("HS Code")
+
+    hs_code_value = first_mapping_value(
+        product,
+        "HS Code",
+        "លេខកូដ HS",
+    )
+
     if hs_code_value:
         hs_code, description = split_hs_code_description(hs_code_value)
         data["hs_code"] = hs_code
+
         if description:
             data["product"] = description
-    if product.get("Origin Country"):
-        data["origin_country"] = product["Origin Country"]
-    if inputs.get("CIF Value"):
-        data["cif_value"] = inputs["CIF Value"]
-    if inputs.get("Customs Regime"):
-        data["calculation_method"] = inputs["Customs Regime"]
 
+
+    origin = first_mapping_value(
+        product,
+        "Origin Country",
+        "ប្រទេសដើមកំណើត",
+    )
+
+    if origin:
+        data["origin_country"] = origin
+
+
+    cif_value = first_mapping_value(
+        inputs,
+        "CIF Value",
+        "តម្លៃ CIF",
+    )
+
+    if cif_value:
+        data["cif_value"] = cif_value
+
+
+    regime = first_mapping_value(
+        inputs,
+        "Customs Regime",
+        "របបគយ",
+    )
+
+    if regime:
+        data["calculation_method"] = regime
+    
     summary_text = " ".join(line.strip() for line in sections.get("SUMMARY", []) if line.strip())
+
     if summary_text:
         data["summary"] = first_sentence(summary_text)
         majority = regex_group(r"The majority is\s+([^.]+)", summary_text)
@@ -137,27 +212,49 @@ def regex_group(pattern: str, value: str) -> str | None:
 def details_items_from_sections(sections: dict[str, list[str]]) -> list[DetailsItem]:
     items: list[DetailsItem] = []
     for title, lines in sections.items():
-        if not title.upper().startswith("STEP "):
+
+        is_english_step = title.upper().startswith("STEP ")
+        is_khmer_step = title.startswith("ជំហានទី")
+        if not (is_english_step or is_khmer_step):
             continue
+
         content = "\n".join(line.rstrip() for line in lines if line.strip())
         if content:
             items.append(DetailsItem(title=title_case_preserving_step(title), content=content))
     return items
 
 
-# Build the legacy Assumptions & Notes block and its structured frontend data.
 def assumptions_block_from_sections(
     sections: dict[str, list[str]],
     content: str,
     payload: dict[str, Any],
 ) -> DetailsBlock | None:
-    lines = [line.strip().lstrip("*+").strip() for line in sections.get("ASSUMPTIONS & NOTES", []) if line.strip()]
+    lines = [
+        line.strip().lstrip("*+").strip()
+        for line in sections.get("ASSUMPTIONS & NOTES", [])
+        if line.strip()
+    ]
+
     if not lines:
         return None
 
-    notes = "\n".join(line for line in lines if not is_rates_heading(line))
-    items = [DetailsItem(title="Notes", content=notes)] if notes else []
-    return DetailsBlock(title="Assumptions & Notes", items=items)
+    notes = "\n".join(
+        line
+        for line in lines
+        if not is_rates_heading(line)
+    )
+
+    items = [
+        DetailsItem(
+            title="Notes",
+            content=notes,
+        )
+    ] if notes else []
+
+    return DetailsBlock(
+        title="Assumptions & Notes",
+        items=items,
+    )
 
 
 # Read one exact key from legacy bullet lines.

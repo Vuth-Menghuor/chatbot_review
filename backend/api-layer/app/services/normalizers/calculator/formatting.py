@@ -82,19 +82,32 @@ def format_calculator_markdown(content: str) -> str:
 
 # Detect legacy calculator text so plain answers keep their original content.
 def is_calculator_markdown_text(content: str) -> bool:
-    return any(
-        marker in content
-        for marker in (
-            "IMPORT TAX CALCULATION",
-            "PRODUCT INFORMATION:",
-            "INPUT PARAMETERS:",
-            "STEP ",
-            "SUMMARY:",
-            "ASSUMPTIONS & NOTES",
-            "REFERENCES & CITATIONS",
-            "DATA SOURCES",
-        )
+    markers = (
+        # English
+        "IMPORT TAX CALCULATION",
+        "EXPORT TAX CALCULATION",
+        "PRODUCT INFORMATION:",
+        "INPUT PARAMETERS:",
+        "STEP ",
+        "FINAL TAX BREAKDOWN",
+        "SUMMARY:",
+        "ASSUMPTIONS & NOTES",
+        "REFERENCES & CITATIONS",
+        "DATA SOURCES",
+
+        # Khmer
+        "ការគណនាពន្ធនាំចូល",
+        "ការគណនាពន្ធនាំចេញ",
+        "ព័ត៌មានផលិតផល",
+        "ប៉ារ៉ាម៉ែត្របញ្ចូល",
+        "ជំហានទី",
+        "សេចក្តីសង្ខេបនៃការគណនាពន្ធចុងក្រោយ",
+        "សេចក្តីសង្ខេប",
+        "ការសន្មត និងកំណត់សម្គាល់",
+        "ប្រភពទិន្នន័យ",
     )
+
+    return any(marker in content for marker in markers)
 
 
 # Detect decorative dashed separators around legacy calculator headings.
@@ -160,17 +173,36 @@ def append_blank_once(lines: list[str]) -> None:
         lines.append("")
 
 
+def split_key_value_line(value: str) -> tuple[str, str] | None:
+    match = re.match(r"^\s*([^:៖]+?)\s*[:៖]\s*(.+?)\s*$", value)
+
+    if not match:
+        return None
+
+    return match.group(1).strip(), match.group(2).strip()
+
 # Convert bullet lines into key/value block items for legacy calculator sections.
-def key_value_items_from_bullets(lines: list[str]) -> list[KeyValueItem]:
-    items: list[KeyValueItem] = []
+def key_value_items_from_bullets(lines):
+    items = []
+
     for line in lines:
         cleaned = line.strip().lstrip("*+").strip()
-        if not cleaned or ":" not in cleaned:
-            continue
-        key, value = cleaned.split(":", 1)
-        items.append(KeyValueItem(key=key.strip(), value=value.strip()))
-    return items
 
+        parsed = split_key_value_line(cleaned)
+
+        if not parsed:
+            continue
+
+        key, value = parsed
+
+        items.append(
+            KeyValueItem(
+                key=key,
+                value=value,
+            )
+        )
+
+    return items
 
 # Convert structured mappings into key/value block items without rendering nested data by accident.
 def key_value_items_from_mapping(value: dict[str, Any]) -> list[KeyValueItem]:
