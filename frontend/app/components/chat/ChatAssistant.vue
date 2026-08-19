@@ -13,9 +13,27 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
+  (e: 'like', messageId: string): void;
+  (e: 'dislike', messageId: string): void;
   (e: 'regenerate-image', messageId: string): void;
-  (e: 'user-reply', payload: { requestId: string; toolName?: string; action: string; values: Record<string, unknown> }): void;
+  (
+    e: 'user-reply',
+    payload: {
+      requestId: string;
+      toolName?: string;
+      action: string;
+      values: Record<string, unknown>;
+    },
+  ): void;
 }>();
+
+function handleLike(messageId: string | number) {
+  emit('like', String(messageId));
+}
+
+function handleDislike(messageId: string | number) {
+  emit('dislike', String(messageId));
+}
 
 const showAssistantActions = computed(
   () => props.message.role === 'assistant' && !props.loading && props.message.type !== 'image',
@@ -49,7 +67,8 @@ const coverageBadge = computed(() => {
   }
   return {
     label: 'Limited source coverage',
-    title: 'The retrieved documents contain related information but not a complete answer for every requested detail.',
+    title:
+      'The retrieved documents contain related information but not a complete answer for every requested detail.',
   };
 });
 
@@ -95,7 +114,12 @@ const handleRegenerateImage = (messageId: string | number) => {
         </div>
 
         <div v-if="showAssistantActions" class="mt-6">
-          <ChatAction :message="message" @regenerate="handleRegenerateImage" />
+          <ChatAction
+            :message="message"
+            @like="handleLike"
+            @dislike="handleDislike"
+            @regenerate="handleRegenerateImage"
+          />
         </div>
       </div>
     </div>

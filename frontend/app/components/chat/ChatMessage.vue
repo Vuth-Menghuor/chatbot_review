@@ -15,7 +15,17 @@ const emit = defineEmits<{
   (e: 'scroll-status', payload: { isAtBottom: boolean }): void;
   (e: 'regenerate-image', messageId: string): void;
   (e: 'edit-user-message', messageId: string): void;
-  (e: 'user-reply', payload: { requestId: string; toolName?: string; action: string; values: Record<string, unknown> }): void;
+  (e: 'like', messageId: string): void;
+  (e: 'dislike', messageId: string): void;
+  (
+    e: 'user-reply',
+    payload: {
+      requestId: string;
+      toolName?: string;
+      action: string;
+      values: Record<string, unknown>;
+    },
+  ): void;
 }>();
 
 const { scrollContainer, scrollToBottom, isAtBottom } = useChatList(props, emit);
@@ -56,6 +66,8 @@ defineExpose({ scrollToBottom });
             :thinking-context="getPreviousUserContent(i)"
             @regenerate-image="(id) => emit('regenerate-image', id)"
             @user-reply="(payload) => emit('user-reply', payload)"
+            @like="(id) => emit('like', id)"
+            @dislike="(id) => emit('dislike', id)"
           />
         </div>
 
@@ -75,11 +87,7 @@ defineExpose({ scrollToBottom });
       </div>
 
       <div class="sticky bottom-0 z-30 w-full shrink-0">
-        <CommonScrollToBottom
-          :show="!isAtBottom"
-          :loading="loading"
-          @click="scrollToBottom"
-        />
+        <CommonScrollToBottom :show="!isAtBottom" :loading="loading" @click="scrollToBottom" />
         <slot name="footer" />
       </div>
     </div>

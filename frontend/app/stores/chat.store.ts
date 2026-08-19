@@ -109,6 +109,25 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  function setMessageFeedback(
+    chatId: string,
+    messageId: string,
+    feedback: 'like' | 'dislike' | null,
+  ) {
+    const messages = messagesByChatId.value[chatId];
+
+    if (!messages) return;
+
+    const message = messages.find((item) => String(item.id) === String(messageId));
+
+    if (!message) return;
+
+    message.feedback = feedback;
+
+    // keep the updated messages in the store
+    messagesByChatId.value[chatId] = [...messages];
+  }
+
   function deriveChatTitleFromMessages(messages: Message[]) {
     const firstUserMessage = messages.find((message) => message.role === 'user');
     const candidate = firstUserMessage?.content?.trim() ?? '';
@@ -222,6 +241,7 @@ export const useChatStore = defineStore('chat', () => {
     setActiveChat,
     setChatMessages,
     getChatMessages,
+    setMessageFeedback,
     hydrateChatIfMessagesExist,
   };
 });

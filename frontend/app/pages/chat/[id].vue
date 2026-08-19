@@ -18,7 +18,9 @@ const chatStore = useChatStore();
 const { recentChats } = storeToRefs(chatStore);
 
 const currentChatInStore = computed(() => recentChats.value.some((c) => c.id === chatId));
-const chatListRef = ref<{ scrollToBottom?: (behavior?: ScrollBehavior) => Promise<void> } | null>(null);
+const chatListRef = ref<{ scrollToBottom?: (behavior?: ScrollBehavior) => Promise<void> } | null>(
+  null,
+);
 const chatInputRef = ref<{ setDraft?: (text: string) => Promise<void> | void } | null>(null);
 
 const { messages, loading, currentRenderType, send, sendUserReply, stop, regenerate } =
@@ -47,19 +49,34 @@ const handleSendMessage = async ({
 const handleStop = () => stop();
 
 const handleEditUserMessage = async (messageId: string) => {
-  const target = messages.value.find((message) => message.role === 'user' && message.id === messageId);
+  const target = messages.value.find(
+    (message) => message.role === 'user' && message.id === messageId,
+  );
   if (!target?.content?.trim()) return;
   await chatInputRef.value?.setDraft?.(target.content);
 };
 
-watch(
-  currentChatInStore,
-  (inStore, wasInStore) => {
-    if (wasInStore && !inStore) {
-      void navigateTo('/');
-    }
-  },
-);
+function handleLike(messageId: string) {
+  const message = messages.value.find((item) => String(item.id) === String(messageId));
+
+  if (!message) return;
+
+  message.feedback = message.feedback === 'like' ? null : 'like';
+}
+
+function handleDislike(messageId: string) {
+  const message = messages.value.find((item) => String(item.id) === String(messageId));
+
+  if (!message) return;
+
+  message.feedback = message.feedback === 'dislike' ? null : 'dislike';
+}
+
+watch(currentChatInStore, (inStore, wasInStore) => {
+  if (wasInStore && !inStore) {
+    void navigateTo('/');
+  }
+});
 
 onMounted(async () => {
   await nextTick();
@@ -90,6 +107,8 @@ onMounted(async () => {
       @regenerate-image="() => regenerate()"
       @edit-user-message="handleEditUserMessage"
       @user-reply="(payload) => sendUserReply(payload)"
+      @like="handleLike"
+      @dislike="handleDislike"
     >
       <template #footer>
         <ChatInput

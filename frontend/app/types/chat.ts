@@ -12,12 +12,7 @@ export type ResponseStatus =
   | 'partial'
   | 'failed';
 
-export type MessageUiStatus =
-  | 'thinking'
-  | 'streaming'
-  | 'completed'
-  | 'error'
-  | 'stopped';
+export type MessageUiStatus = 'thinking' | 'streaming' | 'completed' | 'error' | 'stopped';
 
 export type ResponseMode = 'sync' | 'async' | 'stream';
 
@@ -253,13 +248,13 @@ export interface Message {
   type?: 'text' | 'image';
   status?: MessageUiStatus;
   responseStatus?: ResponseStatus;
+  feedback?: 'like' | 'dislike' | null;
   content: string;
   imageContent?: ImageContent;
   files?: unknown[];
   createdAt?: string;
   blocks?: MessageBlock[];
   sources?: MessageSource[];
-  /** Wall-clock time spent generating this assistant reply (set when the stream/request completes). */
   generationDurationMs?: number;
   requestId?: string;
   chatId?: string;

@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 import {
   CopyIcon,
   CheckIcon,
@@ -8,13 +8,7 @@ import {
   ThumbsUpIcon,
   BookOpenIcon,
 } from 'lucide-vue-next';
-import type {
-  ChatActionItem,
-  ChatActionType,
-  FeedbackType,
-  Message,
-  UseChatActionEmit,
-} from '~/types/message';
+import type { ChatActionItem, ChatActionType, Message, UseChatActionEmit } from '~/types/message';
 import { useUiStore } from '~/stores/ui.store';
 import { useClipboardCopy } from '~/composables/common/useClipboardCopy';
 
@@ -23,7 +17,6 @@ const ACTION_BUTTON_CLASS =
 
 export function useChatAction(props: { message: Message }, emit: UseChatActionEmit) {
   const { t } = useI18n();
-  const feedback = ref<FeedbackType | null>(null);
   const uiStore = useUiStore();
   const { copied, copyText } = useClipboardCopy();
 
@@ -63,10 +56,6 @@ export function useChatAction(props: { message: Message }, emit: UseChatActionEm
     ];
   });
 
-  const setFeedback = (type: FeedbackType) => {
-    feedback.value = feedback.value === type ? null : type;
-  };
-
   const handleAction = async (action: ChatActionType) => {
     const messageId = props.message.id || '';
     switch (action) {
@@ -76,11 +65,10 @@ export function useChatAction(props: { message: Message }, emit: UseChatActionEm
         break;
       }
       case 'like':
-        setFeedback('like');
         emit('like', messageId);
         break;
+
       case 'dislike':
-        setFeedback('dislike');
         emit('dislike', messageId);
         break;
       case 'regenerate':
@@ -95,7 +83,13 @@ export function useChatAction(props: { message: Message }, emit: UseChatActionEm
     }
   };
 
-  const getButtonClass = (_action: ChatActionType) => ACTION_BUTTON_CLASS;
+  const getButtonClass = (action: ChatActionType) => {
+    const isActive =
+      (action === 'like' && props.message.feedback === 'like') ||
+      (action === 'dislike' && props.message.feedback === 'dislike');
+
+    return [ACTION_BUTTON_CLASS, isActive ? '!text-blue-600 dark:!text-blue-400' : ''].join(' ');
+  };
 
   return {
     actions,
