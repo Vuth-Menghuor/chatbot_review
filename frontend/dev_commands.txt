@@ -1,22 +1,86 @@
--- frontend
+# =========================
+# Frontend
+# =========================
+cd frontend
+pnpm build
+pnpm dev
+
 cd frontend && pnpm build && pnpm dev
 
--- api layer
+cd frontend
+docker compose up -d --build
+
+
+# =========================
+# API Layer
+# =========================
+cd backend/api-layer
+docker compose up -d --build
+
 cd backend/api-layer && docker compose up --build
 
--- services and data access layer
+
+# =========================
+# Data Access Layer (DAL)
+# =========================
+cd data/dal
+docker compose up -d --build
 
 cd data/dal && docker compose up --build
 
+
+
+# =========================
+# Orchestrator Service
+# =========================
+cd services_version2/orchestrator
+docker compose up -d --build
+
 cd services_version2/orchestrator && docker compose up --build
+
+
+
+# =========================
+# General Service
+# =========================
+cd services_version2/general
+docker compose up -d --build
 
 cd services_version2/general && docker compose up --build
 
+
+
+# =========================
+# Calculator Service
+# =========================
+cd services_version2/calculator
+docker compose up -d --build
+
 cd services_version2/calculator && docker compose up --build
+
+
+
+# =========================
+# Trade Service
+# =========================
+cd services_version2/trade
+docker compose up -d --build
 
 cd services_version2/trade && docker compose up --build
 
+
+
+# =========================
+# Retrieval Service
+# =========================
+cd services_version2/retrieval
+docker compose up -d --build
+
 cd services_version2/retrieval && docker compose up --build
 
-# Restart only the orchestrator container so it reloads config/network connections
+
+# =========================
+# Restart Orchestrator Only
+# =========================
+cd services_version2/orchestrator
 docker compose restart orchestrator-service-orches

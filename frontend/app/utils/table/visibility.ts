@@ -17,6 +17,8 @@ const HIDDEN_CONFIDENCE_KEYS = new Set([
   'similarity_score',
 ]);
 
+const UI_ONLY_HIDDEN_KEYS = new Set(['value', 'unit', 'scale', 'raw_value', 'unit_type']);
+
 function normalizedKey(value: unknown): string {
   return String(value ?? '')
     .trim()
@@ -26,15 +28,37 @@ function normalizedKey(value: unknown): string {
 }
 
 function normalizedLabel(value: unknown): string {
-  return String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+  return String(value ?? '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
 }
 
 export function isHiddenTableColumn(column: TableColumnLike): boolean {
   const key = normalizedKey(column.key);
+
   if (HIDDEN_CONFIDENCE_KEYS.has(key)) return true;
 
+  // Hide these only from the UI table
+  if (UI_ONLY_HIDDEN_KEYS.has(key)) return true;
+
   const label = normalizedLabel(column.title ?? column.label);
-  return /\b(confidence|match score|retrieval score|similarity score|relevance score)\b/.test(label);
+
+  return /\b(confidence|match score|retrieval score|similarity score|relevance score)\b/.test(
+    label,
+  );
+}
+
+export function isHiddenFromClipboard(column: TableColumnLike): boolean {
+  const label = normalizedLabel(column.title ?? column.label);
+
+  return /\b(confidence|match score|retrieval score|similarity score|relevance score)\b/.test(
+    label,
+  );
+}
+
+export function filterClipboardTableColumns<T extends TableColumnLike>(columns: T[]): T[] {
+  return columns.filter((column) => !isHiddenFromClipboard(column));
 }
 
 export function filterVisibleTableColumns<T extends TableColumnLike>(columns: T[]): T[] {

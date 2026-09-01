@@ -96,15 +96,16 @@ class GeneralHandler:
                         entity_words = {entity_lower}
                     
                     documents = result.get("documents", [])
-                    has_mention = False
-                    for doc in documents:
-                        content = str(doc.get("content", "")).lower()
-                        if any(word in content for word in entity_words):
-                            has_mention = True
-                            break
+                    has_mention = any(word in ans_text.lower() for word in entity_words)
+                    if not has_mention:
+                        for doc in documents:
+                            content = str(doc.get("content", "")).lower()
+                            if any(word in content for word in entity_words):
+                                has_mention = True
+                                break
                     if not has_mention:
                         entity_miss = True
-                        logger.info(f"[{context.request_id}] Entity '{nlu_entity}' (high confidence) not mentioned in RAG documents. Triggering entity miss fallback.")
+                        logger.info(f"[{context.request_id}] Entity '{nlu_entity}' (high confidence) not mentioned in RAG documents or final answer. Triggering entity miss fallback.")
                 
                 if coordinator._is_rag_no_info_response(ans_text, result) or entity_miss:
                     logger.info(f"[{context.request_id}] RAG returned no document info or entity miss for query '{service_query}'. Invoking LLM parametric fallback.")

@@ -125,9 +125,15 @@ class ClarificationManager:
                     has_confirmed_hs = bool(getattr(session_context, "hs_code", None))
                     has_explicit_hs_in_query = False
                     if clarification_response:
-                        has_explicit_hs_in_query = has_explicit_hs_in_query or bool(re.search(r"\b(?:hs\s*code|hs)?\s*(\d{4}(?:\.\d{2}){0,2}|\d{6}|\d{8})\b", clarification_response.lower()))
+                        has_explicit_hs_in_query = has_explicit_hs_in_query or bool(
+                            re.search(r"\b(?:hs\s*code|hs)\s*[:#]?\s*(\d{4}(?:\.\d{2}){1,2}|\d{8}|\d{6}|\d{4})\b", clarification_response.lower())
+                            or re.search(r"\b\d{4}\.\d{2}(?:\.\d{2})?\b", clarification_response.lower())
+                        )
                     if pending_query:
-                        has_explicit_hs_in_query = has_explicit_hs_in_query or bool(re.search(r"\b(?:hs\s*code|hs)?\s*(\d{4}(?:\.\d{2}){0,2}|\d{6}|\d{8})\b", pending_query.lower()))
+                        has_explicit_hs_in_query = has_explicit_hs_in_query or bool(
+                            re.search(r"\b(?:hs\s*code|hs)\s*[:#]?\s*(\d{4}(?:\.\d{2}){1,2}|\d{8}|\d{6}|\d{4})\b", pending_query.lower())
+                            or re.search(r"\b\d{4}\.\d{2}(?:\.\d{2})?\b", pending_query.lower())
+                        )
 
                     is_unresolved = not (has_confirmed_hs or has_explicit_hs_in_query)
 

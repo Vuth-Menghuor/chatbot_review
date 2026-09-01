@@ -135,3 +135,75 @@ def test_clarification_cache_exclusion():
         intent="trade_query"
     )
     assert result is False
+
+
+@pytest.mark.asyncio
+async def test_trade_query_payload_translation_to_khmer():
+    from app.services.handlers.trade_query import translate_trade_payload_to_khmer
+    from unittest.mock import AsyncMock
+    
+    mock_translator = AsyncMock()
+    
+    result = {
+        "table": {
+            "columns": ["frequency", "period", "hs_heading", "trade_value"],
+            "rows": [
+                {
+                    "frequency": "A",
+                    "period": "2026",
+                    "hs_heading": "Other",
+                    "trade_value": "5346025001.85"
+                }
+            ]
+        },
+        "visualization": {
+            "type": "kpi",
+            "title": "Trade Volume Ranking",
+            "labels": ["Other"],
+            "datasets": [
+                {
+                    "label": "Trade Value (USD)",
+                    "data": [5346025001.85]
+                }
+            ]
+        },
+        "summary": {
+            "data_quality": {
+                "is_partial_period": True,
+                "partial_year": 2026,
+                "partial_year_note": " The 2026 data is not complete yet."
+            }
+        }
+    }
+    
+    await translate_trade_payload_to_khmer(result, mock_translator)
+    
+    # Assert table translations
+    tbl = result["table"]
+    assert tbl["columns"] == ["ប្រេកង់", "រយៈពេល", "កូដ HS Heading", "តម្លៃពាណិជ្ជកម្ម (USD)"]
+    assert tbl["rows"][0]["ប្រេកង់"] == "ប្រចាំឆ្នាំ"
+    assert tbl["rows"][0]["កូដ HS Heading"] == "ផ្សេងៗ"
+    
+    # Assert visualization translations
+    viz = result["visualization"]
+    assert viz["title"] == "ចំណាត់ថ្នាក់ទំហំពាណិជ្ជកម្ម"
+    assert viz["labels"] == ["ផ្សេងៗ"]
+    assert viz["datasets"][0]["label"] == "តម្លៃពាណិជ្ជកម្ម (USD)"
+    
+    # Assert summary translations
+    dq = result["summary"]["data_quality"]
+    assert dq["partial_year_note"] == " ទិន្នន័យឆ្នាំ 2026 មិនទាន់មានភាពពេញលេញនៅឡើយទេ។"
+
+
+def test_is_rewrite_valid_khmer_terminal_punctuation_handling():
+    """Verify that _is_rewrite_valid correctly ignores trailing dots/punctuation when matching years/codes."""
+    from app.services.coordinator import ServiceCoordinator
+    coord = ServiceCoordinator()
+    
+    # Repro query case: original has terminal period from translated Khmer, rewritten does not
+    original = "Please show the monthly trend of the trade balance with the United States in 2025."
+    rewritten = "monthly trend trade balance United States 2025"
+    
+    assert coord._is_rewrite_valid(original, rewritten) is True
+
+

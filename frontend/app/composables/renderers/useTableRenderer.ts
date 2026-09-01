@@ -27,9 +27,12 @@ export function useTableRenderer(props: {
   });
 
   const rawColumns = computed(() => data.value.columns ?? []);
+  const rawRows = computed(() => data.value.rows ?? []);
+
   const columns = computed(() => filterVisibleTableColumns(rawColumns.value));
+
   const rows = computed(() =>
-    (data.value.rows ?? []).map((row) => stripHiddenTableValues(row, rawColumns.value)),
+    rawRows.value.map((row) => stripHiddenTableValues(row, rawColumns.value)),
   );
 
   /** SSE / LM Studio: fence closed but table JSON still filling in. */
@@ -47,8 +50,12 @@ export function useTableRenderer(props: {
   });
 
   return {
+    rawColumns,
+    rawRows,
+
     columns,
     visibleRows,
+
     isStreamingLayout,
   };
 }

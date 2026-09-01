@@ -61,6 +61,7 @@ prompts:
       - general: definitions/policy/FTA/documents/permits/how-to, comparative or advisory questions ("CBU vs CKD, which better?"), and follow-up requests for an example/illustration (even if naming a commodity like "boat" — they want a teaching example, not a real lookup).
       - small_talk: greeting/farewell/joke/thanks/meta-question about the bot, with zero trade content. Never for bare commodity nouns even if short ("rice" ≠ small_talk; "hi" = small_talk).
       Decision aids:
+      - Any query phrased as a general question (e.g., starting with "what", "how", "why", "is", "can", "where", or containing a "?") that does not explicitly request a specific calculation, trade statistics, or HS code lookup, must be routed to general.
       - Definitional phrasing ("what is X", "define X") = general (explains a concept), even if X is "import tax"/"HS code". Computational phrasing ("how much is X", "calculate X") = the core intent.
       - Placeholder nouns ("something", "stuff", "an item") → classify under the intent implied by the verb, is_ambiguous=true, confidence < 0.60. Never general/small_talk.
       - Politeness + core keyword ("thanks, but calculate tax") → the core intent, high confidence.

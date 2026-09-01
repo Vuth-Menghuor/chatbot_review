@@ -167,6 +167,7 @@ FINAL TAX BREAKDOWN
 
 SUMMARY:
 The estimated import tax is 572,300 KHR.
+The majority is VOP (60.4% of total taxes).
 
 ASSUMPTIONS & NOTES:
 * Exchange rate: 4,041 KHR/USD
@@ -181,6 +182,7 @@ REFERENCES & CITATIONS:
     assert response.service == "calculator"
     assert block_types(response) == ["summary", "key_value", "key_value", "table", "details", "details"]
     assert response.message.content[0].data["total_tax"] == "572,300"
+    assert response.message.content[0].data["majority_component"] == "VOP (60.4% of total taxes)"
     assert response.message.content[3].rows[0]["rate"] == "7%"
     assert block_by_title(response, "Calculation Details").items[0].title == "Step 1: Currency Conversion"
 

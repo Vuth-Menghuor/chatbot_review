@@ -81,9 +81,16 @@ def extract_context_updates(query: str) -> Dict[str, Any]:
         updates["commercial_description"] = entity
 
     # 3. HS Code
-    hs_match = HS_CODE_PATTERN.search(query)
+    hs_match = re.search(r"\bhs\s*(?:code)?\s*[:#]?\s*(\d{4}(?:\.\d{2}){1,2}|\d{8}|\d{6}|\d{4})\b", q)
+    if not hs_match:
+        hs_match = HS_CODE_PATTERN.search(query)
     if hs_match:
-        updates["hs_code"] = hs_match.group()
+        code = hs_match.group(1).strip() if hs_match.lastindex else hs_match.group().strip()
+        if code.isdigit() and len(code) == 8:
+            code = f"{code[:4]}.{code[4:6]}.{code[6:8]}"
+        elif code.isdigit() and len(code) == 6:
+            code = f"{code[:4]}.{code[4:6]}"
+        updates["hs_code"] = code
 
     # 4. CIF Value & Currency
     cif_match = CIF_PATTERN.search(query)

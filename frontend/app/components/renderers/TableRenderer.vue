@@ -24,10 +24,7 @@
         />
       </div>
 
-      <div
-        v-if="isStreamingLayout"
-        class="flex items-center justify-center p-8"
-      >
+      <div v-if="isStreamingLayout" class="flex items-center justify-center p-8">
         <v-progress-circular indeterminate size="24" width="2" color="primary" />
       </div>
 
@@ -72,7 +69,7 @@
                 <span
                   class="block min-w-0 leading-6"
                   :class="valueClass(col.key)"
-                  v-html="row[col.key]"
+                  v-html="displayCellValue(col.key, row[col.key])"
                 ></span>
               </td>
             </tr>
@@ -87,7 +84,7 @@
 import { computed, nextTick, ref, watch } from 'vue';
 import type { MessageBlock } from '../../types/message';
 import { useTableRenderer } from '~/composables/renderers/useTableRenderer';
-import { tableToClipboardText } from '~/utils/table';
+import { filterClipboardTableColumns, tableToClipboardText } from '~/utils/table';
 
 const props = defineProps<{
   block: MessageBlock;
@@ -95,12 +92,20 @@ const props = defineProps<{
   animId?: string;
 }>();
 
-const { columns, visibleRows, isStreamingLayout } = useTableRenderer(props);
+const copyColumns = computed(() => filterClipboardTableColumns(rawColumns.value));
+
+const {
+  rawColumns,
+  rawRows,
+
+  columns,
+  visibleRows,
+
+  isStreamingLayout,
+} = useTableRenderer(props);
 const scrollRef = ref<HTMLDivElement | null>(null);
 
-const tableString = computed(() => {
-  return tableToClipboardText(columns.value, visibleRows.value);
-});
+const tableString = computed(() => tableToClipboardText(copyColumns.value, rawRows.value));
 
 const tableMinWidth = computed(() => {
   const base = Math.max(columns.value.length * 9, 44);
@@ -108,7 +113,9 @@ const tableMinWidth = computed(() => {
 });
 
 function isNumericColumn(key: string) {
-  return /(^|_)(value|display|amount|total|price|rate|score|raw|count|qty|quantity|percent|pct|year|month)(_|$)/i.test(key);
+  return /(^|_)(value|display|amount|total|price|rate|score|raw|count|qty|quantity|percent|pct|year|month)(_|$)/i.test(
+    key,
+  );
 }
 
 function isCompactColumn(key: string) {
@@ -120,8 +127,10 @@ function isCodeColumn(key: string) {
 }
 
 function cellClass(key: string, header = false) {
-  if (isCompactColumn(key)) return 'w-16 min-w-16 max-w-20 whitespace-nowrap text-left tabular-nums';
-  if (isNumericColumn(key)) return header ? 'text-left tabular-nums' : 'text-left tabular-nums whitespace-nowrap';
+  if (isCompactColumn(key))
+    return 'w-16 min-w-16 max-w-20 whitespace-nowrap text-left tabular-nums';
+  if (isNumericColumn(key))
+    return header ? 'text-left tabular-nums' : 'text-left tabular-nums whitespace-nowrap';
   if (isCodeColumn(key)) return 'w-32 min-w-28 whitespace-nowrap';
   return 'min-w-[16rem] max-w-[28rem]';
 }
@@ -129,6 +138,18 @@ function cellClass(key: string, header = false) {
 function valueClass(key: string) {
   if (isCompactColumn(key) || isNumericColumn(key) || isCodeColumn(key)) return 'whitespace-nowrap';
   return 'whitespace-normal break-words';
+}
+
+function displayCellValue(key: string, value: unknown): string {
+  if (value === null || value === undefined || value === '') {
+    return '';
+  }
+
+  if (key.trim().toLowerCase() === 'growth_rate_pct') {
+    return `${value}%`;
+  }
+
+  return String(value);
 }
 
 watch(

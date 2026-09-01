@@ -615,7 +615,7 @@ class GeneralServiceClient(HttpxServiceClient):
         payload = {
             "query": query,
             "top_k": top_k,
-            "generate_answer": False,
+            "generate_answer": generate_answer,
             "intent": intent,
             "require_period_for_trade": require_period,
         }
@@ -649,7 +649,7 @@ class GeneralServiceClient(HttpxServiceClient):
                 result["documents"] = documents[:top_k]
 
         # ── Orchestrator LLM Answer Generation (Gaps 3 & 4 parity) ─────────────────
-        if generate_answer:
+        if generate_answer and not result.get("final_answer"):
             if not result.get("documents"):
                 result["final_answer"] = "I could not find any document references matching your query."
                 result["answer_source"] = "no_results"
@@ -940,13 +940,12 @@ class CalculatorServiceClient(HttpxServiceClient):
         
         # Extract HS code (format: XXXX.XX.XX or XXXX or HS followed by digits)
         hs_patterns = [
-            r'hs\s+code\s+(\d{4}(?:\.\d{2}){0,2}|\d{6}|\d{8})',      # hs code 0102.29.11 or 010229 or 01022911
-            r'hs\s+(\d{4}(?:\.\d{2}){0,2}|\d{6}|\d{8})',             # hs 0102.29.11 or 010229 or 01022911
-            r'\b(\d{8})\b',                                             # 8-digit raw code (01022911)
+            r'\bhs\s*(?:code)?\s*[:#]?\s*(\d{4}(?:\.\d{2}){1,2}|\d{8}|\d{6}|\d{4})\b',      # hs code 0102.29.11 or 01022911 or 010229 or 0102
             r'\b(\d{4}\.\d{2}\.\d{2})\b',                               # dotted 4.2.2 format
             r'\b(\d{4}\.\d{2})\b',                                      # dotted 4.2 format
+            r'\b(\d{8})\b',                                             # 8-digit raw code (01022911)
             r'\b(\d{6})\b',                                             # 6-digit raw code (010229)
-            r'(?:code\s+)?(\d{4}(?:\s+\d{2}){1,2})',                  # legacy: code 0102 29 11 (no bare 4-digit amounts)
+            r'(?:code\s+)?(\d{4}(?:\s+\d{2}){1,2})\b',                  # legacy: code 0102 29 11 (no bare 4-digit amounts)
         ]
         for pattern in hs_patterns:
             match = re.search(pattern, q_lower)
@@ -983,32 +982,64 @@ class CalculatorServiceClient(HttpxServiceClient):
                     pass
 
         # Extract origin country
-        # Supports multi-word countries: "from New Zealand", "from South Korea", etc.
+        # Supports:
+        # 1. Prepositional phrases: "from Vietnam", "origin: China", "imported from South Korea"
+        # 2. Multi-word countries: "New Zealand", "United States", "Saudi Arabia"
+        # 3. Trailing parameters after country: "from Vietnam dv = 700 net mass 500kg"
+        # 4. Direct country mention in query without preposition: "calculate tax HS 1701 CIF 100 USD Vietnam"
+        from app.utils.entity_utils import is_valid_country, _COUNTRY_NAMES
+
         country_patterns = [
-            r'\bfrom\s+([a-z][a-z\s\-]{1,60}?)(?=\s+(?:cif|fob|hs|code|with|using|under|for|at|on|in|goods|product|cattle|oxen|\d)|$)',
-            r'\bof\s+([a-z][a-z\s\-]{1,60}?)(?=\s+(?:cif|fob|hs|code|with|using|under|for|at|on|in|goods|product|cattle|oxen|\d)|$)',
-            r'\borigin\s+([a-z][a-z\s\-]{1,60}?)(?=\s+(?:cif|fob|hs|code|with|using|under|for|at|on|in|goods|product|cattle|oxen|\d)|$)',
-            r'\bimport(?:ed)?\s+(?:from\s+)?([a-z][a-z\s\-]{1,60}?)(?=\s+(?:cif|fob|hs|code|with|using|under|for|at|on|in|goods|product|cattle|oxen|\d)|$)',
-            r'\bexport(?:ed)?\s+(?:to\s+|from\s+)?([a-z][a-z\s\-]{1,60}?)(?=\s+(?:cif|fob|hs|code|with|using|under|for|at|on|in|goods|product|cattle|oxen|\d)|$)',
+            r'\bfrom\s+([a-z][a-z\s\-]{1,60}?)(?=\s+(?:cif|fob|hs|code|with|using|under|for|at|on|in|goods|product|cattle|oxen|dv|dq|net|mass|weight|volume|liter|litre|petroleum|rubber|quantity|qty|\d)|$)',
+            r'\bof\s+([a-z][a-z\s\-]{1,60}?)(?=\s+(?:cif|fob|hs|code|with|using|under|for|at|on|in|goods|product|cattle|oxen|dv|dq|net|mass|weight|volume|liter|litre|petroleum|rubber|quantity|qty|\d)|$)',
+            r'\borigin\s+([a-z][a-z\s\-]{1,60}?)(?=\s+(?:cif|fob|hs|code|with|using|under|for|at|on|in|goods|product|cattle|oxen|dv|dq|net|mass|weight|volume|liter|litre|petroleum|rubber|quantity|qty|\d)|$)',
+            r'\bimport(?:ed)?\s+(?:from\s+)?([a-z][a-z\s\-]{1,60}?)(?=\s+(?:cif|fob|hs|code|with|using|under|for|at|on|in|goods|product|cattle|oxen|dv|dq|net|mass|weight|volume|liter|litre|petroleum|rubber|quantity|qty|\d)|$)',
+            r'\bexport(?:ed)?\s+(?:to\s+|from\s+)?([a-z][a-z\s\-]{1,60}?)(?=\s+(?:cif|fob|hs|code|with|using|under|for|at|on|in|goods|product|cattle|oxen|dv|dq|net|mass|weight|volume|liter|litre|petroleum|rubber|quantity|qty|\d)|$)',
             r'\s+([a-z][a-z\s\-]{1,60}?)\s+(?:cattle|oxen|goods|product)',
         ]
-        for pattern in country_patterns:
-            match = re.search(pattern, q_lower)
-            if match:
-                country_raw = match.group(1).strip(" ,.-")
-                country_clean = re.sub(r'\s+', ' ', country_raw)
-                country = country_clean.title()
-                if len(country) == 2:
-                    country = country.upper()
 
-                # Slice the raw matched substring casing using match indices
-                start, end = match.span(1)
-                original_substring = sanitized_question[start:end]
-
-                from app.utils.entity_utils import is_valid_country
-                if is_valid_country(country, original_substring, sanitized_question):
-                    params["origin_country"] = country
+        # Strategy 1: Prepositional matching with greedy prefix & multi-word backtracking
+        country_prefix_re = re.compile(
+            r'\b(?:from|origin(?:\s*country)?|imported\s+from|import\s+from|of)\s*[:#]?\s*([a-z][a-z\s\-\.]{1,60})',
+            re.IGNORECASE
+        )
+        for m in country_prefix_re.finditer(sanitized_question):
+            cand_text = m.group(1).strip(" ,.-")
+            cand_words = cand_text.split()
+            found_country = None
+            for num_words in range(min(4, len(cand_words)), 0, -1):
+                sub_name = " ".join(cand_words[:num_words]).strip(" ,.-")
+                c_title = sub_name.title() if len(sub_name) > 2 else sub_name.upper()
+                if is_valid_country(c_title, sub_name, sanitized_question):
+                    found_country = c_title
                     break
+            if found_country:
+                params["origin_country"] = found_country
+                break
+
+        # Strategy 2: Direct country name lookup (no preposition needed)
+        if not params.get("origin_country"):
+            sorted_country_names = sorted(_COUNTRY_NAMES, key=len, reverse=True)
+            for c_name in sorted_country_names:
+                if re.search(rf"\b{re.escape(c_name)}\b", q_lower):
+                    c_title = c_name.title() if len(c_name) > 2 else c_name.upper()
+                    if is_valid_country(c_title, c_name, sanitized_question):
+                        params["origin_country"] = c_title
+                        break
+
+        # Strategy 3: Standard pattern fallback
+        if not params.get("origin_country"):
+            for pattern in country_patterns:
+                match = re.search(pattern, q_lower)
+                if match:
+                    country_raw = match.group(1).strip(" ,.-")
+                    country_clean = re.sub(r'\s+', ' ', country_raw)
+                    country = country_clean.title() if len(country_clean) > 2 else country_clean.upper()
+                    start, end = match.span(1)
+                    original_substring = sanitized_question[start:end]
+                    if is_valid_country(country, original_substring, sanitized_question):
+                        params["origin_country"] = country
+                        break
 
         # Final fallback default: keep KHR when currency and country are not provided and cif_value is present.
         if not params["currency"] and not params["origin_country"] and params["cif_value"] is not None:

@@ -103,6 +103,18 @@ class OrchestratorFormatterService:
             yield base_answer
             return
 
+        has_final_answer = False
+        if isinstance(context, dict):
+            metadata = context.get("metadata", {})
+            if isinstance(metadata, dict) and metadata.get("has_final_answer"):
+                has_final_answer = True
+            elif context.get("has_final_answer"):
+                has_final_answer = True
+
+        if intent.lower() in ('general', 'definition', 'policy', 'policy_query') and has_final_answer:
+            yield base_answer
+            return
+
         intent_map = {
             'calculation': FormatterIntent.CALCULATION,
             'retrieval': FormatterIntent.RETRIEVAL,

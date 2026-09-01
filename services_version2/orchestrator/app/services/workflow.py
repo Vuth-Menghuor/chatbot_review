@@ -236,7 +236,7 @@ class WorkflowExecutor:
             WorkflowIntent.CALCULATION:   ["calculate", "compute", "how much", "duty", "tax"],
             WorkflowIntent.HS_CODE_LOOKUP: ["hs code", "classify", "code for", "tariff code"],
             WorkflowIntent.TRADE_QUERY:   ["trade", "export", "import", "shipping"],
-            WorkflowIntent.GENERAL:       ["procedure", "regulation", "requirement", "compliance", "what is", "define", "meaning", "explain"],
+            WorkflowIntent.GENERAL:       ["procedure", "regulation", "requirement", "compliance", "what is", "define", "meaning", "explain", "why", "how", "can", "is", "where", "which", "?"],
         }
         hits = sum(1 for kw in kw_maps.get(intent, []) if kw in q_lower)
         confidence = min(0.85, 0.55 + hits * 0.06)
@@ -547,7 +547,7 @@ class WorkflowExecutor:
 
         # PRIORITY 5: Definition keywords — only reached when no policy/trade signal matched above
         definition_keywords = [
-            "define", "definition of", "what is", "meaning of", "what does", "explain",
+            "define", "definition of", "what is", "meaning of", "what does", "explain", "why", "how", "can", "is", "where", "which", "?"
         ]
         if any(kw in q_lower for kw in definition_keywords):
             # Override definition if calc signal is present (e.g., "what is the duty for...")

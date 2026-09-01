@@ -284,26 +284,33 @@ class TradeQueryHandler:
 
             lang_tag = context.metadata.get("language") or getattr(context, "language", "en")
             if lang_tag == "km" and result and isinstance(result, dict):
+                translator = getattr(coordinator, "query_translator", None) or QueryTranslator(coordinator.llm_service)
                 ans = result.get("final_answer") or result.get("answer") or ""
                 if ans and not QueryTranslator.is_khmer(ans):
-                    translator = getattr(coordinator, "query_translator", None) or QueryTranslator(coordinator.llm_service)
                     try:
                         km_ans = await translator.translate_to_khmer(ans)
                         result["final_answer"] = km_ans
                         result["answer"] = km_ans
                     except Exception as tr_err:
                         logger.warning(f"Failed backstop translation to Khmer: {tr_err}")
+                try:
+                    await translate_trade_payload_to_khmer(result, translator)
+                except Exception as tr_err:
+                    logger.warning(f"Failed structured fields translation to Khmer: {tr_err}")
 
             if is_escape_hatch and result and isinstance(result, dict):
                 disclosed_defaults = []
                 if not has_flow:
-                    disclosed_defaults.append("**Import**")
+                    disclosed_defaults.append("**Import**" if lang_tag != "km" else "**នាំចូល**")
                 if not has_time_period:
-                    disclosed_defaults.append(f"**{datetime.now().year} (latest year)**")
+                    disclosed_defaults.append(f"**{datetime.now().year} (latest year)**" if lang_tag != "km" else f"**{datetime.now().year} (ឆ្នាំចុងក្រោយបង្អស់)**")
                 if not has_partner_country:
-                    disclosed_defaults.append("**All Countries**")
+                    disclosed_defaults.append("**All Countries**" if lang_tag != "km" else "**គ្រប់ប្រទេសទាំងអស់**")
                 if disclosed_defaults:
-                    notice = f"_Showing trade statistics using assumed defaults: {', '.join(disclosed_defaults)}._\n\n"
+                    if lang_tag == "km":
+                        notice = f"_បង្ហាញស្ថិតិពាណិជ្ជកម្មដោយផ្អែកលើតម្លៃលំនាំដើម៖ {', '.join(disclosed_defaults)}。_\n\n"
+                    else:
+                        notice = f"_Showing trade statistics using assumed defaults: {', '.join(disclosed_defaults)}._\n\n"
                     orig_ans = result.get("final_answer") or result.get("answer") or ""
                     result["final_answer"] = notice + orig_ans
                     result["answer"] = notice + orig_ans
@@ -314,3 +321,240 @@ class TradeQueryHandler:
             context.add_error(f"Trade data service error: {str(e)}")
             from ..workflow import WorkflowStatus
             context.status = WorkflowStatus.FAILED
+
+
+async def translate_trade_payload_to_khmer(result: dict, translator: QueryTranslator) -> None:
+    """Translates table, visualization, and other structured fields in a trade query result to Khmer."""
+    # 1. Translate table
+    tbl = result.get("table")
+    
+    col_map = {
+        "frequency": "ប្រេកង់",
+        "freq": "ប្រេកង់",
+        "period": "រយៈពេល",
+        "hs_heading": "កូដ HS Heading",
+        "hs_code": "កូដ HS",
+        "hs_chapter": "ជំពូក HS",
+        "trade_value": "តម្លៃពាណិជ្ជកម្ម (USD)",
+        "flow": "ទិសដៅពាណិជ្ជកម្ម",
+        "mode_of_transport": "មធ្យោបាយដឹកជញ្ជូន",
+        "partner_country": "ប្រទេសដៃគូ",
+        "net_weight": "ទម្ងន់សុទ្ធ (គីឡូក្រាម)",
+        "growth_rate_pct": "អត្រាកំណើន (%)",
+    }
+    
+    val_map = {
+        "Other": "ផ្សេងៗ",
+        "others": "ផ្សេងៗ",
+        "other": "ផ្សេងៗ",
+        "EXPORT": "នាំចេញ",
+        "EXPORTING": "នាំចេញ",
+        "EX": "នាំចេញ",
+        "Exports": "នាំចេញ",
+        "export": "នាំចេញ",
+        "IMPORT": "នាំចូល",
+        "IMPORTING": "នាំចូល",
+        "IM": "នាំចូល",
+        "Imports": "នាំចូល",
+        "import": "នាំចូល",
+        "A": "ប្រចាំឆ្នាំ",
+        "M": "ប្រចាំខែ",
+        "Q": "ប្រចាំត្រីមាស",
+        "S": "ប្រចាំឆមាស",
+        "Sea transport": "ការដឹកជញ្ជូនតាមផ្លូវសមុទ្រ",
+        "Rail transport": "ការដឹកជញ្ជូនតាមផ្លូវដែក",
+        "Road transport": "ការដឹកជញ្ជូនតាមផ្លូវគោក",
+        "Air transport": "ការដឹកជញ្ជូនតាមផ្លូវអាកាស",
+        "Postal": "ប្រៃសណីយ៍",
+        "Multimodal": "ការដឹកជញ្ជូនពហុមធ្យោបាយ",
+        "Fixed": "ថេរ",
+        "Inland waterway": "ការដឹកជញ្ជូនតាមផ្លូវទឹកក្នុងស្រុក",
+        "Other transport": "ការដឹកជញ្ជូនផ្សេងៗ",
+        "Unknown": "មិនស្គាល់",
+        "unknown": "មិនស្គាល់",
+        "Annual": "ប្រចាំឆ្នាំ",
+        "Monthly": "ប្រចាំខែ",
+        "Quarterly": "ប្រចាំត្រីមាស",
+    }
+    
+    country_map = {
+        "China": "ប្រទេសចិន",
+        "United States": "សហរដ្ឋអាមេរិក",
+        "Vietnam": "ប្រទេសវៀតណាម",
+        "Thailand": "ប្រទេសថៃ",
+        "Japan": "ប្រទេសជប៉ុន",
+        "Singapore": "ប្រទេសសិង្ហបុរី",
+        "Germany": "ប្រទេសអាល្លឺម៉ង់",
+        "Hong Kong": "ហុងកុង",
+        "Canada": "ប្រទេសកាណាដា",
+        "United Kingdom": "ចក្រភពអង់គ្លេស",
+        "France": "ប្រទេសបារាំង",
+        "South Korea": "ប្រទេសកូរ៉េខាងត្បូង",
+        "Taiwan": "តៃវ៉ាន់",
+        "Switzerland": "ប្រទេសស្វីស",
+        "Italy": "ប្រទេសអ៊ីតាលី",
+        "Spain": "ប្រទេសអេស្ប៉ាញ",
+        "Australia": "ប្រទេសអូស្ត្រាលី",
+        "India": "ប្រទេសឥណ្ឌា",
+        "Malaysia": "ប្រទេសម៉ាឡេស៊ី",
+        "Indonesia": "ប្រទេសឥណ្ឌូនេស៊ី",
+        "Belgium": "ប្រទេសប៊ែលហ្សិក",
+        "Netherlands": "ប្រទេសហូឡង់",
+        "Cambodia": "ប្រទេសកម្ពុជា",
+        "the EU": "សហភាពអឺរ៉ុប",
+        "ASEAN": "អាស៊ាន",
+    }
+    
+    viz_map = {
+        "Trade Volume Ranking": "ចំណាត់ថ្នាក់ទំហំពាណិជ្ជកម្ម",
+        "Trade Trend over Time": "និន្នាការពាណិជ្ជកម្មតាមពេលវេលា",
+        "Trade Comparison Analysis": "ការវិភាគប្រៀបធៀបពាណិជ្ជកម្ម",
+        "Trade Share Breakdown": "ការបែងចែកចំណែកពាណិជ្ជកម្ម",
+        "Trade Growth Analysis": "ការវិភាគកំណើនពាណិជ្ជកម្ម",
+        "Trade Balance Analysis": "ការវិភាគតុល្យភាពពាណិជ្ជកម្ម",
+        "Trade Volume Summary": "សេចក្តីសង្ខេបទំហំពាណិជ្ជកម្ម",
+        "Growth Rate (%) Not Available": "មិនមានទិន្នន័យអត្រាកំណើន (%)",
+        "Trade Value (USD)": "តម្លៃពាណិជ្ជកម្ម (USD)",
+        "Trade Value": "តម្លៃពាណិជ្ជកម្ម",
+        "Net Weight (kg)": "ទម្ងន់សុទ្ធ (គីឡូក្រាម)",
+        "Growth Rate (%)": "អត្រាកំណើន (%)",
+        "Trade Balance": "តុល្យភាពពាណិជ្ជកម្ម",
+        "Volume (kg)": "ទម្ងន់ (គីឡូក្រាម)",
+    }
+    
+    async def translate_str(text: str) -> str:
+        if not text or not text.strip():
+            return text
+        if QueryTranslator.is_khmer(text):
+            return text
+        # Skip translation for purely numeric, dates, codes, or punctuation values
+        if not re.search(r"[a-zA-Z]", text):
+            return text
+        # Try direct mapping
+        if text in val_map:
+            return val_map[text]
+        if text in country_map:
+            return country_map[text]
+        if text in viz_map:
+            return viz_map[text]
+        # Try lowercase check
+        text_lower = text.lower().strip()
+        if text_lower in val_map:
+            return val_map[text_lower]
+        if text_lower in country_map:
+            return country_map[text_lower]
+        if text_lower in viz_map:
+            return viz_map[text_lower]
+        # LLM Translation fallback
+        try:
+            translated = await translator.translate_to_khmer(text)
+            if translated:
+                return translated
+        except Exception as e:
+            logger.warning(f"Failed to translate '{text}' to Khmer: {e}")
+        return text
+
+    if isinstance(tbl, dict) and "columns" in tbl and "rows" in tbl:
+        old_cols = tbl.get("columns") or []
+        new_cols = []
+        for col in old_cols:
+            col_lower = col.lower().strip()
+            translated_col = col_map.get(col_lower, col)
+            if translated_col == col and not QueryTranslator.is_khmer(col):
+                translated_col = await translate_str(col)
+            new_cols.append(translated_col)
+        tbl["columns"] = new_cols
+        
+        old_rows = tbl.get("rows") or []
+        new_rows = []
+        for row in old_rows:
+            new_row = {}
+            for k, v in row.items():
+                k_lower = k.lower().strip()
+                new_key = col_map.get(k_lower, k)
+                if new_key == k and not QueryTranslator.is_khmer(k):
+                    new_key = await translate_str(k)
+                
+                new_val = v
+                if isinstance(v, str):
+                    if k_lower == "partner_country":
+                        if v in country_map:
+                            new_val = country_map[v]
+                        else:
+                            new_val = await translate_str(v)
+                    else:
+                        new_val = await translate_str(v)
+                new_row[new_key] = new_val
+            new_rows.append(new_row)
+        tbl["rows"] = new_rows
+
+    viz = result.get("visualization")
+    if isinstance(viz, dict):
+        if "title" in viz and isinstance(viz["title"], str):
+            viz["title"] = await translate_str(viz["title"])
+            
+        if "labels" in viz and isinstance(viz["labels"], list):
+            new_labels = []
+            for label in viz["labels"]:
+                if isinstance(label, str):
+                    new_labels.append(await translate_str(label))
+                else:
+                    new_labels.append(label)
+            viz["labels"] = new_labels
+            
+        if "datasets" in viz and isinstance(viz["datasets"], list):
+            for dataset in viz["datasets"]:
+                if isinstance(dataset, dict) and "label" in dataset and isinstance(dataset["label"], str):
+                    dataset["label"] = await translate_str(dataset["label"])
+
+    for summary_key in ["summary", "summary_metrics"]:
+        summary_obj = result.get(summary_key)
+        if isinstance(summary_obj, dict) and "data_quality" in summary_obj:
+            dq = summary_obj["data_quality"]
+            if isinstance(dq, dict):
+                if dq.get("partial_year_note"):
+                    py = dq.get("partial_year")
+                    if py:
+                        dq["partial_year_note"] = f" ទិន្នន័យឆ្នាំ {py} មិនទាន់មានភាពពេញលេញនៅឡើយទេ។"
+                    else:
+                        match = re.search(r"The\s+(\d{4})\s+data\s+is\s+not\s+complete", dq["partial_year_note"], re.IGNORECASE)
+                        if match:
+                            dq["partial_year_note"] = f" ទិន្នន័យឆ្នាំ {match.group(1)} មិនទាន់មានភាពពេញលេញនៅឡើយទេ។"
+                        else:
+                            dq["partial_year_note"] = await translate_str(dq["partial_year_note"])
+
+                if dq.get("truncation_note"):
+                    shown_cnt = dq.get("shown_count")
+                    if shown_cnt is not None:
+                        dq["truncation_note"] = f"បង្ហាញលទ្ធផលចំនួន {shown_cnt} - ចំនួនសរុបដែលបានបង្ហាញអាចមិនតំណាងឱ្យទីផ្សារទាំងមូលឡើយ។"
+                    else:
+                        match = re.search(r"Showing\s+(\d+)\s+results", dq["truncation_note"], re.IGNORECASE)
+                        if match:
+                            dq["truncation_note"] = f"បង្ហាញលទ្ធផលចំនួន {match.group(1)} - ចំនួនសរុបដែលបានបង្ហាញអាចមិនតំណាងឱ្យទីផ្សារទាំងមូលឡើយ។"
+                        else:
+                            dq["truncation_note"] = await translate_str(dq["truncation_note"])
+
+                if dq.get("period_coverage_note"):
+                    actual_range = dq.get("actual_period_range")
+                    requested_range = dq.get("requested_period_range")
+                    if isinstance(actual_range, list) and len(actual_range) >= 2 and isinstance(requested_range, list) and len(requested_range) >= 2:
+                        dq["period_coverage_note"] = f"ទិន្នន័យមានត្រឹមតែពីឆ្នាំ {actual_range[0]} ដល់ {actual_range[1]} ប៉ុណ្ណោះ (តាមការស្នើសុំឆ្នាំ {requested_range[0]}–{requested_range[1]})។"
+                    else:
+                        match = re.search(r"Data\s+available\s+from\s+(\d+)\s+to\s+(\d+)\s+only\s+\(requested\s+(\d+)–(\d+)\)", dq["period_coverage_note"], re.IGNORECASE)
+                        if match:
+                            dq["period_coverage_note"] = f"ទិន្នន័យមានត្រឹមតែពីឆ្នាំ {match.group(1)} ដល់ {match.group(2)} ប៉ុណ្ណោះ (តាមការស្នើសុំឆ្នាំ {match.group(3)}–{match.group(4)})។"
+                        else:
+                            dq["period_coverage_note"] = await translate_str(dq["period_coverage_note"])
+
+                if dq.get("period_mismatch_note"):
+                    req_p = dq.get("requested_period")
+                    ret_p = dq.get("returned_period")
+                    if req_p and ret_p:
+                        dq["period_mismatch_note"] = f"សម្គាល់៖ ទិន្នន័យដែលបានស្នើសុំសម្រាប់ឆ្នាំ {req_p} ប៉ុន្តែបង្ហាញទិន្នន័យឆ្នាំ {ret_p} វិញ។"
+                    else:
+                        match = re.search(r"Requested\s+data\s+for\s+(\w+),\s+but\s+displaying\s+(\w+)\s+data", dq["period_mismatch_note"], re.IGNORECASE)
+                        if match:
+                            dq["period_mismatch_note"] = f"សម្គាល់៖ ទិន្នន័យដែលបានស្នើសុំសម្រាប់ឆ្នាំ {match.group(1)} ប៉ុន្តែបង្ហាញទិន្នន័យឆ្នាំ {match.group(2)} វិញ។"
+                        else:
+                            dq["period_mismatch_note"] = await translate_str(dq["period_mismatch_note"])
+

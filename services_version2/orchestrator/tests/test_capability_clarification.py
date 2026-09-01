@@ -875,11 +875,100 @@ async def test_state_isolation_between_ask_back_and_product_spec():
     session_ps.clarification_entity = "bmw car"
     session_ps.clarification_last_query = "bmw car"
     session_ps.clarification_expected_terms = ["cc", "convertible"]
-    
     assert session_ab.is_awaiting_clarification() is True
     assert session_ps.is_awaiting_clarification() is False
     assert getattr(session_ps, "product_clarification_needed", False) is True
 
 
+@pytest.mark.asyncio
+async def test_ordinal_candidate_selection_resolves_to_calculation():
+    """Verify that user option selection ('use the first one') on an active HS candidate list resolves to calculation."""
+    mock_retrieval = AsyncMock()
+    mock_calculator = make_mock_calculator()
+    
+    coordinator = ServiceCoordinator(
+        retrieval_client=mock_retrieval,
+        general_client=mock_retrieval,
+        calculator_client=mock_calculator,
+        trade_data_client=MagicMock(),
+        first_layer_service=get_llm_first_layer_service(LLMFirstLayerConfig()),
+        use_input_rewriter=True
+    )
+    
+    validator = get_validator()
+    validator.validate_input_full_async = AsyncMock(return_value=ValidationResult.in_scope())
+    
+    session_id = "sess_ordinal_test"
+    session = coordinator.first_layer_service.session_manager.get_or_create_session(session_id)
+    session.pending_clarification = True
+    session.clarification_intents = ["hs_code_lookup", "calculation"]
+    session.clarification_candidate_codes = ["8703.23.58", "8703.23.68"]
+    session.last_normalized_query = "calculate import tax for car"
+    session.last_entity = "car"
+    
+    res = await coordinator.process_query(question="use the first one", session_id=session_id)
+    
+    assert res.get("intent") == "calculation"
+    assert session.hs_code == "8703.23.58"
+    assert session.pending_clarification is True
+    assert session.clarification_intents == ["calculation"]
+    assert "cif" in res.get("answer").lower() or "price" in res.get("answer").lower()
+    assert session.clarification_candidate_codes == []
 
 
+@pytest.mark.asyncio
+async def test_ordinal_candidate_selection_empty_candidates_falls_through():
+    """Verify that an ordinal selection falls through to normal NLU/ask-back when candidate_codes list is empty."""
+    coordinator = ServiceCoordinator(
+        retrieval_client=AsyncMock(),
+        general_client=AsyncMock(),
+        calculator_client=make_mock_calculator(),
+        trade_data_client=MagicMock(),
+        first_layer_service=get_llm_first_layer_service(LLMFirstLayerConfig()),
+        use_input_rewriter=True
+    )
+    validator = get_validator()
+    validator.validate_input_full_async = AsyncMock(return_value=ValidationResult.in_scope())
+    
+    session_id = "sess_empty_candidates"
+    session = coordinator.first_layer_service.session_manager.get_or_create_session(session_id)
+    session.pending_clarification = True
+    session.clarification_intents = ["calculation"]
+    session.clarification_candidate_codes = [] # empty list
+    session.last_normalized_query = "calculate tax for car"
+    
+    # Mock NLU cache to simulate normal ask-back resolver fallthrough
+    set_nlu_cache("use the first one", "calculation", 0.95)
+    
+    # Should fall through to resolve_from_user_response, not resolve ordinal selection
+    res = await coordinator.process_query(question="use the first one", session_id=session_id)
+    assert session.hs_code is None
+
+
+@pytest.mark.asyncio
+async def test_ordinal_candidate_selection_out_of_range_falls_through():
+    """Verify that an out-of-range ordinal selection (e.g. 'fifth' when only 2 exist) falls through to normal handling."""
+    coordinator = ServiceCoordinator(
+        retrieval_client=AsyncMock(),
+        general_client=AsyncMock(),
+        calculator_client=make_mock_calculator(),
+        trade_data_client=MagicMock(),
+        first_layer_service=get_llm_first_layer_service(LLMFirstLayerConfig()),
+        use_input_rewriter=True
+    )
+    validator = get_validator()
+    validator.validate_input_full_async = AsyncMock(return_value=ValidationResult.in_scope())
+    
+    session_id = "sess_out_of_range"
+    session = coordinator.first_layer_service.session_manager.get_or_create_session(session_id)
+    session.pending_clarification = True
+    session.clarification_intents = ["calculation"]
+    session.clarification_candidate_codes = ["8703.23.58", "8703.23.68"] # only 2 candidates
+    session.last_normalized_query = "calculate tax for car"
+    
+    # Mock NLU cache to simulate normal ask-back resolver fallthrough
+    set_nlu_cache("use the fifth one", "calculation", 0.95)
+    
+    # Should fall through since index 4 (fifth) >= 2 candidates
+    res = await coordinator.process_query(question="use the fifth one", session_id=session_id)
+    assert session.hs_code is None

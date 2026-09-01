@@ -41,7 +41,7 @@ class HsCodeLookupHandler:
             explicit_hs = None
             raw_q_lower = service_query.lower()
             explicit_match = re.search(
-                r"\b(?:hs\s*code|hs)?\s*(\d{4}(?:\.\d{2}){0,2}|\d{6}|\d{8})\b",
+                r"\b(?:hs\s*code|hs)\s*[:#]?\s*(\d{4}(?:\.\d{2}){1,2}|\d{8}|\d{6}|\d{4})\b",
                 raw_q_lower
             )
             if explicit_match:

@@ -438,6 +438,9 @@ class ServiceCoordinator:
         8. Microservice routing & dispatching (calculator, trade_data, retrieval).
         9. Session state updates (session save deferred to endpoint in stream mode).
         """
+        class ClarificationResolved(Exception):
+            pass
+
         # Step 1: Initialize a unique request ID and workflow tracking context
         request_id = str(uuid.uuid4())
         context = WorkflowContext(
@@ -596,8 +599,72 @@ class ServiceCoordinator:
             # Step 7: Clarification Resolution (Handling user reply to a previous ask-back question)
             if context.session_context and context.session_context.is_awaiting_clarification():
                 try:
-                    from ..ai import get_llm_first_layer_service as get_ask_back_service
-                    ask_back_svc = get_ask_back_service()
+                    # Check for ordinal/index candidate selection first
+                    candidate_codes = list(getattr(context.session_context, "clarification_candidate_codes", []) or [])
+                    norm_reply = question.lower().strip()
+                    selected_index = None
+                    if candidate_codes and ("calculation" in context.session_context.clarification_intents or "hs_code_lookup" in context.session_context.clarification_intents):
+                        words = norm_reply.split()
+                        if len(words) <= 7:
+                            if re.search(r"\b(?:first|1st|one|1)\b", norm_reply):
+                                selected_index = 0
+                            elif re.search(r"\b(?:second|2nd|two|2)\b", norm_reply):
+                                selected_index = 1
+                            elif re.search(r"\b(?:third|3rd|three|3)\b", norm_reply):
+                                selected_index = 2
+                            elif re.search(r"\b(?:fourth|4th|four|4)\b", norm_reply):
+                                selected_index = 3
+                            elif re.search(r"\b(?:fifth|5th|five|5)\b", norm_reply):
+                                selected_index = 4
+
+                    if selected_index is not None and selected_index < len(candidate_codes):
+                        resolved_intent = "calculation"
+                        chosen_hs = candidate_codes[selected_index]
+                        context.session_context.hs_code = chosen_hs
+                        context.session_context.product_clarification_needed = False
+                        context.session_context.clarification_entity = None
+                        context.session_context.clarification_candidate_codes = []
+                        context.session_context.pending_clarification = False
+                        context.session_context.clarification_intents = []
+                        context.session_context.pending_rewritten_query = None
+                        context.session_context.ask_back_count = 0
+                        context.session_context._trigger_change()
+                        
+                        logger.info(
+                            f"[{request_id}] [CLARIFICATION] Ordinal selection resolved candidate HS code: "
+                            f"{chosen_hs} (index: {selected_index})"
+                        )
+                        
+                        pending_query = context.session_context.last_normalized_query or context.session_context.pending_rewritten_query
+                        merged_query = self._merge_pending_with_clarification(
+                            pending_query=pending_query,
+                            clarification_response=question,
+                            resolved_intent=resolved_intent,
+                            session_last_entity=getattr(context.session_context, 'last_entity', None),
+                            session_context=context.session_context,
+                            was_clarification_pending=True,
+                        )
+                        
+                        if chosen_hs not in merged_query:
+                            merged_query = f"{merged_query} HS {chosen_hs}"
+                        
+                        context.question = merged_query
+                        context.cleaned_input = merged_query
+                        context.metadata["normalized_input"] = self._light_normalize_query(merged_query)
+                        context.intent = WorkflowIntent.CALCULATION
+                        context.skip_intent_detection = True
+                        context.metadata["clarification_resolved"] = {
+                            "resolved_intent": resolved_intent,
+                            "via": "ordinal_candidate_selection",
+                            "merged_query": merged_query,
+                            "original_pending_query": pending_query,
+                            "clarification_response": question,
+                            "confidence": 1.0,
+                        }
+                        raise ClarificationResolved()
+                    else:
+                        from ..ai import get_llm_first_layer_service as get_ask_back_service
+                        ask_back_svc = get_ask_back_service()
                     
                     # Fetch unified NLU cache to check if the user shifted topic/greetings
                     cache_intent = None
@@ -835,6 +902,8 @@ class ServiceCoordinator:
                                             candidate_intents=context.session_context.clarification_intents,
                                             trigger_reason="unresolved_retry",
                                         )
+                except ClarificationResolved:
+                    pass
                 except Exception as e:
                     logger.warning(f"[{request_id}] Clarification resolution failed: {e}")
 
@@ -2061,7 +2130,9 @@ class ServiceCoordinator:
     def _rewrite_tokens(self, text: str) -> list[str]:
         # Strip commas between digits (e.g., 40,000 -> 40000) to align number formats
         normalized = re.sub(r"(\d),(\d)", r"\1\2", text.lower())
-        return re.findall(r"[a-z0-9][a-z0-9\.-]*", normalized)
+        raw_tokens = re.findall(r"[a-z0-9][a-z0-9\.-]*", normalized)
+        # Strip trailing dots or dashes from each token (e.g. "2025." -> "2025")
+        return [t.rstrip(".-") for t in raw_tokens if t.rstrip(".-")]
 
     def _light_normalize_query(self, user_input: str) -> str:
         normalized = user_input.strip().lower()
@@ -2404,15 +2475,16 @@ class ServiceCoordinator:
                         entity_words = {entity_lower}
                     
                     documents = result.get("documents", [])
-                    has_mention = False
-                    for doc in documents:
-                        content = str(doc.get("content", "")).lower()
-                        if any(word in content for word in entity_words):
-                            has_mention = True
-                            break
+                    has_mention = any(word in ans_text.lower() for word in entity_words)
+                    if not has_mention:
+                        for doc in documents:
+                            content = str(doc.get("content", "")).lower()
+                            if any(word in content for word in entity_words):
+                                has_mention = True
+                                break
                     if not has_mention:
                         entity_miss = True
-                        logger.info(f"[{context.request_id}] Entity '{nlu_entity}' (high confidence) not mentioned in RAG documents. Triggering entity miss fallback.")
+                        logger.info(f"[{context.request_id}] Entity '{nlu_entity}' (high confidence) not mentioned in RAG documents or final answer. Triggering entity miss fallback.")
                 
                 if self._is_rag_no_info_response(ans_text, result) or entity_miss:
                     logger.info(f"[{context.request_id}] RAG returned no document info or entity miss for query '{service_query}'. Invoking LLM parametric fallback.")
@@ -2473,6 +2545,11 @@ class ServiceCoordinator:
             raw_answer = context.retrieval_result.get("final_answer", "No response generated by retrieval service.")
             cleaned_answer = strip_clarification_questions_from_prose(raw_answer, questions)
             response["answer"] = cleaned_answer
+            
+            # Check if general service actually returned final_answer (and it's not the default fallback or empty)
+            has_fa = context.retrieval_result.get("final_answer")
+            if has_fa and has_fa != "I could not find any document references matching your query." and has_fa != "No response generated by retrieval service.":
+                response["metadata"]["has_final_answer"] = True
             
             # Forward standard citations directly from payload documents without manual text rebuilding
             documents = context.retrieval_result.get("documents", [])
@@ -2625,7 +2702,11 @@ class ServiceCoordinator:
                     
                     if period_defaulted:
                         defaulted_period = (isinstance(query_params, dict) and query_params.get("period")) or str(datetime.now().year)
-                        clean_dq["period_note"] = f"No year specified — showing {defaulted_period} (latest available) data."
+                        lang_tag = context.metadata.get("language") or getattr(context, "language", "en")
+                        if lang_tag == "km":
+                            clean_dq["period_note"] = f"មិនបានបញ្ជាក់ឆ្នាំទេ — បង្ហាញទិន្នន័យឆ្នាំ {defaulted_period} (ឆ្នាំចុងក្រោយបង្អស់)។"
+                        else:
+                            clean_dq["period_note"] = f"No year specified — showing {defaulted_period} (latest available) data."
 
                     response["summary"] = {"data_quality": clean_dq}
                     response["summary_metrics"] = {"data_quality": clean_dq}

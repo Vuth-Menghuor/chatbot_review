@@ -79,10 +79,15 @@ export function legacyChatResponseToMessageParts(
   return {
     content: blocksToMarkerText(blocks) || text || errors.join('\n'),
     blocks,
-    sources: normalizedCitationsToSources(normalizeLegacyCitations(obj.citations ?? obj.references)),
-    status: String(obj.status ?? '').toLowerCase() === 'failed' || errors.length || blocks.some(isUnreliableFallbackErrorBlock)
-      ? 'failed'
-      : 'completed',
+    sources: normalizedCitationsToSources(
+      normalizeLegacyCitations(obj.citations ?? obj.references),
+    ),
+    status:
+      String(obj.status ?? '').toLowerCase() === 'failed' ||
+      errors.length ||
+      blocks.some(isUnreliableFallbackErrorBlock)
+        ? 'failed'
+        : 'completed',
     coverage: normalizeCoverage(obj.coverage ?? obj.answer_coverage ?? obj.status),
     confidence: normalizeConfidence(obj.confidence ?? obj.candidate_confidence),
   };
@@ -126,7 +131,11 @@ function validatedNormalizedChatResponseToMessageParts(
   const normalizedBlocks = normalizedMessageBlocks(response) ?? [];
   const rawBlocks = normalizedBlocks.length
     ? normalizedBlocks.map((block, index) =>
-        normalizedBlockToMessageBlock(block, `${response.request_id || fallbackId}-${index}`, response),
+        normalizedBlockToMessageBlock(
+          block,
+          `${response.request_id || fallbackId}-${index}`,
+          response,
+        ),
       )
     : fallbackResponseContentBlocks(response, fallbackId);
   const blocks = filterFinalResponseBlocks(rawBlocks, response);
@@ -135,10 +144,12 @@ function validatedNormalizedChatResponseToMessageParts(
   // copy/export/accessibility fallback when the backend provides it.
   const hasResponseContent = typeof response.response?.content === 'string';
   const responseContent = response.response?.content ?? '';
-  const useResponseContent = hasResponseContent && !(
-    blocks.some(isUsefulAuthoritativeBlock) &&
-    isUnreliableServiceFallbackText(responseContent, response)
-  );
+  const useResponseContent =
+    hasResponseContent &&
+    !(
+      blocks.some(isUsefulAuthoritativeBlock) &&
+      isUnreliableServiceFallbackText(responseContent, response)
+    );
   const content = hasUnreliableFallback
     ? ''
     : useResponseContent
@@ -169,7 +180,8 @@ function filterFinalResponseBlocks(
 function isUsefulAuthoritativeBlock(block: MessageBlock): boolean {
   if (isUnreliableFallbackErrorBlock(block)) return false;
   if (block.type === 'table') return hasPopulatedTableRows(block);
-  if (block.type === 'markdown') return typeof block.content === 'string' && block.content.trim().length > 0;
+  if (block.type === 'markdown')
+    return typeof block.content === 'string' && block.content.trim().length > 0;
   if (block.type === 'error' || block.type === 'fallback') return false;
   return true;
 }
@@ -192,30 +204,40 @@ function fallbackResponseContentBlocks(
   const text = response.response?.content;
   if (!text) return [];
   if (isUnreliableServiceFallbackText(text, response)) {
-    return [unreliableServiceFallbackErrorBlock(`${response.request_id || fallbackId}-response-unreliable-fallback`)];
+    return [
+      unreliableServiceFallbackErrorBlock(
+        `${response.request_id || fallbackId}-response-unreliable-fallback`,
+      ),
+    ];
   }
-  return [{
-    id: `${response.request_id || fallbackId}-response-fallback`,
-    type: 'markdown',
-    content: text,
-    isComplete: true,
-  }];
+  return [
+    {
+      id: `${response.request_id || fallbackId}-response-fallback`,
+      type: 'markdown',
+      content: text,
+      isComplete: true,
+    },
+  ];
 }
 
 function isNormalizedContractEnvelope(value: unknown): boolean {
-  return Boolean(value && typeof value === 'object' && !Array.isArray(value) && 'api_version' in value);
+  return Boolean(
+    value && typeof value === 'object' && !Array.isArray(value) && 'api_version' in value,
+  );
 }
 
 function invalidNormalizedResponseToMessageParts(fallbackId: string): NormalizedChatMessageParts {
-  const blocks: MessageBlock[] = [{
-    id: `${fallbackId}-invalid-normalized-response`,
-    type: 'error',
-    content: {
-      title: 'Response unavailable',
-      message: 'The response format was not supported.',
+  const blocks: MessageBlock[] = [
+    {
+      id: `${fallbackId}-invalid-normalized-response`,
+      type: 'error',
+      content: {
+        title: 'Response unavailable',
+        message: 'The response format was not supported.',
+      },
+      isComplete: true,
     },
-    isComplete: true,
-  }];
+  ];
 
   return {
     content: blocksToMarkerText(blocks),
@@ -232,7 +254,8 @@ export function normalizedBlockToMessageBlock(
   id: string,
   context?: { service?: unknown; intent?: unknown },
 ): MessageBlock {
-  if (!isRecord(block) || typeof block.type !== 'string') return fallbackBlockToMessageBlock(block, id);
+  if (!isRecord(block) || typeof block.type !== 'string')
+    return fallbackBlockToMessageBlock(block, id);
   if (block.type === 'markdown') return markdownBlockToMessageBlock(block, id, context);
   if (block.type === 'summary') return passthroughBlockToMessageBlock(block, id);
   if (block.type === 'key_value') return passthroughBlockToMessageBlock(block, id);
@@ -254,7 +277,10 @@ export function normalizedBlockToMessageBlock(
   };
 }
 
-function passthroughBlockToMessageBlock(block: NormalizedChatContentBlock, id: string): MessageBlock {
+function passthroughBlockToMessageBlock(
+  block: NormalizedChatContentBlock,
+  id: string,
+): MessageBlock {
   return {
     id,
     type: block.type,
@@ -295,32 +321,39 @@ function unreliableServiceFallbackErrorBlock(id: string): MessageBlock {
 }
 
 function isUnreliableFallbackErrorBlock(block: MessageBlock): boolean {
-  return block.type === 'error' &&
+  return (
+    block.type === 'error' &&
     typeof block.content === 'object' &&
     block.content !== null &&
     'message' in block.content &&
-    block.content.message === UNRELIABLE_SERVICE_FALLBACK_MESSAGE;
+    block.content.message === UNRELIABLE_SERVICE_FALLBACK_MESSAGE
+  );
 }
 
 function tableBlockToMessageBlock(block: NormalizedTableBlock, id: string): MessageBlock {
-  const rawColumns = Array.isArray(block.columns) ? block.columns : [];
-  const columns = filterVisibleTableColumns(rawColumns);
-  const rows = Array.isArray(block.rows)
-    ? block.rows.map((row) => stripHiddenTableValues(row, rawColumns))
-    : [];
+  const columns = Array.isArray(block.columns) ? block.columns : [];
+
+  const rows = Array.isArray(block.rows) ? block.rows : [];
+
   return {
     id,
     type: 'table',
     title: block.title,
     content: {
-      columns: columns.map((column) => ({ key: column.key, title: column.label })),
+      columns: columns.map((column) => ({
+        key: column.key,
+        title: column.label,
+      })),
       rows,
     },
     isComplete: true,
   };
 }
 
-function officialReferenceBlockToMessageBlock(block: NormalizedOfficialReferenceBlock, id: string): MessageBlock {
+function officialReferenceBlockToMessageBlock(
+  block: NormalizedOfficialReferenceBlock,
+  id: string,
+): MessageBlock {
   return {
     id,
     type: 'official_reference',
@@ -374,7 +407,8 @@ function errorBlockToMessageBlock(block: NormalizedErrorBlock, id: string): Mess
 }
 
 function chartBlockToMessageBlock(block: NormalizedChartBlock, id: string): MessageBlock {
-  const data = block.data && typeof block.data === 'object' && !Array.isArray(block.data) ? block.data : {};
+  const data =
+    block.data && typeof block.data === 'object' && !Array.isArray(block.data) ? block.data : {};
   return {
     id,
     type: 'chart',
@@ -392,7 +426,8 @@ function chartBlockToMessageBlock(block: NormalizedChartBlock, id: string): Mess
 }
 
 function predictionBlockToMessageBlock(block: NormalizedPredictionBlock, id: string): MessageBlock {
-  const data = block.data && typeof block.data === 'object' && !Array.isArray(block.data) ? block.data : {};
+  const data =
+    block.data && typeof block.data === 'object' && !Array.isArray(block.data) ? block.data : {};
   const displayData = withoutPredictionConfidence(data);
   return {
     id,
@@ -433,7 +468,10 @@ function withoutPredictionConfidence(data: Record<string, unknown>): Record<stri
   return displayData;
 }
 
-function suggestionsBlockToMessageBlock(block: NormalizedSuggestionsBlock, id: string): MessageBlock {
+function suggestionsBlockToMessageBlock(
+  block: NormalizedSuggestionsBlock,
+  id: string,
+): MessageBlock {
   return {
     id,
     type: 'suggestions',
@@ -458,10 +496,17 @@ function coverageBlockToMessageBlock(block: NormalizedCoverageBlock, id: string)
   };
 }
 
-function normalizedCitationsToSources(citations: NormalizedChatResponse['citations']): MessageSource[] {
+function normalizedCitationsToSources(
+  citations: NormalizedChatResponse['citations'],
+): MessageSource[] {
   return (citations ?? []).map((citation, index) => ({
     marker: citation.marker,
-    title: citation.title || citation.filename || citation.document_id || citation.label || `Source ${index + 1}`,
+    title:
+      citation.title ||
+      citation.filename ||
+      citation.document_id ||
+      citation.label ||
+      `Source ${index + 1}`,
     url: citation.url,
     snippet: citation.snippet,
     domain: citation.url ? safeDomain(citation.url) : undefined,
@@ -480,14 +525,17 @@ function markdownTextFromBlocks(blocks: unknown[]): string {
       if (!isRecord(block) || typeof block.type !== 'string') return '';
       if (block.type === 'markdown') return block.text;
       if (block.type === 'error') return block.message;
-      if (block.type === 'clarification' && Array.isArray(block.questions)) return block.questions.join('\n');
+      if (block.type === 'clarification' && Array.isArray(block.questions))
+        return block.questions.join('\n');
       return '';
     })
     .filter(Boolean)
     .join('\n\n');
 }
 
-function normalizedMessageBlocks(response: { message?: { content?: unknown; blocks?: unknown } | null }): unknown[] | null {
+function normalizedMessageBlocks(response: {
+  message?: { content?: unknown; blocks?: unknown } | null;
+}): unknown[] | null {
   const message = response.message;
   if (!message || typeof message !== 'object' || Array.isArray(message)) return null;
   const value = Array.isArray(message.content) ? message.content : message.blocks;
@@ -582,27 +630,56 @@ function normalizeLegacyCitations(value: unknown): NormalizedChatResponse['citat
       }
       if (!item || typeof item !== 'object') return null;
       const obj = item as Record<string, unknown>;
-      const metadata = obj.metadata && typeof obj.metadata === 'object' && !Array.isArray(obj.metadata)
-        ? (obj.metadata as Record<string, unknown>)
-        : {};
-      const documentId = stringValue(obj.document_id ?? obj.documentId ?? metadata.document_id ?? metadata.doc_id);
+      const metadata =
+        obj.metadata && typeof obj.metadata === 'object' && !Array.isArray(obj.metadata)
+          ? (obj.metadata as Record<string, unknown>)
+          : {};
+      const documentId = stringValue(
+        obj.document_id ?? obj.documentId ?? metadata.document_id ?? metadata.doc_id,
+      );
       const filename = stringValue(obj.filename ?? metadata.filename ?? metadata.file_name);
       return {
-        id: String(obj.id ?? obj.citation_id ?? obj.doc_id ?? obj.source_id ?? obj.reference_id ?? documentId ?? index + 1),
+        id: String(
+          obj.id ??
+            obj.citation_id ??
+            obj.doc_id ??
+            obj.source_id ??
+            obj.reference_id ??
+            documentId ??
+            index + 1,
+        ),
         label: String(obj.label ?? `Source ${index + 1}`),
-        title: stringValue(obj.title ?? obj.source ?? metadata.title ?? metadata.source ?? filename ?? documentId),
-        snippet: typeof obj.snippet === 'string' ? obj.snippet : typeof obj.content === 'string' ? obj.content : undefined,
-        url: typeof obj.url === 'string' ? obj.url : typeof obj.source_url === 'string' ? obj.source_url : undefined,
+        title: stringValue(
+          obj.title ?? obj.source ?? metadata.title ?? metadata.source ?? filename ?? documentId,
+        ),
+        snippet:
+          typeof obj.snippet === 'string'
+            ? obj.snippet
+            : typeof obj.content === 'string'
+              ? obj.content
+              : undefined,
+        url:
+          typeof obj.url === 'string'
+            ? obj.url
+            : typeof obj.source_url === 'string'
+              ? obj.source_url
+              : undefined,
         score: typeof obj.score === 'number' ? obj.score : undefined,
         citation_id: stringValue(obj.citation_id ?? obj.id),
         document_id: documentId,
         filename,
-        chunk_index: numberValue(obj.chunk_index ?? obj.chunk_idx ?? metadata.chunk_index ?? metadata.chunk_idx),
-        retrieval_method: stringValue(obj.retrieval_method ?? obj.retrievalMethod ?? metadata.retrieval_method),
+        chunk_index: numberValue(
+          obj.chunk_index ?? obj.chunk_idx ?? metadata.chunk_index ?? metadata.chunk_idx,
+        ),
+        retrieval_method: stringValue(
+          obj.retrieval_method ?? obj.retrievalMethod ?? metadata.retrieval_method,
+        ),
         metadata,
       };
     })
-    .filter((citation): citation is NormalizedChatResponse['citations'][number] => Boolean(citation));
+    .filter((citation): citation is NormalizedChatResponse['citations'][number] =>
+      Boolean(citation),
+    );
 }
 
 function stringValue(value: unknown): string | undefined {

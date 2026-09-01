@@ -169,7 +169,9 @@ def calculator_summary_data(sections: dict[str, list[str]], content: str) -> dic
 
     if summary_text:
         data["summary"] = first_sentence(summary_text)
-        majority = regex_group(r"The majority is\s+([^.]+)", summary_text)
+        # A decimal point in a percentage (for example, 60.4%) is not the end
+        # of the sentence. Match only a period followed by whitespace or EOF.
+        majority = regex_group(r"The majority is\s+(.+?)(?:\.(?=\s|$)|$)", summary_text)
         if majority:
             data["majority_component"] = majority
     return data
@@ -283,4 +285,3 @@ def is_rate_line(line: str) -> bool:
 # Filter source lines out of assumptions notes because citations handle them separately.
 def is_source_line(line: str) -> bool:
     return line.lower().startswith("source:")
-

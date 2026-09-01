@@ -488,6 +488,62 @@ def test_bug3_fallback_hs_matches_current_turn():
     )
 
 
+def test_parse_8digit_raw_hs_code():
+    # 1. 8-digit raw HS code with "hs code" prefix
+    q1 = "calculate import tax for hs code 17019990 cif 97.45usd from malaysia"
+    p1 = CalculatorServiceClient._parse_question_for_calculation(q1)
+    assert p1.get("hs_code") == "1701.99.90", f"Expected '1701.99.90', got {p1.get('hs_code')}"
+    assert p1.get("cif_value") == 97.45
+    assert p1.get("origin_country") == "Malaysia"
+
+    # 2. 8-digit raw HS code with "hs" prefix
+    q2 = "calculate import tax for hs 17019990 cif 97.45 USD from Malaysia"
+    p2 = CalculatorServiceClient._parse_question_for_calculation(q2)
+    assert p2.get("hs_code") == "1701.99.90", f"Expected '1701.99.90', got {p2.get('hs_code')}"
+
+    # 3. 8-digit raw HS code bare
+    q3 = "import tax 17019990 CIF 100 USD"
+    p3 = CalculatorServiceClient._parse_question_for_calculation(q3)
+    assert p3.get("hs_code") == "1701.99.90", f"Expected '1701.99.90', got {p3.get('hs_code')}"
+
+    # 4. 8-digit dotted HS code
+    q4 = "calculate tax for HS 1701.99.90 CIF 97.45 USD from Malaysia"
+    p4 = CalculatorServiceClient._parse_question_for_calculation(q4)
+    assert p4.get("hs_code") == "1701.99.90", f"Expected '1701.99.90', got {p4.get('hs_code')}"
+
+    # 5. 4-digit HS code
+    q5 = "calculate tax for HS 1701 CIF 97.45 USD from Malaysia"
+    p5 = CalculatorServiceClient._parse_question_for_calculation(q5)
+    assert p5.get("hs_code") == "1701", f"Expected '1701', got {p5.get('hs_code')}"
+
+
+def test_origin_country_extraction_robustness():
+    # 1. Full query with trailing parameters
+    q1 = "calculate import tax for hs code 27101226 cif 393684.59 usd net mass 505423kg 675789L dv = 700 from vietnam"
+    p1 = CalculatorServiceClient._parse_question_for_calculation(q1)
+    assert p1.get("origin_country") == "Vietnam", f"Expected 'Vietnam', got {p1.get('origin_country')}"
+    assert p1.get("hs_code") == "2710.12.26"
+
+    # 2. Country followed by other parameters
+    q2 = "calculate import tax for hs code 27101226 from vietnam dv = 700 net mass 505423kg"
+    p2 = CalculatorServiceClient._parse_question_for_calculation(q2)
+    assert p2.get("origin_country") == "Vietnam", f"Expected 'Vietnam', got {p2.get('origin_country')}"
+
+    # 3. Direct country without 'from'
+    q3 = "calculate import tax HS code 27101226 CIF 393684.59 USD net mass 505423kg 675789L dv 700 Vietnam"
+    p3 = CalculatorServiceClient._parse_question_for_calculation(q3)
+    assert p3.get("origin_country") == "Vietnam", f"Expected 'Vietnam', got {p3.get('origin_country')}"
+
+    # 4. Multi-word country
+    q4 = "calculate import tax for car from South Korea CIF 20000 USD"
+    p4 = CalculatorServiceClient._parse_question_for_calculation(q4)
+    assert p4.get("origin_country") == "South Korea", f"Expected 'South Korea', got {p4.get('origin_country')}"
+
+    q5 = "calculate import tax for car from New Zealand CIF 20000 USD"
+    p5 = CalculatorServiceClient._parse_question_for_calculation(q5)
+    assert p5.get("origin_country") == "New Zealand", f"Expected 'New Zealand', got {p5.get('origin_country')}"
+
+
 if __name__ == "__main__":
     test_extract_entity_for_problematic_query()
     test_parse_question_for_calculation_country_filter()
@@ -509,4 +565,6 @@ if __name__ == "__main__":
     test_net_mass_regex_requires_prefix()
     test_has_explicit_hs_detection_variants()
     test_bug3_fallback_hs_matches_current_turn()
+    test_parse_8digit_raw_hs_code()
+    test_origin_country_extraction_robustness()
     print("All tests passed successfully!")

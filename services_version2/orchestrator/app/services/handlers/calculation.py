@@ -91,7 +91,7 @@ class CalculationHandler:
         query_hs = None
         target_text = (original_input or service_query).lower()
         explicit_match = re.search(
-            r"\b(?:hs\s*code|hs)\s*(\d{4}(?:\.\d{2}){0,2}|\d{6}|\d{8})\b",
+            r"\b(?:hs\s*code|hs)\s*[:#]?\s*(\d{4}(?:\.\d{2}){1,2}|\d{8}|\d{6}|\d{4})\b",
             target_text,
         )
         if explicit_match:
@@ -447,7 +447,7 @@ class CalculationHandler:
                 explicit_hs = None
                 # Primary: "hs <code>" or "hs code <code>"
                 explicit_match = re.search(
-                    r"\b(?:hs\s*code|hs)\s*(\d{4}(?:\.\d{2}){0,2}|\d{6}|\d{8})\b",
+                    r"\b(?:hs\s*code|hs)\s*[:#]?\s*(\d{4}(?:\.\d{2}){1,2}|\d{8}|\d{6}|\d{4})\b",
                     raw_q_lower
                 )
                 if explicit_match:
@@ -556,7 +556,8 @@ class CalculationHandler:
             cif_is_valid = bool(cif_val and float(cif_val) > 0)
             has_confirmed_hs = bool(session_context and getattr(session_context, "hs_code", None))
             has_explicit_hs_in_query = bool(
-                re.search(r"\b(?:hs\s*code|hs)?\s*(\d{4}(?:\.\d{2}){0,2}|\d{6}|\d{8})\b", q_lower)
+                re.search(r"\b(?:hs\s*code|hs)\s*[:#]?\s*(\d{4}(?:\.\d{2}){1,2}|\d{8}|\d{6}|\d{4})\b", q_lower)
+                or re.search(r"\b\d{4}\.\d{2}(?:\.\d{2})?\b", q_lower)
             )
 
             # Check if product description itself is missing
@@ -834,6 +835,18 @@ class CalculationHandler:
             try:
                 from ...infrastructure.clients import CalculatorServiceClient
                 _parsed = CalculatorServiceClient._parse_question_for_calculation(service_query)
+                # If origin_country is missing from service_query, backfill from original_input or session_context
+                if not _parsed.get("origin_country") and context.original_input:
+                    _orig_parsed = CalculatorServiceClient._parse_question_for_calculation(context.original_input)
+                    if _orig_parsed.get("origin_country"):
+                        _parsed["origin_country"] = _orig_parsed["origin_country"]
+                if not _parsed.get("origin_country") and session_context and getattr(session_context, "origin_country", None):
+                    _parsed["origin_country"] = session_context.origin_country
+                
+                # Persist resolved origin_country to session_context
+                if _parsed.get("origin_country") and session_context:
+                    session_context.origin_country = _parsed["origin_country"]
+                    session_context._trigger_change()
             except Exception:
                 _parsed = {}
 

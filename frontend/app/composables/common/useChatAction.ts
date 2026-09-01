@@ -18,7 +18,9 @@ const ACTION_BUTTON_CLASS =
 export function useChatAction(props: { message: Message }, emit: UseChatActionEmit) {
   const { t } = useI18n();
   const uiStore = useUiStore();
-  const { copied, copyText } = useClipboardCopy();
+  // LAN testing commonly uses HTTP, where navigator.clipboard is unavailable.
+  // Enable the DOM-based fallback so the chat action remains usable there.
+  const { copied, copyText } = useClipboardCopy({ fallbackToTextarea: true });
 
   const hasSources = computed(() => (props.message.sources?.length ?? 0) > 0);
 

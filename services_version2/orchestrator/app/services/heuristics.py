@@ -143,8 +143,18 @@ class Heuristics:
     def is_vague_trade_query(query: str) -> bool:
         """Determines if query is too vague to perform RAG or query calculation without clarification."""
         q_lower = (query or "").lower().strip()
-        if q_lower in ("trade", "trade data", "trade volume", "statistics", "import export", "import", "export", "ទិន្នន័យពាណិជ្ជកម្ម"):
+        # Remove common conversational fillers
+        fillers = {"can", "you", "help", "me", "with", "tell", "about", "assist", "please", "get", "show", "to", "for", "with"}
+        clean_tokens = [t for t in re.findall(r"[a-z\u1780-\u17FF]+", q_lower) if t not in fillers]
+        clean_query = " ".join(clean_tokens)
+        
+        vague_queries = {
+            "trade", "trade data", "trade volume", "statistics", "trade statistics",
+            "import export", "import", "export", "ទិន្នន័យពាណិជ្ជកម្ម", "poanichakam"
+        }
+        if clean_query in vague_queries or q_lower in vague_queries:
             return True
+            
         tokens = set(re.findall(r"[a-z]+", q_lower))
         if len(tokens) == 2 and "data" in tokens and ("trade" in tokens or "import" in tokens or "export" in tokens):
             return True
@@ -278,6 +288,15 @@ class Heuristics:
 
         # 5. Build-format abbreviation matches
         if low in {"cbu", "ckd", "skd", "fbu"}:
+            return True
+
+        # 5.5. Match ordinal selection patterns (e.g. "use the first one", "first option")
+        selection_patterns = [
+            r"^(?:use\s+)?(?:the\s+)?(?:first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th|one|two|three|four|five|1|2|3|4|5)(?:\s+one|\s+option|\s+candidate)?$",
+            r"^option\s+\d+$",
+            r"^number\s+\d+$"
+        ]
+        if any(re.match(pat, low) for pat in selection_patterns):
             return True
 
         # 6. Check if it is a general question starter

@@ -8,11 +8,16 @@ interface ClipboardCopyOptions {
 function copyWithTextareaFallback(text: string): boolean {
   const el = document.createElement('textarea');
   el.value = text;
+  el.setAttribute('readonly', '');
+  el.style.position = 'fixed';
+  el.style.opacity = '0';
   document.body.appendChild(el);
   el.select();
-  document.execCommand('copy');
-  document.body.removeChild(el);
-  return true;
+  try {
+    return document.execCommand('copy');
+  } finally {
+    document.body.removeChild(el);
+  }
 }
 
 export function stringifyClipboardContent(content: string | object): string {
@@ -39,6 +44,21 @@ export function useClipboardCopy(options: ClipboardCopyOptions = {}) {
   };
 
   const copyText = async (text: string): Promise<boolean> => {
+    // Clipboard API access is restricted to secure contexts (HTTPS or
+    // localhost). Use the synchronous fallback immediately on LAN HTTP pages
+    // so it still executes within the user's click gesture.
+    const canUseClipboardApi =
+      typeof navigator !== 'undefined' &&
+      window.isSecureContext &&
+      typeof navigator.clipboard?.writeText === 'function';
+
+    if (!canUseClipboardApi && options.fallbackToTextarea) {
+      const success = copyWithTextareaFallback(text);
+      copied.value = success;
+      if (success) scheduleReset();
+      return success;
+    }
+
     try {
       await navigator.clipboard.writeText(text);
       copied.value = true;

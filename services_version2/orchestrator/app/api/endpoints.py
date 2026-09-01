@@ -550,7 +550,7 @@ async def stream_query(
                     base_answer=base_answer,
                     question=question,
                     intent=intent,
-                    context={"sources": sources},
+                    context={"sources": sources, "metadata": context_result.get("metadata", {})},
                     citations=citations,
                 ):
                     # Check for client disconnect before each yield

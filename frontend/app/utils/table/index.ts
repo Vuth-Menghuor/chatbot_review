@@ -3,6 +3,7 @@ export { tableToClipboardText } from './tableToClipboardText';
 export type { ClipboardColumn, ClipboardRow } from './tableToClipboardText';
 export {
   filterVisibleTableColumns,
+  filterClipboardTableColumns,
   hiddenTableColumnKeys,
   isHiddenTableColumn,
   stripHiddenTableValues,
