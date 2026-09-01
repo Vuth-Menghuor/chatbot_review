@@ -21,21 +21,55 @@ def normalize_table(value: Any) -> TableBlock | None:
         for column in columns:
             if isinstance(column, dict):
                 key = str(column.get("key") or column.get("field") or column.get("name") or "")
-                label = str(column.get("label") or column.get("title") or key)
+                label = table_column_label(key, column.get("label") or column.get("title"))
             else:
                 key = str(column)
-                label = key
+                label = table_column_label(key, None)
             if key:
                 normalized_columns.append(ChatTableColumn(key=key, label=label))
 
     if not normalized_columns and rows and isinstance(rows[0], dict):
-        normalized_columns = [ChatTableColumn(key=str(key), label=str(key).replace("_", " ").title()) for key in rows[0]]
+        normalized_columns = [ChatTableColumn(key=str(key), label=table_column_label(str(key), None)) for key in rows[0]]
 
     normalized_rows = normalize_table_rows(rows, normalized_columns)
     if not normalized_columns and not normalized_rows:
         return None
 
-    return TableBlock(title=value.get("title") or value.get("name"), columns=normalized_columns, rows=normalized_rows)
+    return TableBlock(
+        title=table_title(value, normalized_columns),
+        columns=normalized_columns,
+        rows=normalized_rows,
+    )
+
+
+# Convert machine field names into labels only when the upstream service did not provide a better label.
+def table_column_label(key: str, label: Any) -> str:
+    clean_label = str(label or "").strip()
+    if clean_label and clean_label.lower() != key.strip().lower():
+        return clean_label
+    return key.replace("_", " ").strip().title() or "Value"
+
+
+# A table without a heading is hard to scan in a chat response. Prefer the upstream title,
+# then infer a concise domain title from stable column names.
+def table_title(value: dict[str, Any], columns: list[ChatTableColumn]) -> str:
+    for key in ("title", "name"):
+        title = value.get(key)
+        if isinstance(title, str) and title.strip():
+            return title.strip()
+
+    keys = {column.key.strip().lower() for column in columns}
+    if "partner_country" in keys:
+        return "Trade Partners"
+    if "hs_code" in keys:
+        return "HS Code Results"
+    if {"component", "amount"}.issubset(keys):
+        return "Tax Breakdown"
+    if "commodity" in keys:
+        return "Commodity Results"
+    if "flow" in keys:
+        return "Trade Values"
+    return "Results"
 
 
 def normalize_table_rows(rows: list[Any], columns: list[ChatTableColumn]) -> list[dict[str, str | int | float | bool | None]]:

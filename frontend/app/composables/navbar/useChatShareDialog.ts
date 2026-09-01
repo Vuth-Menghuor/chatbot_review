@@ -51,13 +51,20 @@ export function useNavbarChatShareDialog(options: UseNavbarChatShareDialogOption
     shareType.value === 'public' ? 'Create share link' : 'Keep private',
   );
 
-  const selectedChatId = computed(() => {
+  const selectedLocalChatId = computed(() => {
     const optionChatId =
       typeof options.chatId === 'string' ? options.chatId : options.chatId?.value;
     const routeChatId = Array.isArray(route.params.id)
       ? route.params.id[0]
       : route.params.id;
     return optionChatId || (routeChatId as string | undefined) || '';
+  });
+
+  // Browser chat IDs are created locally. The sharing API owns the server-side
+  // chat thread, so use its ID once the first message has synchronized it.
+  const selectedBackendChatId = computed(() => {
+    const chat = chatStore.recentChats.find((item) => item.id === selectedLocalChatId.value);
+    return chat?.backendId || '';
   });
 
   const shareLink = computed(() => {
@@ -68,21 +75,25 @@ export function useNavbarChatShareDialog(options: UseNavbarChatShareDialogOption
 
   async function persistShareWithToken(token: string, baseUrl: string) {
     if (shareType.value === 'private') {
-      await revokeChatShare(baseUrl, token, selectedChatId.value);
+      await revokeChatShare(baseUrl, token, selectedBackendChatId.value);
       createdSharePath.value = '';
       return;
     }
 
-    const share = await createChatShare(baseUrl, token, selectedChatId.value, {
+    const share = await createChatShare(baseUrl, token, selectedBackendChatId.value, {
       visibility: shareType.value,
-      client_snapshot: chatStore.getChatMessages(selectedChatId.value),
+      client_snapshot: chatStore.getChatMessages(selectedLocalChatId.value),
     });
     createdSharePath.value = share.share_url_path;
   }
 
   async function updateSharing() {
-    if (!selectedChatId.value) {
+    if (!selectedLocalChatId.value) {
       errorMessage.value = 'No chat selected to share.';
+      return;
+    }
+    if (!selectedBackendChatId.value) {
+      errorMessage.value = 'Send a message and wait for its response before sharing this chat.';
       return;
     }
 

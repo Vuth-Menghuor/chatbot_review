@@ -490,6 +490,12 @@ def test_trade_response_content_wins_over_generic_top_level_answer():
     assert block_types(response) == ["markdown", "table"]
     assert response.message.content[0].text == response.response.content
     assert "SUMMARY OF KEY FINDINGS" not in response.message.content[0].text
+    assert response.message.content[1].title == "Trade Partners"
+    assert [column.label for column in response.message.content[1].columns] == [
+        "Period",
+        "Partner Country",
+        "Display",
+    ]
 
 
 def test_trade_top_level_table_is_primary_and_suppresses_structured_compatibility_table():
