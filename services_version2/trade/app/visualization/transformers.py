@@ -1,10 +1,60 @@
 """Visualization transformers: converting raw DAL rows to Table and Chart JSON formats."""
 
+import re
 from typing import Any, Dict, List, Optional
 
 from app.core.config import get_settings
 from app.visualization.base import COLUMN_MAP
 from app.visualization.numeric_utils import to_float
+
+
+def _period_sort_key(period_val: Any) -> tuple:
+    """Return a (year, month) tuple for chronological sorting of period strings.
+
+    Handles common formats:
+      - "2024"        → (2024, 0)
+      - "2024-01"     → (2024, 1)
+      - "2024-1"      → (2024, 1)
+      - "2024/01"     → (2024, 1)
+      - "2024M01"     → (2024, 1)   (IMF-style)
+      - "202401"      → (2024, 1)   (compact YYYYMM)
+      - "20240115"    → (2024, 1)   (compact YYYYMMDD)
+    """
+    s = str(period_val).strip()
+    # YYYY-MM or YYYY/MM
+    m = re.match(r'^(\d{4})[-/](\d{1,2})$', s)
+    if m:
+        return (int(m.group(1)), int(m.group(2)))
+    # YYYYMnn  (e.g. 2024M01)
+    m = re.match(r'^(\d{4})[Mm](\d{1,2})$', s)
+    if m:
+        return (int(m.group(1)), int(m.group(2)))
+    # YYYYMMDD (8 digits)
+    m = re.match(r'^(\d{4})(\d{2})(\d{2})$', s)
+    if m:
+        return (int(m.group(1)), int(m.group(2)))
+    # YYYYMM (6 digits)
+    m = re.match(r'^(\d{4})(\d{2})$', s)
+    if m:
+        return (int(m.group(1)), int(m.group(2)))
+    # Plain year
+    m = re.match(r'^(\d{4})$', s)
+    if m:
+        return (int(m.group(1)), 0)
+    # Fallback: lexicographic
+    return (0, 0)
+
+
+def _humanize_col(col: str) -> str:
+    """Convert a snake_case column key into a human-readable Title Case label.
+
+    Examples:
+        "period"          -> "Period"
+        "partner_country" -> "Partner Country"
+        "raw_value"       -> "Raw Value"
+        "unit_type"       -> "Unit Type"
+    """
+    return col.replace("_", " ").title()
 
 
 def _normalize_flow_to_ex_im(flow: str) -> str:
@@ -44,11 +94,11 @@ def transform_to_table(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         if k == metric_key:
             for new_c in ["value", "unit", "scale", "display", "raw_value", "unit_type"]:
                 if new_c not in seen_cols:
-                    columns.append(new_c)
+                    columns.append(_humanize_col(new_c))
                     seen_cols.add(new_c)
         else:
             if col not in seen_cols:
-                columns.append(col)
+                columns.append(_humanize_col(col))
                 seen_cols.add(col)
 
     transformed_rows = []
@@ -153,10 +203,17 @@ def transform_to_table(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
                 t_row["unit_type"] = unit_type
             else:
                 if col not in seen_row:
+                    # Title-case country name for readability
+                    if col == "partner_country" and isinstance(v, str):
+                        v = v.title()
                     t_row[col] = v
                     seen_row.add(col)
-                    
+
         transformed_rows.append(t_row)
+
+    # Sort rows chronologically by period when the column is present
+    if "period" in columns:
+        transformed_rows.sort(key=lambda r: _period_sort_key(r.get("period", "")))
 
     return {
         "columns": columns,

@@ -84,3 +84,41 @@ cd services_version2/retrieval && docker compose up --build
 # =========================
 cd services_version2/orchestrator
 docker compose restart orchestrator-service-orches
+
+
+# ================================================
+# Fix deployed login after tunnel restart
+# ================================================
+# Run from the project root, not frontend/.
+cd /home/huor/Documents/gdce-document/chatbot_review
+
+# 1. Check the tunnel.
+TUNNEL_URL=$(docker logs chatbot-api-tunnel 2>&1 | grep -oE 'https://[^[:space:]]+\.trycloudflare\.com' | tail -1)
+echo "$TUNNEL_URL"
+curl -i "$TUNNEL_URL/api/v1/health"
+# HTTP 200 means it works. Stop here.
+
+# 2. If it fails, restart the tunnel.
+docker restart chatbot-api-tunnel
+
+# 3. Wait 30 seconds, then check the new URL.
+TUNNEL_URL=$(docker logs chatbot-api-tunnel 2>&1 | grep -oE 'https://[^[:space:]]+\.trycloudflare\.com' | tail -1)
+echo "$TUNNEL_URL"
+curl -i "$TUNNEL_URL/api/v1/health"
+# Continue only with HTTP 200.
+
+# 4. Sign in to Vercel (only once per computer).
+vercel whoami || vercel login
+vercel link --yes --project customs-artificial-intelligence --scope vuth-menghuors-projects
+
+# 5. Save the new URL in Vercel.
+printf '%s\n' "$TUNNEL_URL" | vercel env update NUXT_PUBLIC_GDCE_API_BASE_URL production --yes
+printf '%s\n' "$TUNNEL_URL" | vercel env update NUXT_PUBLIC_GDCE_API_BASE_URL preview --yes
+
+# 6. Deploy the website.
+vercel --prod --yes
+
+# 7. Check the deployed URL.
+curl -s https://customs-artificial-intelligence.vercel.app/login | grep -o 'gdceApiBaseUrl:"[^"]*"'
+
+# 8. Press Ctrl+Shift+R, then log in.

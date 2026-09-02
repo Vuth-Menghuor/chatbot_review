@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from app.schemas.normalized_chat import ChatTableColumn, TableBlock
@@ -16,6 +17,12 @@ def normalize_table(value: Any) -> TableBlock | None:
     rows = first_list(value, "rows", "data", "records", "items")
     columns = value.get("columns")
     normalized_columns: list[ChatTableColumn] = []
+    row_keys = {
+        str(key)
+        for row in rows
+        if isinstance(row, dict)
+        for key in row
+    }
 
     if isinstance(columns, list):
         for column in columns:
@@ -23,7 +30,7 @@ def normalize_table(value: Any) -> TableBlock | None:
                 key = str(column.get("key") or column.get("field") or column.get("name") or "")
                 label = table_column_label(key, column.get("label") or column.get("title"))
             else:
-                key = str(column)
+                key = table_column_key(str(column), row_keys)
                 label = table_column_label(key, None)
             if key:
                 normalized_columns.append(ChatTableColumn(key=key, label=label))
@@ -40,6 +47,18 @@ def normalize_table(value: Any) -> TableBlock | None:
         columns=normalized_columns,
         rows=normalized_rows,
     )
+
+
+# Some upstream services send display labels (for example, "Partner Country")
+# while rows use machine keys ("partner_country"). Resolve those labels to the
+# row key so the frontend can read row[column.key].
+def table_column_key(column: str, row_keys: set[str]) -> str:
+    clean_column = column.strip()
+    if clean_column in row_keys:
+        return clean_column
+
+    machine_key = re.sub(r"[^a-z0-9]+", "_", clean_column.lower()).strip("_")
+    return machine_key if machine_key in row_keys else clean_column
 
 
 # Convert machine field names into labels only when the upstream service did not provide a better label.

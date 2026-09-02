@@ -34,3 +34,5 @@ local_data/
 
 # Local API client collections
 bruno/
+.vercel
+.env*.local

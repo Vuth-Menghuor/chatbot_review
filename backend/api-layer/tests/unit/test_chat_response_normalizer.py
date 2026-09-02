@@ -498,6 +498,30 @@ def test_trade_response_content_wins_over_generic_top_level_answer():
     ]
 
 
+def test_trade_table_maps_display_column_labels_to_row_keys():
+    response = normalize_chat_response(
+        {
+            "intent": "trade_query",
+            "answer": "Japan was the larger import partner.",
+            "table": {
+                "columns": ["Period", "Partner Country", "Display"],
+                "rows": [
+                    {
+                        "period": "2024",
+                        "partner_country": "Japan",
+                        "display": "$752.76 million",
+                    },
+                ],
+            },
+        }
+    )
+
+    table = block_by_title(response, "Trade Partners")
+    assert [column.key for column in table.columns] == ["period", "partner_country", "display"]
+    assert [column.label for column in table.columns] == ["Period", "Partner Country", "Display"]
+    assert table.rows == [{"period": "2024", "partner_country": "Japan", "display": "$752.76 million"}]
+
+
 def test_trade_top_level_table_is_primary_and_suppresses_structured_compatibility_table():
     response = normalize_chat_response(
         {
