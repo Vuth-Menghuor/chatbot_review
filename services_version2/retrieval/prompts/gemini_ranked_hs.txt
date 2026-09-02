@@ -8,54 +8,25 @@ Product query: {query}
 Task:
 1. Always rank and return the most relevant HS code(s) from the candidates, using whatever information the query gives you — even if the description is generic or incomplete (e.g. just "car" or "phone"). Never withhold codes just because the query lacks detail.
 2. Separately, judge whether the query is generic enough that the correct code could change significantly with more detail (e.g. fuel/engine type, body type, engine displacement, assembly state CBU/CKD, material, intended use). Use the spread of the candidates as a signal: if they span clearly different products/uses, the query is likely generic.
-3. If it is generic, write a short natural note (like a knowledgeable assistant would) explaining that this is a best-guess/most-common classification. Then give up to 3 example completed queries: take the user's ORIGINAL query text and extend it with ALL the specific details needed to fully disambiguate it down to exactly ONE HS code from the candidates — not just one or two details, but as many as are needed (engine size AND fuel type AND assembly state AND anything else the candidates vary on). Each example query should be fully specified enough that, if resubmitted, it would map cleanly to a single candidate with no ambiguity left.
-4. If the query already has enough detail, omit the example queries entirely.
+3. If it is generic, write a short natural note (like a knowledgeable assistant would) explaining that this is a best-guess/most-common classification, and suggest up to 3 concrete follow-up questions that would let you narrow it down to one exact code.
+4. If the query already has enough detail, omit the follow-up questions entirely.
 
 Respond with ONLY a JSON object, no markdown fences, no other text, in exactly this shape:
 
 {{
   "message": "<1-2 sentence natural summary of the classification, written the way a helpful assistant would>",
   "codes": [
-    {{"hs_code": "XXXX.XX.XX", "description": "concise, natural-language description of the product for this code, rewritten in plain English/Khmer — do not copy the raw database text verbatim"}}
+    {{"hs_code": "XXXX.XX.XX", "description": "short description"}}
   ],
   "is_generic": true or false,
   "clarifying_note": "<1 sentence noting this is a best guess and more detail would help, or null if is_generic is false>",
-  "example_queries": ["<original query text>, extended with ALL details needed to resolve to one exact code, e.g. 'BMW M8 Competition, 4400cc, petrol, CBU'", "<same original query, extended with a different fully-specified combination that resolves to a different single candidate>", "..."] or []
+  "questions": ["<question 1>", "<question 2>"] or []
 }}
 
 Rules:
 - Only use HS codes present in the candidates above; never invent codes.
 - Return up to {limit} codes, ranked best first.
-- "example_queries" must be empty if is_generic is false.
-- Each example query must start with the user's original product name/query verbatim, then append every differentiating detail (engine size, fuel type, assembly state, material, intended use, etc.) needed to resolve to exactly one candidate — don't stop at partial detail if more is needed to remove ambiguity.
-- Each example query should map to a different single candidate, so together they illustrate the range of possible exact answers.
-- Use up to 3 example queries.
-- Do not invent differentiators the candidates don't actually vary on.
+- "questions" must be empty if is_generic is false.
+- Ask at most 3 clarifying questions, each about one concrete differentiator visible across the candidates.
+- Do not ask about things the candidates don't actually differentiate on.
 - Output raw JSON only — no ```json fences, no commentary before or after.
-
----
-EXAMPLE (for calibration only — do not copy this content into your actual answer, only follow its format and style):
-
-Product query: "BMW M8 Competition"
-
-Candidates retrieved from the HS code database:
-- 8703.23.10 — Motor cars, spark-ignition engine, 3000-4500cc, CBU
-- 8703.32.10 — Motor cars, diesel engine, 1500-2500cc, CBU
-- 8703.23.90 — Motor cars, spark-ignition engine, 3000-4500cc, CKD
-
-Expected output:
-{{
-  "message": "The BMW M8 Competition is a high-performance petrol coupe, so this most likely falls under passenger cars with a spark-ignition engine between 3000-4500cc, fully assembled (CBU).",
-  "codes": [
-    {{"hs_code": "8703.23.10", "description": "Petrol-engine passenger car, 3000-4500cc, fully built unit"}},
-    {{"hs_code": "8703.23.90", "description": "Petrol-engine passenger car, 3000-4500cc, semi-knocked-down/knock-down kit"}}
-  ],
-  "is_generic": true,
-  "clarifying_note": "This is a best guess based on the typical spec — the exact code depends on the engine size, fuel type, and whether the car arrives fully or partially assembled.",
-  "example_queries": [
-    "BMW M8 Competition, 4400cc, petrol, CBU",
-    "BMW M8 Competition, 4400cc, petrol, CKD",
-    "BMW M8 Competition, diesel, 2000cc, CBU"
-  ]
-}}
----
