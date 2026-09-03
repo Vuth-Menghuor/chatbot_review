@@ -528,10 +528,14 @@ async def stream_chat(payload: ChatRequest, request: Request, user: User = Depen
                             return
                         elif upstream_event.type == "clarification" and isinstance(upstream_event.data, dict):
                             if clarification_questions(upstream_event.data):
-                                yield sse_event("done", normalized_clarification_payload(
-                                    upstream_event.data, chat=chat, user=user, request_presentation=payload.presentation,
-                                ))
-                                return
+                                # A clarification event is advisory.  The retrieval workflow can
+                                # still produce a complete preliminary answer and structured
+                                # blocks in its later ``done`` event.  Do not turn this event into
+                                # the public terminal response, otherwise the frontend receives
+                                # only the clarification form and loses that answer.  If the
+                                # upstream stream ends here without a ``done`` event, the common
+                                # fallback below fetches the authoritative /query response.
+                                continue
                             break
                         elif upstream_event.type == "error":
                             break
