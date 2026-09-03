@@ -77,7 +77,7 @@ cd services_version2/retrieval
 docker compose up -d --build
 
 cd services_version2/retrieval && docker compose up --build
-
+db
 
 # =========================
 # Restart Orchestrator Only
