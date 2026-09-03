@@ -87,6 +87,24 @@ docker compose restart orchestrator-service-orches
 
 
 # ================================================
+# Commit and push to both GitHub repositories
+# ================================================
+# Run from the project root, not frontend/.
+cd /home/huor/Documents/gdce-document/chatbot_review
+
+# Review changes, stage them, and create one commit.
+git status
+git add .
+git commit -m "Describe your changes"
+
+# Push the commit to the original repository and the Vercel-connected fork.
+# origin = Sovandeth0063/chatbot_review (requires write permission)
+# vercel = Vuth-Menghuor/chatbot_review (triggers Vercel deployment if connected)
+git push origin main
+git push vercel main
+
+
+# ================================================
 # Fix deployed login after tunnel restart
 # ================================================
 # Run from the project root, not frontend/.
