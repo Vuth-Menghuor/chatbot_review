@@ -49,12 +49,14 @@ const isResponseInProgress = computed(() =>
   ),
 );
 
-const responseAvatarLabel = computed(() => {
-  if (isResponseInProgress.value && props.message.progressMessage?.trim()) {
-    return props.message.progressMessage;
-  }
-  if (props.currentRenderType === 'thinking') return 'Searching the knowledge base...';
-  return 'Preparing your response...';
+const thinkingSteps = computed(() => [
+  ...new Set(props.message.progressSteps?.filter((step) => step.trim()) ?? []),
+]);
+
+const thinkingDurationLabel = computed(() => {
+  const ms = props.message.generationDurationMs;
+  if (!ms || ms < 1) return '';
+  return `${Math.max(1, Math.round(ms / 1000))} seconds`;
 });
 
 const coverageBadge = computed(() => {
@@ -95,20 +97,6 @@ const handleRegenerateImage = (messageId: string | number) => {
 
         <div class="min-w-0 flex-1">
           <div
-            v-if="isResponseInProgress"
-            class="mb-2 flex min-w-0 items-center gap-2 text-sm text-slate-500 dark:text-zinc-400"
-            role="status"
-            aria-live="polite"
-          >
-            <span
-              v-if="isResponseInProgress"
-              class="h-2 w-2 shrink-0 rounded-full bg-blue-400 motion-safe:animate-pulse"
-              aria-hidden="true"
-            />
-            <span class="truncate">{{ responseAvatarLabel }}</span>
-          </div>
-
-          <div
             v-if="coverageBadge"
             class="mb-2 flex flex-wrap items-center gap-2 text-md text-gray-500 dark:text-zinc-500"
           >
@@ -120,6 +108,23 @@ const handleRegenerateImage = (messageId: string | number) => {
               {{ coverageBadge.label }}
             </span>
           </div>
+
+          <details
+            v-if="thinkingSteps.length"
+            class="mb-3 text-sm text-slate-500 dark:text-zinc-400"
+            :open="isResponseInProgress"
+          >
+            <summary class="cursor-pointer select-none list-none">
+              <span class="inline-flex items-center gap-1">
+                <span aria-hidden="true">⌄</span>
+                <span>Thinking ({{ thinkingSteps.length }} steps)</span>
+                <span v-if="thinkingDurationLabel">· {{ thinkingDurationLabel }}</span>
+              </span>
+            </summary>
+            <ol class="mt-2 space-y-1 border-l border-slate-300 pl-3 text-xs dark:border-zinc-700">
+              <li v-for="step in thinkingSteps" :key="step">{{ step }}</li>
+            </ol>
+          </details>
 
           <ChatMessageRenderer
             :message="message"

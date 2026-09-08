@@ -645,6 +645,9 @@ export function useChatStreaming(deps: StreamingDeps) {
             progressStage: 'starting',
             progressMessage:
               responseMode === 'stream' ? 'Starting response stream...' : 'Starting response...',
+            progressSteps: [
+              responseMode === 'stream' ? 'Starting response stream...' : 'Starting response...',
+            ],
             streamingContent: '',
             error: null,
           });
@@ -657,6 +660,10 @@ export function useChatStreaming(deps: StreamingDeps) {
           deps.currentRenderType.value = progressText(data.stage, 'response');
           const existing = deps.getAssistantMessage(assistantMsgId);
           const existingContent = existing?.content ?? currentContent;
+          const progressMessage = progressText(data.message, 'Processing request...');
+          const progressSteps = [...(existing?.progressSteps ?? [])];
+          if (progressMessage && progressSteps.at(-1) !== progressMessage)
+            progressSteps.push(progressMessage);
           deps.upsertAssistantMessage(assistantMsgId, existingContent, {
             status: responseStatusToStreamingUiStatus(responseStatus),
             responseStatus,
@@ -667,7 +674,8 @@ export function useChatStreaming(deps: StreamingDeps) {
             chatId: typeof data.chat_id === 'string' ? data.chat_id : undefined,
             responseMode,
             progressStage: progressText(data.stage, 'processing'),
-            progressMessage: progressText(data.message, 'Processing request...'),
+            progressMessage,
+            progressSteps,
             streamingContent: currentContent,
             error: null,
           });

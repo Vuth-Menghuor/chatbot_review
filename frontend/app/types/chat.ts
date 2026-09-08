@@ -163,6 +163,7 @@ export interface StreamingDeps {
       responseMode?: ResponseMode;
       progressStage?: string;
       progressMessage?: string;
+      progressSteps?: string[];
       streamingContent?: string;
       normalizedResponse?: unknown;
       error?: string | null;
@@ -261,6 +262,7 @@ export interface Message {
   responseMode?: ResponseMode;
   progressStage?: string;
   progressMessage?: string;
+  progressSteps?: string[];
   streamingContent?: string;
   normalizedResponse?: unknown;
   error?: string;

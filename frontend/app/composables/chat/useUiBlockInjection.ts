@@ -40,6 +40,7 @@ export function useUiBlockInjection({ messages }: UiBlockInjectionOptions) {
       responseMode?: 'sync' | 'async' | 'stream';
       progressStage?: string;
       progressMessage?: string;
+      progressSteps?: string[];
       streamingContent?: string;
       normalizedResponse?: unknown;
       error?: string | null;
@@ -64,14 +65,19 @@ export function useUiBlockInjection({ messages }: UiBlockInjectionOptions) {
     );
     const hasUnreliableFallback = nextBlocks.some(isUnreliableFallbackErrorBlock);
     const hasUsefulBlocks = nextBlocks.some(isUsefulAuthoritativeBlock);
-    const shouldSuppressDisplayContent = hasUsefulBlocks &&
-      isUnreliableServiceFallbackText(displayContent, normalizedResponseContext(meta?.normalizedResponse));
+    const shouldSuppressDisplayContent =
+      hasUsefulBlocks &&
+      isUnreliableServiceFallbackText(
+        displayContent,
+        normalizedResponseContext(meta?.normalizedResponse),
+      );
     const syncedContent = hasUnreliableFallback
       ? blocksToMarkerText(nextBlocks)
       : shouldSuppressDisplayContent
         ? blocksToMarkerText(nextBlocks)
         : displayContent || (nextBlocks.length ? blocksToMarkerText(nextBlocks) : '');
-    const wouldEraseCompletedAssistant = meta?.status === 'completed' &&
+    const wouldEraseCompletedAssistant =
+      meta?.status === 'completed' &&
       !syncedContent.trim() &&
       nextBlocks.length === 0 &&
       existingMessage.role === 'assistant' &&
@@ -99,9 +105,10 @@ export function useUiBlockInjection({ messages }: UiBlockInjectionOptions) {
         responseMode: meta?.responseMode ?? existingMessage.responseMode,
         progressStage: meta?.progressStage ?? existingMessage.progressStage,
         progressMessage: meta?.progressMessage ?? existingMessage.progressMessage,
+        progressSteps: meta?.progressSteps ?? existingMessage.progressSteps,
         streamingContent: '',
         normalizedResponse: meta?.normalizedResponse ?? existingMessage.normalizedResponse,
-        error: meta?.error === undefined ? existingMessage.error : meta.error ?? undefined,
+        error: meta?.error === undefined ? existingMessage.error : (meta.error ?? undefined),
         coverage: meta?.coverage ?? existingMessage.coverage,
         confidence: meta?.confidence ?? existingMessage.confidence,
       };
@@ -111,8 +118,10 @@ export function useUiBlockInjection({ messages }: UiBlockInjectionOptions) {
     messages[index] = {
       id: existingMessage.id,
       role: existingMessage.role,
-      status: hasUnreliableFallback ? 'error' : meta?.status ?? existingMessage.status,
-      responseStatus: hasUnreliableFallback ? 'failed' : meta?.responseStatus ?? existingMessage.responseStatus,
+      status: hasUnreliableFallback ? 'error' : (meta?.status ?? existingMessage.status),
+      responseStatus: hasUnreliableFallback
+        ? 'failed'
+        : (meta?.responseStatus ?? existingMessage.responseStatus),
       content: syncedContent,
       type: existingMessage.type,
       imageContent: existingMessage.imageContent,
@@ -126,9 +135,10 @@ export function useUiBlockInjection({ messages }: UiBlockInjectionOptions) {
       responseMode: meta?.responseMode ?? existingMessage.responseMode,
       progressStage: meta?.progressStage ?? existingMessage.progressStage,
       progressMessage: meta?.progressMessage ?? existingMessage.progressMessage,
+      progressSteps: meta?.progressSteps ?? existingMessage.progressSteps,
       streamingContent: meta?.streamingContent ?? existingMessage.streamingContent,
       normalizedResponse: meta?.normalizedResponse ?? existingMessage.normalizedResponse,
-      error: meta?.error === undefined ? existingMessage.error : meta.error ?? undefined,
+      error: meta?.error === undefined ? existingMessage.error : (meta.error ?? undefined),
       coverage: meta?.coverage ?? existingMessage.coverage,
       confidence: meta?.confidence ?? existingMessage.confidence,
     };
@@ -168,7 +178,9 @@ function protectUnreliableFallbackBlocks(
 
   const usefulBlocks = normalizedBlocks.filter(isUsefulAuthoritativeBlock);
   if (usefulBlocks.length) {
-    return normalizedBlocks.filter((block) => !isUnreliableFallbackErrorBlock(block) && !isEmptyTableBlock(block));
+    return normalizedBlocks.filter(
+      (block) => !isUnreliableFallbackErrorBlock(block) && !isEmptyTableBlock(block),
+    );
   }
 
   return normalizedBlocks.filter((block) => !isEmptyTableBlock(block));
@@ -177,7 +189,8 @@ function protectUnreliableFallbackBlocks(
 function isUsefulAuthoritativeBlock(block: MessageBlock): boolean {
   if (isUnreliableFallbackErrorBlock(block)) return false;
   if (block.type === 'table') return hasPopulatedTableRows(block);
-  if (block.type === 'markdown') return typeof block.content === 'string' && block.content.trim().length > 0;
+  if (block.type === 'markdown')
+    return typeof block.content === 'string' && block.content.trim().length > 0;
   if (block.type === 'error' || block.type === 'fallback') return false;
   return true;
 }
@@ -206,9 +219,11 @@ function unreliableServiceFallbackErrorBlock(id: string): MessageBlock {
 }
 
 function isUnreliableFallbackErrorBlock(block: MessageBlock): boolean {
-  return block.type === 'error' &&
+  return (
+    block.type === 'error' &&
     typeof block.content === 'object' &&
     block.content !== null &&
     'message' in block.content &&
-    block.content.message === UNRELIABLE_SERVICE_FALLBACK_MESSAGE;
+    block.content.message === UNRELIABLE_SERVICE_FALLBACK_MESSAGE
+  );
 }
