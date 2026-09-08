@@ -81,6 +81,25 @@ test('normalizedChatResponse maps all supported API block types', () => {
   assert.equal(parts.latencyMs, 25);
 });
 
+test('normalizedChatResponse keeps the out-of-scope refusal when suggestions are the only blocks', () => {
+  const response = responseWithBlocks([
+    { type: 'suggestions', title: 'Suggested follow-ups', items: ['How do I classify my goods?'] },
+  ]);
+  response.intent = 'out_of_scope';
+  response.service = 'unknown';
+  response.response = {
+    type: 'markdown',
+    coverage: 'unknown',
+    content: 'I’m sorry, but I can’t help with that.',
+    limitations: [],
+  };
+
+  const parts = normalizedChatResponseToMessageParts(response, 'fallback-id');
+
+  assert.deepEqual(parts.blocks.map((block) => block.type), ['markdown', 'suggestions']);
+  assert.equal(parts.blocks[0]?.content, 'I’m sorry, but I can’t help with that.');
+});
+
 test('normalizedChatResponse maps trade clarification blocks to existing interactive fields', () => {
   const response: NormalizedChatResponse = {
     ...baseResponse,

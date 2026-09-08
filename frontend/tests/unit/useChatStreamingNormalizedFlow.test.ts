@@ -542,6 +542,37 @@ test('streamFromChatApi suppresses generic trade deltas before final blocks', as
   assert.equal(finalCall.meta?.blocks?.[0]?.content, 'China and Thailand monthly imports are shown below.');
 });
 
+test('streamFromChatApi hides an untrusted direct-answer draft until the out-of-scope markdown is final', async () => {
+  const refusal = 'I’m sorry, but I can’t help with that. I specialize in Cambodia Customs matters.';
+  const { calls } = await streamWithEvents([
+    { event: 'start', data: { request_id: 'request-out-of-scope', chat_id: 'chat-1', status: 'processing' } },
+    { event: 'delta', data: { content: 'DIRECT ANSWER: To clear your goods, submit a SAD declaration.' } },
+    {
+      event: 'done',
+      data: normalizedResponse({
+        request_id: 'request-out-of-scope',
+        service: 'unknown',
+        intent: 'out_of_scope',
+        response: { type: 'markdown', coverage: 'unknown', content: refusal, limitations: [] },
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'markdown', text: refusal },
+            { type: 'suggestions', items: ['How do I classify my goods?'] },
+          ],
+        },
+      }),
+    },
+  ], 'qwdqwdwdwqdwqdw');
+
+  assert.equal(calls.some((call) => call.content.includes('DIRECT ANSWER:')), false);
+  assert.equal(calls.at(-1)?.content, refusal);
+  assert.deepEqual(calls.at(-1)?.meta?.blocks?.map((block) => block.type), [
+    'markdown',
+    'suggestions',
+  ]);
+});
+
 test('streamFromChatApi suppresses generic chart deltas before done', async () => {
   const genericTradeDelta = 'SUMMARY OF KEY FINDINGS:- The provided trade data contains specific figures and insights regarding trade volumes and statistics.';
   const { calls, currentRenderType } = await streamWithEvents([

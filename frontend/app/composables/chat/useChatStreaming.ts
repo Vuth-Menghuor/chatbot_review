@@ -687,7 +687,16 @@ export function useChatStreaming(deps: StreamingDeps) {
             allowDraftSuppression && isCalculatorReportDraftText(receivedDeltaContent);
           const suppressTradeFormatterDraft =
             allowDraftSuppression && isUnreliableTradeFormatterDraftText(receivedDeltaContent);
-          if (suppressCalculatorReportDraft || suppressTradeFormatterDraft) {
+          // The stream formatter occasionally starts an out-of-scope turn
+          // with an unrelated "DIRECT ANSWER" before `done` supplies the
+          // authoritative refusal. Never show that provisional answer.
+          const suppressUntrustedDirectAnswerDraft =
+            allowDraftSuppression && isUntrustedDirectAnswerDraft(receivedDeltaContent);
+          if (
+            suppressCalculatorReportDraft ||
+            suppressTradeFormatterDraft ||
+            suppressUntrustedDirectAnswerDraft
+          ) {
             suppressedDeltaContent = receivedDeltaContent;
             const existing = deps.getAssistantMessage(assistantMsgId);
             const existingContent = existing?.content ?? currentContent;
@@ -897,6 +906,14 @@ export function useChatStreaming(deps: StreamingDeps) {
   }
 
   return { streamFromChatApi };
+}
+
+/**
+ * `DIRECT ANSWER:` is an internal formatter draft, not an API response block.
+ * The normalized `done` event is the only safe text to render for it.
+ */
+function isUntrustedDirectAnswerDraft(text: string): boolean {
+  return /^\s*DIRECT(?:\s+ANSWER)?\b/i.test(text);
 }
 
 export function presentationPreferenceFromMessage(message: string) {

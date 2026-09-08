@@ -129,6 +129,7 @@ function validatedNormalizedChatResponseToMessageParts(
   fallbackId: string,
 ): NormalizedChatMessageParts {
   const normalizedBlocks = normalizedMessageBlocks(response) ?? [];
+  const responseContent = response.response?.content ?? '';
   const rawBlocks = normalizedBlocks.length
     ? normalizedBlocks.map((block, index) =>
         normalizedBlockToMessageBlock(
@@ -139,11 +140,11 @@ function validatedNormalizedChatResponseToMessageParts(
       )
     : fallbackResponseContentBlocks(response, fallbackId);
   const blocks = filterFinalResponseBlocks(rawBlocks, response);
+  ensureOutOfScopeFallbackMarkdown(blocks, responseContent, response, fallbackId);
   const hasUnreliableFallback = blocks.some(isUnreliableFallbackErrorBlock);
   // Visual rendering uses `blocks`; keep `response.content` as the canonical
   // copy/export/accessibility fallback when the backend provides it.
   const hasResponseContent = typeof response.response?.content === 'string';
-  const responseContent = response.response?.content ?? '';
   const useResponseContent =
     hasResponseContent &&
     !(
@@ -165,6 +166,26 @@ function validatedNormalizedChatResponseToMessageParts(
     confidence: response.confidence ?? response.response?.confidence,
     latencyMs: numberValue(response.metrics?.latency_ms),
   };
+}
+
+const OUT_OF_SCOPE_FALLBACK_MESSAGE =
+  "I’m sorry, but I can’t help with that. I specialize in Cambodia Customs (GDCE) matters, including import/export duties, tax calculations, HS code lookups, trade data, and procedures. How can I assist you with your customs-related questions today?";
+
+function ensureOutOfScopeFallbackMarkdown(
+  blocks: MessageBlock[],
+  responseContent: string,
+  response: { intent?: unknown; request_id?: unknown },
+  fallbackId: string,
+) {
+  if (String(response.intent ?? '').trim().toLowerCase() !== 'out_of_scope') return;
+  if (blocks.some((block) => block.type === 'markdown' && String(block.content ?? '').trim())) return;
+
+  blocks.unshift({
+    id: `${String(response.request_id || fallbackId)}-out-of-scope-markdown`,
+    type: 'markdown',
+    content: responseContent.trim() || OUT_OF_SCOPE_FALLBACK_MESSAGE,
+    isComplete: true,
+  });
 }
 
 function filterFinalResponseBlocks(
