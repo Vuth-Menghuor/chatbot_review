@@ -10,6 +10,7 @@ const props = defineProps<{
   loading?: boolean;
   currentRenderType?: string;
   thinkingContext?: string;
+  questionCount?: number;
 }>();
 
 const emit = defineEmits<{
@@ -52,6 +53,8 @@ const isResponseInProgress = computed(() =>
 const thinkingSteps = computed(() => [
   ...new Set(props.message.progressSteps?.filter((step) => step.trim()) ?? []),
 ]);
+
+const thinkingCount = computed(() => props.questionCount ?? thinkingSteps.value.length);
 
 const thinkingDurationLabel = computed(() => {
   const ms = props.message.generationDurationMs;
@@ -117,7 +120,7 @@ const handleRegenerateImage = (messageId: string | number) => {
             <summary class="cursor-pointer select-none list-none">
               <span class="inline-flex items-center gap-1">
                 <span aria-hidden="true">⌄</span>
-                <span>Thinking ({{ thinkingSteps.length }} steps)</span>
+                <span>{{ $t('reasoning.progress', { count: thinkingCount }) }}</span>
                 <span v-if="thinkingDurationLabel">· {{ thinkingDurationLabel }}</span>
               </span>
             </summary>

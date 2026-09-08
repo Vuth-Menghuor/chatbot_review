@@ -38,6 +38,10 @@ function getPreviousUserContent(index: number) {
   return '';
 }
 
+function getUserQuestionCount(index: number) {
+  return props.messages.slice(0, index + 1).filter((message) => message.role === 'user').length;
+}
+
 defineExpose({ scrollToBottom });
 </script>
 
@@ -64,6 +68,7 @@ defineExpose({ scrollToBottom });
             :loading="i === messages.length - 1 ? loading : false"
             :current-render-type="i === messages.length - 1 ? currentRenderType : undefined"
             :thinking-context="getPreviousUserContent(i)"
+            :question-count="getUserQuestionCount(i)"
             @regenerate-image="(id) => emit('regenerate-image', id)"
             @user-reply="(payload) => emit('user-reply', payload)"
             @like="(id) => emit('like', id)"

@@ -364,6 +364,24 @@ test('streamFromChatApi renders normalized start and done streams without delta 
   assert.equal(currentRenderType.value, 'suggestions');
 });
 
+test('streamFromChatApi shows mode-aware startup progress', async () => {
+  const cases = [
+    ['sync', 'Preparing your response...'],
+    ['async', 'Processing your request in the background...'],
+    ['stream', 'Generating an answer...'],
+  ] as const;
+
+  for (const [mode, expectedProgress] of cases) {
+    const { calls } = await streamWithEvents([
+      { event: 'start', data: { request_id: `request-${mode}`, status: 'processing', mode } },
+      { event: 'done', data: normalizedResponse({ request_id: `request-${mode}` }) },
+    ]);
+
+    assert.equal(calls[0]?.meta?.responseMode, mode);
+    assert.equal(calls[0]?.meta?.progressMessage, expectedProgress);
+  }
+});
+
 test('streamFromChatApi streams normalized trade chart blocks through the SSE path', async () => {
   const response = normalizedResponse({
     request_id: 'request-trade-chart',
@@ -414,7 +432,7 @@ test('streamFromChatApi streams normalized trade chart blocks through the SSE pa
   ], 'List the top 5 import partners for sea transport in 2024, show as pie chart!');
   const finalCall = calls.at(-1);
 
-  assert.equal(calls[0]?.meta?.progressMessage, 'Starting response stream...');
+  assert.equal(calls[0]?.meta?.progressMessage, 'Generating an answer...');
   assert.ok(calls.some((call) => call.meta?.progressStage === 'rendering'));
   assert.ok(finalCall);
   assert.equal(finalCall.meta?.responseMode, 'stream');

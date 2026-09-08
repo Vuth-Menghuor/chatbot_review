@@ -162,7 +162,8 @@
   },
   "reasoning": {
     "title": "ហេតុផល",
-    "thinking": "កំពុងគិត..."
+    "thinking": "កំពុងគិត...",
+    "progress": "បង្ហាញការគិត ({count} ជំហាន)"
   },
   "toolOutput": {
     "title": "លទ្ធផលឧបករណ៍",

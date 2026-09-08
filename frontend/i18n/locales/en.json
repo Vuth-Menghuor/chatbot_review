@@ -162,7 +162,8 @@
   },
   "reasoning": {
     "title": "Reasoning",
-    "thinking": "Thinking..."
+    "thinking": "Thinking...",
+    "progress": "Thinking ({count} steps)"
   },
   "toolOutput": {
     "title": "Tool output",

@@ -72,6 +72,18 @@ export function useChatStreaming(deps: StreamingDeps) {
     return typeof value === 'string' && value.trim() ? value.trim() : fallback;
   }
 
+  function startingProgressMessage(mode: ResponseMode) {
+    switch (mode) {
+      case 'sync':
+        return 'Preparing your response...';
+      case 'async':
+        return 'Processing your request in the background...';
+      case 'stream':
+      default:
+        return 'Generating an answer...';
+    }
+  }
+
   function streamingMarkdownBlock(messageId: string, content: string) {
     return [
       {
@@ -635,6 +647,7 @@ export function useChatStreaming(deps: StreamingDeps) {
           deps.currentRenderType.value = 'response';
           const responseStatus = coerceResponseStatus(data.status);
           const responseMode = coerceResponseMode(data.mode);
+          const progressMessage = startingProgressMessage(responseMode);
           deps.upsertAssistantMessage(assistantMsgId, '', {
             status: responseStatusToStreamingUiStatus(responseStatus),
             responseStatus,
@@ -643,11 +656,8 @@ export function useChatStreaming(deps: StreamingDeps) {
             chatId: typeof data.chat_id === 'string' ? data.chat_id : undefined,
             responseMode,
             progressStage: 'starting',
-            progressMessage:
-              responseMode === 'stream' ? 'Starting response stream...' : 'Starting response...',
-            progressSteps: [
-              responseMode === 'stream' ? 'Starting response stream...' : 'Starting response...',
-            ],
+            progressMessage,
+            progressSteps: [progressMessage],
             streamingContent: '',
             error: null,
           });
