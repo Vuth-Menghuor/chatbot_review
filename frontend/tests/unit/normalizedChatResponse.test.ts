@@ -488,7 +488,7 @@ test('normalizedChatResponse turns unknown and malformed blocks into fallback bl
   assert.equal(parts.blocks[2].content.message, 'Request failed');
 });
 
-test('normalizedChatResponse drops unreliable markdown and empty tables when useful final trade blocks exist', () => {
+test('normalizedChatResponse preserves service markdown and drops empty tables', () => {
   const response: NormalizedChatResponse = {
     ...baseResponse,
     request_id: 'trade-ranking-screenshot',
@@ -539,11 +539,11 @@ test('normalizedChatResponse drops unreliable markdown and empty tables when use
 
   assert.equal(parts.status, 'completed');
   assert.equal(parts.content, response.response?.content);
-  assert.deepEqual(parts.blocks.map((block) => block.type), ['chart', 'coverage']);
+  assert.deepEqual(parts.blocks.map((block) => block.type), ['markdown', 'chart', 'coverage']);
   assert.equal(parts.blocks.some((block) => block.type === 'error'), false);
   assert.equal(parts.blocks.some((block) => block.type === 'table'), false);
-  assert.equal(parts.blocks[0].content.chartType, 'pie');
-  assert.equal(parts.blocks[0].content.data.length, 5);
+  assert.equal(parts.blocks[1].content.chartType, 'pie');
+  assert.equal(parts.blocks[1].content.data.length, 5);
 });
 
 test('normalizedChatResponse rejects envelopes without message content arrays', () => {

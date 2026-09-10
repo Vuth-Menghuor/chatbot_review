@@ -59,13 +59,20 @@ export function useUiBlockInjection({ messages }: UiBlockInjectionOptions) {
     }
 
     const displayContent = normalizeAssistantContentForUi(content);
-    const nextBlocks = protectUnreliableFallbackBlocks(
-      meta?.blocks ?? parseAiResponse(displayContent),
-      normalizedResponseContext(meta?.normalizedResponse),
-    );
+    const isFinalNormalizedResponse = Boolean(meta?.normalizedResponse);
+    // A `done` payload is the service's complete normalized contract. Render
+    // it faithfully; draft filtering only applies while partial SSE text is
+    // still arriving.
+    const nextBlocks = isFinalNormalizedResponse
+      ? meta?.blocks ?? parseAiResponse(displayContent)
+      : protectUnreliableFallbackBlocks(
+          meta?.blocks ?? parseAiResponse(displayContent),
+          normalizedResponseContext(meta?.normalizedResponse),
+        );
     const hasUnreliableFallback = nextBlocks.some(isUnreliableFallbackErrorBlock);
     const hasUsefulBlocks = nextBlocks.some(isUsefulAuthoritativeBlock);
     const shouldSuppressDisplayContent =
+      !isFinalNormalizedResponse &&
       hasUsefulBlocks &&
       isUnreliableServiceFallbackText(
         displayContent,

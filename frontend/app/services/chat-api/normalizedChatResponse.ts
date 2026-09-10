@@ -17,9 +17,7 @@ import type {
   NormalizedTableBlock,
 } from '~/types/message';
 import {
-  isUnreliableServiceFallbackText,
   normalizeAssistantContentForUi,
-  UNRELIABLE_SERVICE_FALLBACK_MESSAGE,
 } from '~/utils/chat';
 import { blocksToMarkerText } from '~/utils/message';
 import { filterVisibleTableColumns, stripHiddenTableValues } from '~/utils/table';
@@ -53,16 +51,12 @@ export function legacyChatResponseToMessageParts(
 
   const blocks: MessageBlock[] = [];
   if (text) {
-    blocks.push(
-      isUnreliableServiceFallbackText(text)
-        ? unreliableServiceFallbackErrorBlock(`${fallbackId}-legacy-unreliable-fallback`)
-        : {
-            id: `${fallbackId}-legacy-markdown`,
-            type: 'markdown',
-            content: text,
-            isComplete: true,
-          },
-    );
+    blocks.push({
+      id: `${fallbackId}-legacy-markdown`,
+      type: 'markdown',
+      content: text,
+      isComplete: true,
+    });
   }
   errors.forEach((message, index) => {
     blocks.push({
@@ -84,8 +78,7 @@ export function legacyChatResponseToMessageParts(
     ),
     status:
       String(obj.status ?? '').toLowerCase() === 'failed' ||
-      errors.length ||
-      blocks.some(isUnreliableFallbackErrorBlock)
+      errors.length
         ? 'failed'
         : 'completed',
     coverage: normalizeCoverage(obj.coverage ?? obj.answer_coverage ?? obj.status),
@@ -135,33 +128,23 @@ function validatedNormalizedChatResponseToMessageParts(
         normalizedBlockToMessageBlock(
           block,
           `${response.request_id || fallbackId}-${index}`,
-          response,
         ),
       )
     : fallbackResponseContentBlocks(response, fallbackId);
-  const blocks = filterFinalResponseBlocks(rawBlocks, response);
+  const blocks = filterFinalResponseBlocks(rawBlocks);
   ensureOutOfScopeFallbackMarkdown(blocks, responseContent, response, fallbackId);
-  const hasUnreliableFallback = blocks.some(isUnreliableFallbackErrorBlock);
   // Visual rendering uses `blocks`; keep `response.content` as the canonical
   // copy/export/accessibility fallback when the backend provides it.
   const hasResponseContent = typeof response.response?.content === 'string';
-  const useResponseContent =
-    hasResponseContent &&
-    !(
-      blocks.some(isUsefulAuthoritativeBlock) &&
-      isUnreliableServiceFallbackText(responseContent, response)
-    );
-  const content = hasUnreliableFallback
-    ? ''
-    : useResponseContent
-      ? responseContent
-      : blocksToMarkerText(blocks) || markdownTextFromBlocks(normalizedBlocks);
+  const content = hasResponseContent
+    ? responseContent
+    : blocksToMarkerText(blocks) || markdownTextFromBlocks(normalizedBlocks);
 
   return {
     content,
     blocks,
     sources: normalizedCitationsToSources(response.citations),
-    status: hasUnreliableFallback ? 'failed' : response.status,
+    status: response.status,
     coverage: response.coverage ?? response.response?.coverage,
     confidence: response.confidence ?? response.response?.confidence,
     latencyMs: numberValue(response.metrics?.latency_ms),
@@ -190,16 +173,12 @@ function ensureOutOfScopeFallbackMarkdown(
 
 function filterFinalResponseBlocks(
   blocks: MessageBlock[],
-  context?: { service?: unknown; intent?: unknown },
 ): MessageBlock[] {
   const nonEmptyBlocks = blocks.filter((block) => !isEmptyTableBlock(block));
-  const usefulBlocks = nonEmptyBlocks.filter(isUsefulAuthoritativeBlock);
-  if (!usefulBlocks.length) return nonEmptyBlocks;
-  return nonEmptyBlocks.filter((block) => !isUnreliableFallbackErrorBlock(block));
+  return nonEmptyBlocks;
 }
 
 function isUsefulAuthoritativeBlock(block: MessageBlock): boolean {
-  if (isUnreliableFallbackErrorBlock(block)) return false;
   if (block.type === 'table') return hasPopulatedTableRows(block);
   if (block.type === 'markdown')
     return typeof block.content === 'string' && block.content.trim().length > 0;
@@ -224,13 +203,6 @@ function fallbackResponseContentBlocks(
 ): MessageBlock[] {
   const text = response.response?.content;
   if (!text) return [];
-  if (isUnreliableServiceFallbackText(text, response)) {
-    return [
-      unreliableServiceFallbackErrorBlock(
-        `${response.request_id || fallbackId}-response-unreliable-fallback`,
-      ),
-    ];
-  }
   return [
     {
       id: `${response.request_id || fallbackId}-response-fallback`,
@@ -314,13 +286,8 @@ function passthroughBlockToMessageBlock(
 function markdownBlockToMessageBlock(
   block: NormalizedMarkdownBlock,
   id: string,
-  context?: { service?: unknown; intent?: unknown },
 ): MessageBlock {
   const content = normalizeAssistantContentForUi(typeof block.text === 'string' ? block.text : '');
-  if (isUnreliableServiceFallbackText(content, context)) {
-    return unreliableServiceFallbackErrorBlock(`${id}-unreliable-fallback`);
-  }
-
   return {
     id,
     type: 'markdown',
@@ -329,27 +296,6 @@ function markdownBlockToMessageBlock(
   };
 }
 
-function unreliableServiceFallbackErrorBlock(id: string): MessageBlock {
-  return {
-    id,
-    type: 'error',
-    content: {
-      title: 'Response unavailable',
-      message: UNRELIABLE_SERVICE_FALLBACK_MESSAGE,
-    },
-    isComplete: true,
-  };
-}
-
-function isUnreliableFallbackErrorBlock(block: MessageBlock): boolean {
-  return (
-    block.type === 'error' &&
-    typeof block.content === 'object' &&
-    block.content !== null &&
-    'message' in block.content &&
-    block.content.message === UNRELIABLE_SERVICE_FALLBACK_MESSAGE
-  );
-}
 
 function tableBlockToMessageBlock(block: NormalizedTableBlock, id: string): MessageBlock {
   const columns = Array.isArray(block.columns) ? block.columns : [];
