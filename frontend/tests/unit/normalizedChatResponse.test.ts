@@ -100,6 +100,28 @@ test('normalizedChatResponse keeps the out-of-scope refusal when suggestions are
   assert.equal(parts.blocks[0]?.content, 'I’m sorry, but I can’t help with that.');
 });
 
+test('normalizedChatResponse keeps out-of-scope guidance that mentions contacting GDCE', () => {
+  const guidance = 'For further guidance, please contact the General Department of Customs and Excise (GDCE) directly.';
+  const response = responseWithBlocks([
+    { type: 'markdown', text: guidance },
+    { type: 'suggestions', items: ['How do I classify my goods?'] },
+  ]);
+  response.intent = 'out_of_scope';
+  response.service = 'retrieval';
+  response.response = {
+    type: 'markdown',
+    coverage: 'unknown',
+    content: guidance,
+    limitations: [],
+  };
+
+  const parts = normalizedChatResponseToMessageParts(response, 'fallback-id');
+
+  assert.deepEqual(parts.blocks.map((block) => block.type), ['markdown', 'suggestions']);
+  assert.equal(parts.blocks[0]?.content, guidance);
+  assert.equal(parts.status, 'completed');
+});
+
 test('normalizedChatResponse maps trade clarification blocks to existing interactive fields', () => {
   const response: NormalizedChatResponse = {
     ...baseResponse,

@@ -260,6 +260,14 @@ def stream_final_fallback_reason(
     service = str(normalized.get("service") or raw_stream_done.get("service") or "").lower()
     intent = str(normalized.get("intent") or raw_stream_done.get("intent") or "").lower()
     block_types = set(normalized_block_types(normalized))
+
+    # The live retrieval stream may label gibberish as out-of-scope while
+    # emitting a generic customs-clearance template. The non-streaming query
+    # applies the authoritative intent response, so use it for this terminal
+    # state rather than exposing the provisional stream narrative.
+    if intent == "out_of_scope":
+        return "out_of_scope_stream_requires_authoritative_response"
+
     expected_calculator = (
         service == "calculator"
         or "calc" in intent

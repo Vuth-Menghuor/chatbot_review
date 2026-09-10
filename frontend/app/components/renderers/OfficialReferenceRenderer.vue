@@ -6,7 +6,7 @@
         :href="content.url"
         target="_blank"
         rel="noopener noreferrer"
-        class="font-semibold text-sky-700 underline underline-offset-2 hover:text-sky-800 dark:text-sky-300 dark:hover:text-sky-200"
+        class="md-link"
       >
         {{ content.label || content.title || 'GDCE tariff lookup' }}
       </a>.

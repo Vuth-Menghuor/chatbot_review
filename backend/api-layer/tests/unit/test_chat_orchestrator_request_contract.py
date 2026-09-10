@@ -100,6 +100,24 @@ class FakeMainChatbotClient:
                 yield parsed
 
 
+def test_out_of_scope_stream_done_requires_authoritative_query_response():
+    raw_stream_done = {
+        "service": "retrieval",
+        "intent": "out_of_scope",
+        "status": "completed",
+        "answer": "DIRECT ANSWER: generic customs-clearance guidance.",
+    }
+    normalized = {
+        **raw_stream_done,
+        "message": {"content": [{"type": "markdown", "text": raw_stream_done["answer"]}]},
+        "response": {"content": raw_stream_done["answer"]},
+    }
+
+    assert chat_endpoint.stream_final_fallback_reason(raw_stream_done, normalized) == (
+        "out_of_scope_stream_requires_authoritative_response"
+    )
+
+
 class FullContractMainChatbotClient(FakeMainChatbotClient):
     async def request(self, method: str, path: str, **kwargs):
         self.calls.append((method, path, kwargs))

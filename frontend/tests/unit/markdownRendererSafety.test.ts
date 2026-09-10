@@ -41,6 +41,16 @@ const answer = 'safe';
   assert.match(html, /ការនាំចូលទំនិញ/);
 });
 
+test('markdown renderer makes bare URLs and email addresses visible external links', () => {
+  const html = render('Website: www.customs.gov.kh\\nEmail: info-pru@customs.gov.kh');
+
+  assert.match(html, /href="http:\/\/www\.customs\.gov\.kh"/);
+  assert.match(html, /href="mailto:info-pru@customs\.gov\.kh"/);
+  assert.match(html, /class="md-link"/);
+  assert.match(html, /target="_blank"/);
+  assert.match(html, /rel="noopener noreferrer"/);
+});
+
 test('markdown renderer keeps mermaid and chart placeholder support', () => {
   const mermaidHtml = render(`
 \`\`\`mermaid

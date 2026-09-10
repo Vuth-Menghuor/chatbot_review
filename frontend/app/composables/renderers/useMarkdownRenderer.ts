@@ -30,6 +30,8 @@ const MARKDOWN_PURIFY_CONFIG: Config = {
     'aria-label',
     'aria-hidden',
     'title',
+    'target',
+    'rel',
   ],
 };
 
@@ -144,6 +146,17 @@ md.renderer.rules.table_close = () => '';
 
 md.renderer.rules.code_inline = (tokens: Token[], idx: number) =>
   `<code class="md-inline-code">${md.utils.escapeHtml(tokens[idx]!.content)}</code>`;
+
+// Linkify already converts markdown links, bare URLs, and email addresses.
+// Give all of them a visible, consistent treatment and keep external
+// navigation from replacing the chat page.
+md.renderer.rules.link_open = (tokens: Token[], idx: number, options, env, self) => {
+  const token = tokens[idx]!;
+  token.attrJoin('class', 'md-link');
+  token.attrSet('target', '_blank');
+  token.attrSet('rel', 'noopener noreferrer');
+  return self.renderToken(tokens, idx, options);
+};
 
 md.renderer.rules.fence = (tokens: Token[], idx: number) => {
   const token = tokens[idx]!;

@@ -61,6 +61,10 @@ export function isUnreliableServiceFallbackText(text: unknown, context: ServiceF
   if (typeof text !== 'string') return false;
   const service = normalizedContextValue(context.service);
   const intent = normalizedContextValue(context.intent);
+  // An out-of-scope response is a deliberate, complete refusal. Some of its
+  // guidance can legitimately mention contacting GDCE, which also appears in
+  // the signatures used to reject unreliable trade-formatter drafts.
+  if (intent === 'out_of_scope') return false;
   if (service === 'general' || intent === 'general') return false;
   if (service === 'calculator' || intent.includes('calc')) {
     return isCalculatorReportDraftText(text);

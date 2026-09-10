@@ -380,6 +380,37 @@ html:lang(km) {
     margin-bottom: 0;
   }
 
+  .md-link {
+    color: #2563eb;
+    font-weight: inherit;
+    text-decoration-line: underline;
+    text-decoration-style: dashed;
+    text-decoration-color: color-mix(in srgb, currentColor 72%, transparent);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.22em;
+    overflow-wrap: anywhere;
+    transition: color 150ms ease, text-decoration-color 150ms ease;
+  }
+
+  .md-link:hover {
+    color: #1d4ed8;
+    text-decoration-color: currentColor;
+  }
+
+  .md-link:focus-visible {
+    outline: 2px solid #60a5fa;
+    outline-offset: 3px;
+    border-radius: 0.1875rem;
+  }
+
+  .dark .md-link {
+    color: #93c5fd;
+  }
+
+  .dark .md-link:hover {
+    color: #bfdbfe;
+  }
+
   .markdown-body .md-inline-code {
     background-color: #ececec;
     color: #0d0d0d;
