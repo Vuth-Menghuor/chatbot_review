@@ -237,7 +237,7 @@ function handleAction(action: string) {
             :aria-label="field.label || field.name"
             :aria-invalid="fieldInvalid(field)"
             density="comfortable"
-            variant="outlined"
+            variant="plain"
             hide-details="auto"
             class="interaction-field"
             :disabled="submitted"
@@ -289,6 +289,13 @@ function handleAction(action: string) {
   border-radius: 0.5rem;
 }
 
+:deep(.interaction-field input.v-field__input:focus),
+:deep(.interaction-field textarea.v-field__input:focus) {
+  border-color: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
 :global(.dark) :deep(.interaction-field .v-field) {
   background-color: rgb(24 24 27 / 0.55);
 }
@@ -314,7 +321,4 @@ function handleAction(action: string) {
   color: rgb(63 63 70);
 }
 
-:global(.dark) :deep(.interaction-field .v-field--focused .v-field__outline) {
-  color: rgb(56 189 248);
-}
 </style>

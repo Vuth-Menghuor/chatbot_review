@@ -8,7 +8,7 @@ pnpm dev
 cd frontend && pnpm build && pnpm dev
 
 cd frontend
-docker compose up -d --build
+docker compose up -d 
 
 
 # =========================
@@ -44,7 +44,7 @@ cd services_version2/orchestrator && docker compose up --build
 # General Service
 # =========================
 cd services_version2/general
-docker compose up -d --build
+docker compose up -d 
 
 cd services_version2/general && docker compose up --build
 
@@ -54,7 +54,7 @@ cd services_version2/general && docker compose up --build
 # Calculator Service
 # =========================
 cd services_version2/calculator
-docker compose up -d --build
+docker compose up -d 
 
 cd services_version2/calculator && docker compose up --build
 
@@ -64,7 +64,7 @@ cd services_version2/calculator && docker compose up --build
 # Trade Service
 # =========================
 cd services_version2/trade
-docker compose up -d --build
+docker compose up -d 
 
 cd services_version2/trade && docker compose up --build
 
@@ -74,7 +74,7 @@ cd services_version2/trade && docker compose up --build
 # Retrieval Service
 # =========================
 cd services_version2/retrieval
-docker compose up -d --build
+docker compose up -d 
 
 cd services_version2/retrieval && docker compose up --build
 db

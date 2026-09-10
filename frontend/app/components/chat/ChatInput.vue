@@ -6,7 +6,7 @@
         : ''
     "
   >
-    <div :class="docked ? 'mx-auto w-full max-w-3xl' : ''">
+    <div :class="docked ? 'mx-auto w-full max-w-5xl' : ''">
       <div
         class="rounded-[24px] border border-gray-300 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-[#181818]"
       >

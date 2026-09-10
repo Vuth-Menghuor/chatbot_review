@@ -60,11 +60,11 @@ const emit = defineEmits<{
       {{ $t('chat.welcomeSubtitle') }}
     </p>
 
-    <div v-if="$slots.composer" class="mb-7 w-full max-w-3xl">
+    <div v-if="$slots.composer" class="mb-7 w-full max-w-5xl">
       <slot name="composer" />
     </div>
 
-    <div class="w-full max-w-3xl px-4 text-left sm:px-6">
+    <div class="w-full max-w-5xl px-4 text-left sm:px-6">
       <div
         class="mb-4 flex items-center gap-1.5 px-1 text-sm font-semibold text-zinc-600 dark:text-zinc-300"
       >
