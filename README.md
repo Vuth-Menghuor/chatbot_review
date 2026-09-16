@@ -8,12 +8,12 @@ Built as a portfolio-scale system rather than a single chat UI, the repository i
 
 | Desktop workspace | Mobile experience |
 | --- | --- |
-| ![Desktop chat workspace with projects, conversation history, markdown response, and sharing controls](frontend/image.png) | ![Mobile chat view rendering a Mermaid diagram inside an assistant response](frontend/image-1.png) |
-| **Desktop chat workspace.** Project navigation, recent conversations, structured assistant output, and chat sharing controls. | **Responsive mobile chat.** The same conversation interface adapts to a narrow viewport and can render diagram content. |
+| ![Desktop HS-code result with a ranked table and source panel](frontend/portfolio-hs-code-desktop.png) | ![Mobile HS-code result with ranked customs-code candidates](frontend/portfolio-hs-code-mobile.png) |
+| **Desktop HS-code workflow.** A ranked customs-code result, supporting source panel, follow-up prompts, and persistent chat navigation. | **Responsive mobile workflow.** The HS-code result and follow-up chat controls adapt to a mobile device layout. |
 
-![Mobile Safari view of a structured Mermaid response](frontend/image-2.png)
+![Appearance and language settings displayed in a desktop device frame](frontend/portfolio-settings-desktop.png)
 
-**Mobile browser view.** A second mobile capture showing the chat composer and structured response rendering in a real browser viewport.
+**Personalization settings.** Appearance mode and English/Khmer language preferences are presented in the application’s settings experience.
 
 ## Key Features
 
