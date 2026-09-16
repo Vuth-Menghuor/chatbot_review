@@ -18,7 +18,7 @@ Built as a portfolio-scale system rather than a single chat UI, the repository i
 **Responsive mobile workflow.** The HS-code result and follow-up chat controls adapt to a mobile device layout.
 
 <p align="center">
-  <img src="docs/images/chat-welcome-mobile.png" alt="Mobile Customs AI welcome screen with suggested questions" width="360" />
+  <img src="docs/images/chat-welcome-mobile-framed.png" alt="Mobile Customs AI welcome screen displayed in a phone frame" width="360" />
 </p>
 
 **Mobile welcome experience.** Users can begin a new conversation from a compact interface with suggested customs, tariff, duty, and trade-data questions.
