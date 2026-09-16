@@ -11,10 +11,10 @@ Built as a portfolio-scale system rather than a single chat UI, the repository i
 | ![Laptop HS-code result with a ranked table and source panel](docs/images/hs-code-laptop-result.png) | ![Customs AI welcome screen with suggested customs workflows](docs/images/chat-welcome-screen.png) |
 | **HS-code workflow.** A ranked customs-code result, source panel, follow-up prompts, and persistent chat navigation. | **Guided welcome experience.** The new-chat screen introduces common customs questions, including documentation, HS-code, duty, and trade-data requests. |
 
-| Mobile HS-code workflow | Mobile welcome experience |
+| Mobile HS-code workflow | Mobile document guidance |
 | --- | --- |
-| <img src="frontend/portfolio-hs-code-mobile.png" alt="Mobile HS-code result with ranked customs-code candidates" width="320" /> | <img src="docs/images/chat-welcome-mobile-framed.png" alt="Mobile Customs AI welcome screen displayed in a phone frame" width="320" /> |
-| **Responsive mobile workflow.** The HS-code result and follow-up chat controls adapt to a mobile device layout. | **Mobile welcome experience.** Users can begin a new conversation from a compact interface with suggested customs, tariff, duty, and trade-data questions. |
+| <img src="frontend/portfolio-hs-code-mobile.png" alt="Mobile HS-code result with ranked customs-code candidates" width="320" /> | <img src="docs/images/documents-mobile-mockup.png" alt="Mobile answer describing documents required to import goods" width="320" /> |
+| **Responsive mobile workflow.** The HS-code result and follow-up chat controls adapt to a mobile device layout. | **Mobile document guidance.** A conversational response explains documents needed to import goods into Cambodia. |
 
 ## Key Features
 
