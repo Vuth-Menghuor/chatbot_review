@@ -6,10 +6,17 @@ Built as a portfolio-scale system rather than a single chat UI, the repository i
 
 ## Product at a Glance
 
-| HS-code workspace | Welcome experience |
-| --- | --- |
-| ![Laptop HS-code result with a ranked table and source panel](docs/images/hs-code-laptop-result.png) | ![Customs AI welcome screen with suggested customs workflows](docs/images/chat-welcome-screen.png) |
-| **HS-code workflow.** A ranked customs-code result, source panel, follow-up prompts, and persistent chat navigation. | **Guided welcome experience.** The new-chat screen introduces common customs questions, including documentation, HS-code, duty, and trade-data requests. |
+### HS-code workspace
+
+<img src="docs/images/hs-code-laptop-result.png" alt="Laptop HS-code result with a ranked table and source panel" width="900" />
+
+**HS-code workflow.** A ranked customs-code result, source panel, follow-up prompts, and persistent chat navigation.
+
+### Portfolio settings
+
+<img src="docs/images/chat-welcome-screen.png" alt="Customs AI desktop settings with appearance and language preferences" width="900" />
+
+**Personalized settings.** Configure appearance, language, chat, notification, keyboard, and privacy preferences from one desktop settings panel.
 
 | Mobile HS-code workflow | Mobile document guidance |
 | --- | --- |
