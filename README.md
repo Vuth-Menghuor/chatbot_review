@@ -13,7 +13,7 @@ Built as a portfolio-scale system rather than a single chat UI, the repository i
 
 | Mobile HS-code workflow | Mobile document guidance |
 | --- | --- |
-| <img src="frontend/portfolio-hs-code-mobile.png" alt="Mobile HS-code result with ranked customs-code candidates" width="320" /> | <img src="docs/images/documents-mobile-mockup.png" alt="Mobile answer describing documents required to import goods" width="320" /> |
+| <img src="frontend/portfolio-hs-code-mobile.png" alt="Mobile HS-code result with ranked customs-code candidates" width="400" /> | <img src="docs/images/documents-mobile-mockup.png" alt="Mobile answer describing documents required to import goods" width="400" /> |
 | **Responsive mobile workflow.** The HS-code result and follow-up chat controls adapt to a mobile device layout. | **Mobile document guidance.** A conversational response explains documents needed to import goods into Cambodia. |
 
 ## Key Features
