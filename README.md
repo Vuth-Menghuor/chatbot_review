@@ -6,14 +6,10 @@ Built as a portfolio-scale system rather than a single chat UI, the repository i
 
 ## Product at a Glance
 
-| Desktop workspace | Mobile experience |
+| HS-code workspace | Welcome experience |
 | --- | --- |
-| ![Desktop HS-code result with a ranked table and source panel](frontend/portfolio-hs-code-desktop.png) | ![Mobile HS-code result with ranked customs-code candidates](frontend/portfolio-hs-code-mobile.png) |
-| **Desktop HS-code workflow.** A ranked customs-code result, supporting source panel, follow-up prompts, and persistent chat navigation. | **Responsive mobile workflow.** The HS-code result and follow-up chat controls adapt to a mobile device layout. |
-
-![Appearance and language settings](frontend/portfolio-settings-desktop.png)
-
-**Personalization settings.** Appearance mode and English/Khmer language preferences are presented in the application’s settings experience.
+| ![Laptop HS-code result with a ranked table and source panel](docs/images/hs-code-laptop-result.png) | ![Customs AI welcome screen with suggested customs workflows](docs/images/chat-welcome-screen.png) |
+| **HS-code workflow.** A ranked customs-code result, source panel, follow-up prompts, and persistent chat navigation. | **Guided welcome experience.** The new-chat screen introduces common customs questions, including documentation, HS-code, duty, and trade-data requests. |
 
 ## Key Features
 
