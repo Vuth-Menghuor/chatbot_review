@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { definePageMeta, navigateTo, useRoute } from '#imports';
+import { definePageMeta, navigateTo, useRoute, useRuntimeConfig } from '#imports';
 import { ChatApiRequestError } from '~/services/chat-api';
 import { useAuthStore } from '~/stores/auth.store';
 import { useAppLocale } from '~/composables/common/useAppLocale';
@@ -10,9 +10,12 @@ definePageMeta({ layout: 'auth' });
 const route = useRoute();
 const authStore = useAuthStore();
 const { t } = useAppLocale();
+const runtimeConfig = useRuntimeConfig();
 
-const email = ref('');
-const password = ref('');
+// Seed the development account for quick testing. Both values remain normal,
+// editable form fields, so testers can sign in with another account instead.
+const email = ref(runtimeConfig.public.gdceDevEmail || 'frontend-dev@example.com');
+const password = ref(runtimeConfig.public.gdceDevPassword || 'password123');
 const error = ref('');
 
 const registrationSuccess = computed(() => route.query.registered === '1');
