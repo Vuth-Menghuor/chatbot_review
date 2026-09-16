@@ -46,7 +46,8 @@ services:
     restart: unless-stopped
 
   minio:
-    image: minio/minio:latest
+    # Docker Hub pulls are denied in this environment; use MinIO's public Quay registry.
+    image: quay.io/minio/minio:latest
     container_name: minio
     env_file:
       - path: .env
