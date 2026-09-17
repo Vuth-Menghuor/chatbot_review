@@ -13,7 +13,7 @@
     </template>
 
     <div
-      class="rounded-md bg-gray-900 px-2 py-1 text-[14px] leading-7 text-white shadow-sm dark:bg-zinc-200 dark:text-zinc-900"
+      class="rounded-md bg-gray-900 px-2 py-1 text-[14px] leading-7 text-white shadow-sm"
     >
       {{ text }}
     </div>

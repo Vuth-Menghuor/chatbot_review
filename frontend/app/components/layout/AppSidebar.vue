@@ -35,7 +35,7 @@
           <BaseIconButton
             :icon="uiStore.railMode ? PanelLeftOpenIcon : PanelLeftCloseIcon"
             :tooltip="$t('sidebar.toggleWidth')"
-            custom-class="text-gray-800 transition-colors hover:bg-gray-200/50 hover:text-gray-700 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+            custom-class="text-gray-800 transition-colors hover:!bg-gray-200/50 hover:!text-gray-700 dark:text-zinc-300 dark:hover:!bg-zinc-800 dark:hover:!text-zinc-100"
             @click="uiStore.toggleRail"
           />
         </div>

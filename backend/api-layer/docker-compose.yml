@@ -94,7 +94,8 @@ services:
     restart: unless-stopped
 
   api-migrate:
-    build: .
+    # Reuse the API image; migrations only require a different startup command.
+    image: api-layer-api:latest
     container_name: api-migrate
     env_file:
       - path: .env

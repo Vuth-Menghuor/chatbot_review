@@ -19,7 +19,7 @@
     :class="[
       'rounded-lg transition-colors duration-200',
       variant === 'text'
-        ? 'text-medium-emphasis hover:bg-surface-variant hover:text-high-emphasis'
+        ? 'text-gray-700 hover:bg-gray-200/50 hover:text-gray-800 dark:text-zinc-200 dark:hover:bg-zinc-800 dark:hover:text-zinc-100'
         : '',
       customClass,
     ]"

@@ -6,7 +6,7 @@
         :icon="MoreHorizontalIcon"
         width="36"
         height="36"
-        custom-class="text-gray-700 dark:text-zinc-200"
+        custom-class="text-gray-700 hover:!bg-gray-200/50 hover:!text-gray-800 dark:text-zinc-200 dark:hover:!bg-zinc-800 dark:hover:!text-zinc-100"
         :tooltip="$t('chat.moreOptions')"
       />
     </template>

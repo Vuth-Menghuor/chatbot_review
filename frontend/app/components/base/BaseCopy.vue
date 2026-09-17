@@ -46,7 +46,7 @@ async function handleCopy() {
     </span>
     <BaseButton variant="flat" :color="copied ? 'success' : undefined" :custom-class="[
       'h-auto min-w-[110px] shrink-0 rounded-l-none rounded-r-xl px-2 py-3 text-none font-semibold',
-      copied ? '' : '!bg-zinc-900 !text-white dark:!bg-zinc-100 dark:!text-zinc-900',
+      copied ? '' : '!bg-zinc-900 !text-white',
     ].join(' ')" @click="handleCopy">
       <span v-if="copied" class="flex items-center justify-center gap-1.5">
         <LucideCheck class="h-4 w-4" />
