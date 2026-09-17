@@ -7,8 +7,14 @@ pnpm dev
 
 cd frontend && pnpm build && pnpm dev
 
-cd frontend
+cd frontendz
 docker compose up -d 
+
+
+# =========================
+# Cloudflare Named Tunnel
+# =========================
+docker start chatbot-api-tunnel
 
 
 # =========================
@@ -105,38 +111,75 @@ git push vercel main
 
 
 # ================================================
-# Fix deployed login after tunnel restart
+# Legacy temporary trycloudflare.com tunnel (fallback only)
 # ================================================
-# Run from the project root, not frontend/.
+# Use this only when deliberately running a temporary Quick Tunnel. It has a
+# changing URL and requires the Vercel update/deploy steps below.
+#
+# Important: use chatbot-api-quick-tunnel for this legacy tunnel. Do NOT use
+# chatbot-api-tunnel, which is the permanent Cloudflare Named Tunnel above.
 cd /home/huor/Documents/gdce-document/chatbot_review
 
-# 1. Check the tunnel.
-TUNNEL_URL=$(docker logs chatbot-api-tunnel 2>&1 | grep -oE 'https://[^[:space:]]+\.trycloudflare\.com' | tail -1)
+# 1. Check the temporary tunnel.
+TUNNEL_URL=$(docker logs chatbot-api-quick-tunnel 2>&1 | grep -oE 'https://[^[:space:]]+\.trycloudflare\.com' | tail -1)
 echo "$TUNNEL_URL"
 curl -i "$TUNNEL_URL/api/v1/health"
 # HTTP 200 means it works. Stop here.
 
-# 2. If it fails, restart the tunnel.
-docker restart chatbot-api-tunnel
+# 2. If it fails, restart the temporary tunnel.
+docker restart chatbot-api-quick-tunnel
 
-# 3. Wait 30 seconds, then check the new URL.
-TUNNEL_URL=$(docker logs chatbot-api-tunnel 2>&1 | grep -oE 'https://[^[:space:]]+\.trycloudflare\.com' | tail -1)
+# 3. Check the new temporary URL.
+TUNNEL_URL=$(docker logs chatbot-api-quick-tunnel 2>&1 | grep -oE 'https://[^[:space:]]+\.trycloudflare\.com' | tail -1)
 echo "$TUNNEL_URL"
 curl -i "$TUNNEL_URL/api/v1/health"
 # Continue only with HTTP 200.
 
-# 4. Sign in to Vercel (only once per computer).
+# 4. Update Vercel to the new temporary URL, then deploy.
 vercel whoami || vercel login
 vercel link --yes --project customs-artificial-intelligence --scope vuth-menghuors-projects
-
-# 5. Save the new URL in Vercel.
 printf '%s\n' "$TUNNEL_URL" | vercel env update NUXT_PUBLIC_GDCE_API_BASE_URL production --yes
 printf '%s\n' "$TUNNEL_URL" | vercel env update NUXT_PUBLIC_GDCE_API_BASE_URL preview --yes
-
-# 6. Deploy the website.
 vercel --prod --yes
 
-# 7. Check the deployed URL.
+# 5. Verify the deployed login page.
 curl -s https://customs-artificial-intelligence.vercel.app/login | grep -o 'gdceApiBaseUrl:"[^"]*"'
 
-# 8. Press Ctrl+Shift+R, then log in.
+
+
+# ================================================
+# Permanent Cloudflare Tunnel: check or restore deployed login
+# ================================================
+# Run from the project root, not frontend/.
+cd /home/huor/Documents/gdce-document/chatbot_review
+
+# The API URL is permanent. Do not use a trycloudflare.com URL and do not
+# update/redeploy Vercel after a normal Docker or tunnel restart.
+# 1. Check the public API.
+curl -i https://api.vuthmenghuor.com/api/v1/health
+# HTTP 200 means the tunnel and API work. Stop here.
+
+# 2. If it fails, check whether the Cloudflare connector is running.
+docker ps --filter 'name=chatbot-api-tunnel'
+docker logs --tail 50 chatbot-api-tunnel
+
+# 3. Start it if it is stopped, then wait about 15 seconds and check again.
+docker start chatbot-api-tunnel
+curl -i https://api.vuthmenghuor.com/api/v1/health
+
+# 4. If it is running but the health check still fails, restart it.
+docker restart chatbot-api-tunnel
+curl -i https://api.vuthmenghuor.com/api/v1/health
+
+# 5. Verify the deployed login page still uses the permanent API URL.
+curl -s https://customs-artificial-intelligence.vercel.app/login | grep -o 'gdceApiBaseUrl:"[^"]*"'
+# Expected: gdceApiBaseUrl:"https://api.vuthmenghuor.com\\n"
+
+# 6. Press Ctrl+Shift+R in the browser, then log in.
+
+# Notes:
+# - chatbot-api-tunnel has restart policy "unless-stopped", so Docker starts it
+#   automatically after Docker Desktop starts.
+# - Do not run a new "docker run ... --token ..." command unless the Cloudflare
+#   tunnel token was intentionally rotated or the connector container was removed.
+
