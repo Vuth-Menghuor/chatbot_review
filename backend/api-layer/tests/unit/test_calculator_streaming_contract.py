@@ -44,6 +44,9 @@ class FakeRequest:
 
 
 class FakeDb:
+    def add(self, _item) -> None:
+        return None
+
     async def commit(self) -> None:
         return None
 

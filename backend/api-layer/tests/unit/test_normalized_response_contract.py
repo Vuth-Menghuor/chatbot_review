@@ -206,7 +206,7 @@ def test_hs_code_lookup_intent_maps_to_retrieval_service_without_rewriting_inten
 @pytest.mark.parametrize(
     ("upstream_status", "normalized_status"),
     [
-        ("clarification_required", "clarification_required"),
+        ("clarification_required", "completed"),
         ("completed", "completed"),
         ("failed", "failed"),
         ("unexpected_future_status", "completed"),

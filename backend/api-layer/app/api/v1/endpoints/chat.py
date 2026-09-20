@@ -14,6 +14,7 @@ from app.core.database import get_db
 from app.dependencies.auth import get_current_user
 from app.models import ChatMessage, User
 from app.schemas.common import ChatRequest, FeedbackRequest
+from app.schemas.normalized_chat import NormalizedChatResponse
 from app.services.audit_service import add_audit_log
 from app.services.chat_debug import can_include_chat_response_debug
 from app.services.chat_response_normalizer import normalize_chat_response
@@ -422,7 +423,7 @@ def contains_khmer(text: object) -> bool:
 
     return any("\u1780" <= char <= "\u17ff" for char in text)
 
-@router.post("/send")
+@router.post("/send", response_model=NormalizedChatResponse)
 async def send_chat(payload: ChatRequest, request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     await enforce_rate_limit(f"chat_send:{user.id}", 30, request=request, user_id=user.id)
     chat = await create_or_get_chat(db, user.id, payload.chat_id, payload.project_id, payload.message)

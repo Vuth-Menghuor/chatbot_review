@@ -55,6 +55,10 @@ class FakeUser:
 class FakeDb:
     def __init__(self):
         self.commit_count = 0
+        self.added: list[object] = []
+
+    def add(self, item: object) -> None:
+        self.added.append(item)
 
     async def commit(self) -> None:
         self.commit_count += 1

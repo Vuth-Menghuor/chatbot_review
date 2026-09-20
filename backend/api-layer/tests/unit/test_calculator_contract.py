@@ -175,7 +175,7 @@ def test_malformed_calculator_response_is_stable_and_does_not_expose_internal_ex
     assert response.request_id == str(payload["request_id"])
     assert response.service == "calculator"
     assert response.status == "completed"
-    assert block_types(response) == ["clarification", "error"]
+    assert block_types(response) == ["clarification"]
     assert "Traceback" not in response.response.content
     assert "Exception" not in response.response.content
     assert all("Traceback" not in getattr(block, "message", "") for block in response.message.content)

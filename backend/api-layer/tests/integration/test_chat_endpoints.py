@@ -20,6 +20,10 @@ class FakeChatSession:
     # Capture commits made after chat metadata is touched.
     def __init__(self) -> None:
         self.committed = False
+        self.added = []
+
+    def add(self, item) -> None:
+        self.added.append(item)
 
     # Capture transaction commits.
     async def commit(self):
@@ -141,11 +145,12 @@ async def test_send_chat_forwards_presentation_preference_to_orchestrator(monkey
 
     upstream_body = upstream.calls[0][2]["json"]
     assert upstream_body == {
-        "question": "Give me the HS code for cotton fabric as a table.",
-        "session_id": str(chat.id),
-        "chat_id": str(chat.id),
-        "presentation": presentation,
-    }
+            "question": "Give me the HS code for cotton fabric as a table.",
+            "session_id": str(chat.id),
+            "chat_id": str(chat.id),
+            "project_id": None,
+            "presentation": presentation,
+        }
     assert [block["type"] for block in response["message"]["content"]] == ["markdown"]
 
 

@@ -136,6 +136,7 @@ def normalize_chat_response(
         service == "retrieval"
         and status == "clarification_required"
         and not clarifications
+        and not any(isinstance(block, ClarificationBlock) for block in blocks)
     ):
         status = "completed"
 

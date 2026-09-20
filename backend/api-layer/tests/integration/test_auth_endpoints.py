@@ -155,6 +155,7 @@ async def test_bad_login_returns_401():
         await auth_endpoint.login(
             LoginRequest(email="ada@example.com", password="wrong-password"),
             fake_request(),
+            Response(),
             db=FakeAuthSession(execute_value=user),
         )
 

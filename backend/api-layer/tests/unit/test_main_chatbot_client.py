@@ -175,6 +175,7 @@ async def _stream_chat_parses_upstream_sse_into_typed_events():
     events = [event async for event in client.stream_chat({"question": "hello"})]
 
     assert [(event.type, event.content, event.data) for event in events] == [
+        ("progress", None, {"stage": "start", "request_id": "upstream"}),
         ("delta", "The ", None),
         ("delta", "answer ", None),
         ("clarification", None, {"questions": ["Which product?"]}),
