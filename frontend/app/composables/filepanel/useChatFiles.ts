@@ -1,7 +1,6 @@
 import { computed } from 'vue';
 import { useRoute } from '#imports';
 import { useChatStore } from '~/stores/chat.store';
-import { readJson, storageKeys } from '~/utils/storage';
 import type { ChatPanelFile, Message } from '~/types/message';
 import { toChatPanelFile } from '~/utils/file';
 
@@ -20,7 +19,9 @@ export function useChatFiles() {
     const storeMessages = chatStore.getChatMessages(activeChatId.value);
     if (storeMessages.length) return storeMessages;
 
-    return readJson<Message[]>(storageKeys.chatMessages(activeChatId.value), []);
+    // Message hydration applies the cache expiry and size policy before placing
+    // data in the store, so do not bypass it with a direct Local Storage read.
+    return [];
   });
 
   const files = computed(() =>

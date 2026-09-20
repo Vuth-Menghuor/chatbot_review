@@ -29,14 +29,6 @@ class LoginRequest(BaseModel):
     password: str
 
 
-class RefreshRequest(BaseModel):
-    refresh_token: str
-
-
-class LogoutRequest(BaseModel):
-    refresh_token: str | None = None
-
-
 class UserRead(ORMModel):
     id: UUID
     full_name: str
@@ -53,7 +45,6 @@ class UserRead(ORMModel):
 
 class TokenResponse(BaseModel):
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"
     user: UserRead
 

@@ -25,7 +25,6 @@ export const useProjects = () => {
     try {
       const result = await createProjectRequest(apiBaseUrl(), token, { name, description });
       authStore.accessToken = result.accessToken;
-      authStore.refreshToken = result.refreshToken;
       const backendProjectId = backendUuidOrNull(result.data.id);
       if (!backendProjectId) {
         throw new Error('Project creation did not return a valid backend project ID.');

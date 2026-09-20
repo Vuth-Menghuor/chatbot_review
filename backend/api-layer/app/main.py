@@ -1,4 +1,5 @@
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 
 import httpx
 from fastapi import FastAPI
@@ -14,6 +15,7 @@ from app.middleware.rate_limit_middleware import GeneralRateLimitMiddleware
 from app.middleware.request_id_middleware import RequestIdMiddleware
 from app.middleware.request_log_middleware import RequestLogMiddleware
 from app.services.main_chatbot_client import main_chatbot_client
+from app.services.retention_service import retention_cleanup_loop
 
 
 @asynccontextmanager
@@ -31,7 +33,18 @@ async def lifespan(app: FastAPI):
     )
     # Inject the lifespan-owned client into the service wrapper used by endpoints.
     main_chatbot_client.set_client(app.state.http_client)
-    yield
+    retention_task = (
+        asyncio.create_task(retention_cleanup_loop(), name="retention-cleanup")
+        if settings.retention_cleanup_enabled
+        else None
+    )
+    try:
+        yield
+    finally:
+        if retention_task:
+            retention_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await retention_task
     # Close outbound and infrastructure clients during graceful shutdown.
     await main_chatbot_client.aclose()
     await close_redis()

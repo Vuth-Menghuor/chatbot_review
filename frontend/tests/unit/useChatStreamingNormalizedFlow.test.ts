@@ -1759,7 +1759,8 @@ test('streamFromChatApi suppresses calculator report deltas before final normali
   assert.equal(finalCall.meta?.streamingContent, '');
   assert.deepEqual(finalCall.meta?.blocks?.map((block) => block.type), ['summary']);
   assert.equal(finalCall.meta?.blocks?.[0]?.content?.data?.total_tax, 0);
-  assert.equal(finalCall.content.includes('Import Tax Calculation'), true);
+  assert.equal(finalCall.content, 'Import tax calculation complete.');
+  assert.equal(finalCall.meta?.blocks?.[0]?.title, 'Import Tax Calculation');
   assert.equal(finalCall.meta?.blocks?.some((block) => block.type === 'markdown' && block.content === draft), false);
 });
 

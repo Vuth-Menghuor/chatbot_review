@@ -1,12 +1,28 @@
 import { onMounted, watch, type Ref } from 'vue';
 import type { Message } from '~/types/message';
-import { readJson, storageKeys, writeJson } from '~/utils/storage';
+import { readJson, removeKey, storageKeys, writeJson } from '~/utils/storage';
 import { useChatStore } from '~/stores/chat.store';
 import { serializeMessagesForStorage } from '~/utils/file';
 
+const CHAT_MESSAGE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_CACHED_MESSAGES_PER_CHAT = 100;
+
+function readCachedMessages(chatId: string): Message[] {
+  const messages = readJson<Message[]>(storageKeys.chatMessages(chatId), []);
+  const newestTimestamp = Math.max(...messages.map((message) => Date.parse(message.createdAt ?? '')), Number.NaN);
+  if (messages.length && (!Number.isFinite(newestTimestamp) || Date.now() - newestTimestamp > CHAT_MESSAGE_CACHE_TTL_MS)) {
+    removeKey(storageKeys.chatMessages(chatId));
+    return [];
+  }
+  return messages.slice(-MAX_CACHED_MESSAGES_PER_CHAT);
+}
+
 function safeWriteChatMessages(chatId: string, value: Message[]) {
   try {
-    writeJson(storageKeys.chatMessages(chatId), serializeMessagesForStorage(value));
+    writeJson(
+      storageKeys.chatMessages(chatId),
+      serializeMessagesForStorage(value.slice(-MAX_CACHED_MESSAGES_PER_CHAT)),
+    );
   } catch {
     // Persisting chat history can fail when storage is full or unavailable.
   }
@@ -14,7 +30,7 @@ function safeWriteChatMessages(chatId: string, value: Message[]) {
 
 export function useChatPersistence(chatId?: string) {
   const chatStore = useChatStore();
-  const initialMessages: Message[] = chatId ? readJson(storageKeys.chatMessages(chatId), []) : [];
+  const initialMessages: Message[] = chatId ? readCachedMessages(chatId) : [];
 
   if (chatId) {
     chatStore.hydrateChatIfMessagesExist(chatId);
@@ -27,7 +43,7 @@ export function useChatPersistence(chatId?: string) {
 
     if (import.meta.client) {
       onMounted(() => {
-        const stored = readJson<Message[]>(storageKeys.chatMessages(chatId), []);
+        const stored = readCachedMessages(chatId);
         if (stored.length > 0 && messages.value.length === 0) {
           messages.value = stored;
           chatStore.setChatMessages(chatId, stored);
@@ -40,7 +56,7 @@ export function useChatPersistence(chatId?: string) {
       (value) => {
         chatStore.setChatMessages(chatId, value);
         if (value.length === 0) {
-          const existing = readJson<Message[]>(storageKeys.chatMessages(chatId), []);
+          const existing = readCachedMessages(chatId);
           if (existing.length > 0) return;
         }
         safeWriteChatMessages(chatId, value);

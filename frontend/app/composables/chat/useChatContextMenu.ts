@@ -131,10 +131,11 @@ export function useChatContextMenu(options: UseChatContextMenuOptions = {}) {
     renameOpen.value = false;
   }
 
-  function onDelete() {
+  async function onDelete() {
     if (!activeChat.value) return;
-    deleteChat(activeChat.value.id);
-    deleteOpen.value = false;
+    if (await deleteChat(activeChat.value.id)) {
+      deleteOpen.value = false;
+    }
   }
 
   return {

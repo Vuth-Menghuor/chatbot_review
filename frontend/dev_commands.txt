@@ -7,7 +7,7 @@ pnpm dev
 
 cd frontend && pnpm build && pnpm dev
 
-cd frontendz
+cd frontend
 docker compose up -d 
 
 

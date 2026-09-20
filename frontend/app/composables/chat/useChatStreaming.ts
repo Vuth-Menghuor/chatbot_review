@@ -213,7 +213,6 @@ export function useChatStreaming(deps: StreamingDeps) {
         description: project.description,
       });
       authStore.accessToken = result.accessToken;
-      authStore.refreshToken = result.refreshToken;
 
       const backendProjectId = backendUuidOrNull(result.data.id);
       if (!backendProjectId) {
@@ -558,7 +557,9 @@ export function useChatStreaming(deps: StreamingDeps) {
         const validationError = validateImageFile(item, limits);
         if (validationError) throw new Error(validationError);
 
-        const uploaded = await uploadImageFile(deps.chatApi!.baseUrl, token, item);
+        const uploaded = await uploadImageFile(deps.chatApi!.baseUrl, token, item, (refreshedToken) => {
+          authStore.accessToken = refreshedToken;
+        });
         attachments.push({
           file_id: uploaded.file_id,
           name: item.name,
@@ -814,13 +815,6 @@ export function useChatStreaming(deps: StreamingDeps) {
     }
 
     const normalizedParts = handleNormalizedChatResponse(normalizedDone, assistantMsgId);
-    console.log('[GDCE STREAM][DONE RAW]', normalizedDone);
-
-    console.log('[GDCE STREAM][NORMALIZED PARTS]', normalizedParts);
-
-    console.log('[GDCE STREAM][FINAL CONTENT]', normalizedParts?.content);
-
-    console.log('[GDCE STREAM][FINAL BLOCKS]', normalizedParts?.blocks);
 
     if (normalizedParts) {
       const finalHasContent = normalizedParts.content.trim().length > 0;

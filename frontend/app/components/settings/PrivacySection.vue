@@ -24,6 +24,20 @@
             </a>
             {{ $t('settings.privacy.intro.afterLinks') }}
           </p>
+          <div class="mt-4 border-t border-gray-100 pt-4 dark:border-zinc-800">
+            <p class="text-sm font-medium text-high-emphasis dark:text-zinc-100">
+              {{ $t('settings.privacy.retention.title') }}
+            </p>
+            <p class="mt-1 text-sm leading-6 text-medium-emphasis dark:text-zinc-400">
+              {{ $t('settings.privacy.retention.description') }}
+            </p>
+            <ul class="mt-2 list-disc space-y-1 pl-5 text-sm leading-6 text-medium-emphasis dark:text-zinc-400">
+              <li>{{ $t('settings.privacy.retention.activeChats') }}</li>
+              <li>{{ $t('settings.privacy.retention.deletedChats') }}</li>
+              <li>{{ $t('settings.privacy.retention.projectFiles') }}</li>
+              <li>{{ $t('settings.privacy.retention.auditLogs') }}</li>
+            </ul>
+          </div>
         </div>
 
         <div class="border-t border-gray-100 dark:border-zinc-800">

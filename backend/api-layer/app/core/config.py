@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
+    refresh_cookie_name: str = "gdce_refresh"
+    # Keep the cookie scoped to auth endpoints; the browser never exposes it to JS.
+    refresh_cookie_samesite: Literal["lax", "strict", "none"] = "lax"
+    refresh_cookie_domain: str | None = None
     frontend_origins: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["http://localhost:3000", "http://localhost:5173"])
     api_response_cache_seconds: int = 30
     http_timeout_seconds: float = 60.0
@@ -28,6 +32,12 @@ class Settings(BaseSettings):
     use_standard_chat_stream: bool = False
     general_rate_limit_requests: int = 100
     rate_limit_window_seconds: int = 60
+    retention_cleanup_enabled: bool = True
+    retention_cleanup_interval_seconds: int = 24 * 60 * 60
+    chat_retention_days: int = 90
+    deleted_chat_retention_days: int = 30
+    deleted_file_retention_days: int = 30
+    audit_log_retention_days: int = 365
 
     minio_endpoint: str = "minio:9000"
     minio_access_key: str = "minioadmin"
@@ -106,7 +116,6 @@ class Settings(BaseSettings):
             errors.append("MINIO_SECRET_KEY cannot use a default/example value in production")
         if self.rabbitmq_password in {"guest", "your-rabbitmq-password"}:
             errors.append("RABBITMQ_PASSWORD cannot use a default/example value in production")
-
         if errors:
             raise ValueError("; ".join(errors))
         return self

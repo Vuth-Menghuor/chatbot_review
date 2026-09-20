@@ -1,15 +1,13 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
+import { useChatStore } from '~/stores/chat.store';
 import {
   authFetchAuthed,
-  clearStoredTokens,
-  getStoredAccessToken,
-  getStoredRefreshToken,
+  clearLegacyStoredTokens,
   loginRequest,
   logoutRequest,
   refreshTokenRequest,
   registerRequest,
-  setStoredTokens,
   updateMeRequest,
   type AuthUser,
   type LoginCredentials,
@@ -19,7 +17,6 @@ import {
 
 export const useAuthStore = defineStore('auth', () => {
   const accessToken = ref<string | null>(null);
-  const refreshToken = ref<string | null>(null);
   const user = ref<AuthUser | null>(null);
   const initialized = ref(false);
   const loading = ref(false);
@@ -31,34 +28,19 @@ export const useAuthStore = defineStore('auth', () => {
     return String(runtimeConfig.public.gdceApiBaseUrl ?? 'http://localhost:8000').replace(/\/+$/, '');
   }
 
-  function hydrateFromStorage() {
-    accessToken.value = getStoredAccessToken();
-    refreshToken.value = getStoredRefreshToken();
-  }
-
-  function applySession(tokens: { access_token: string; refresh_token: string }, nextUser: AuthUser) {
+  function applySession(tokens: { access_token: string }, nextUser: AuthUser) {
     accessToken.value = tokens.access_token;
-    refreshToken.value = tokens.refresh_token;
     user.value = nextUser;
-    setStoredTokens(tokens.access_token, tokens.refresh_token);
   }
 
   function clearSession() {
     accessToken.value = null;
-    refreshToken.value = null;
     user.value = null;
-    clearStoredTokens();
   }
 
   async function refreshSession(): Promise<boolean> {
-    const storedRefresh = refreshToken.value ?? getStoredRefreshToken();
-    if (!storedRefresh) {
-      clearSession();
-      return false;
-    }
-
     try {
-      const data = await refreshTokenRequest(apiBaseUrl(), storedRefresh);
+      const data = await refreshTokenRequest(apiBaseUrl());
       applySession(data, data.user);
       return true;
     } catch {
@@ -76,7 +58,6 @@ export const useAuthStore = defineStore('auth', () => {
       accessToken.value,
     );
     accessToken.value = result.accessToken;
-    refreshToken.value = result.refreshToken;
     user.value = result.data;
     return result.data;
   }
@@ -87,7 +68,6 @@ export const useAuthStore = defineStore('auth', () => {
 
     const result = await updateMeRequest(apiBaseUrl(), token, payload);
     accessToken.value = result.accessToken;
-    refreshToken.value = result.refreshToken;
     user.value = result.data;
     return result.data;
   }
@@ -95,16 +75,9 @@ export const useAuthStore = defineStore('auth', () => {
   async function init() {
     if (initialized.value) return;
     loading.value = true;
-    hydrateFromStorage();
-
     try {
-      if (accessToken.value) {
-        try {
-          await fetchMe();
-        } catch {
-          clearSession();
-        }
-      }
+      clearLegacyStoredTokens();
+      await refreshSession();
     } finally {
       initialized.value = true;
       loading.value = false;
@@ -134,27 +107,24 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function logout() {
     const token = accessToken.value;
-    const storedRefresh = refreshToken.value;
     clearSession();
+    // Chat content is only a temporary per-browser cache; never leave it for the next user.
+    useChatStore().clearAll();
     if (!token) return;
     try {
-      await logoutRequest(apiBaseUrl(), token, storedRefresh);
+      await logoutRequest(apiBaseUrl(), token);
     } catch {
       // Session is already cleared locally.
     }
   }
 
-  /** Returns the current access token, hydrating from storage when needed. */
+  /** Access tokens are memory-only; a page reload restores them through the refresh cookie. */
   async function getValidAccessToken(): Promise<string | null> {
-    if (!accessToken.value) {
-      hydrateFromStorage();
-    }
     return accessToken.value;
   }
 
   return {
     accessToken,
-    refreshToken,
     user,
     initialized,
     loading,

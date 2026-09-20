@@ -1,16 +1,17 @@
 from datetime import datetime, timezone
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.redis import redis_client
 from app.core.security import create_access_token, create_refresh_token, decode_token, hash_password, hash_secret, verify_password
 from app.dependencies.auth import get_current_user
 from app.models import RefreshToken, User
-from app.schemas.common import LoginRequest, LogoutRequest, RefreshRequest, TokenResponse, UserCreate, UserRead, UserUpdate
+from app.schemas.common import LoginRequest, TokenResponse, UserCreate, UserRead, UserUpdate
 from app.services.audit_service import add_audit_log
 from app.services.rate_limit_service import enforce_rate_limit
 
@@ -25,6 +26,30 @@ def issue_tokens(user: User) -> tuple[str, str, RefreshToken]:
     access, _, _ = create_access_token(user.id, user.role)
     refresh, _, expires_at = create_refresh_token(user.id, user.role)
     return access, refresh, RefreshToken(user_id=user.id, token_hash=hash_secret(refresh), expires_at=expires_at)
+
+
+def set_refresh_cookie(response: Response, refresh_token: str) -> None:
+    """Store the long-lived token outside the JavaScript-accessible browser APIs."""
+    response.set_cookie(
+        key=settings.refresh_cookie_name,
+        value=refresh_token,
+        httponly=True,
+        secure=settings.environment == "production",
+        samesite=settings.refresh_cookie_samesite,
+        max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
+        path="/api/v1/auth",
+        domain=settings.refresh_cookie_domain,
+    )
+
+
+def clear_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=settings.refresh_cookie_name,
+        path="/api/v1/auth",
+        domain=settings.refresh_cookie_domain,
+        secure=settings.environment == "production",
+        samesite=settings.refresh_cookie_samesite,
+    )
 
 
 @router.post("/register", response_model=UserRead, status_code=201)
@@ -43,7 +68,7 @@ async def register(payload: UserCreate, request: Request, db: AsyncSession = Dep
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(payload: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
+async def login(payload: LoginRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     await enforce_rate_limit(f"login:{client_ip(request)}", 5, request=request)
     user = (await db.execute(select(User).where(User.email == payload.email.lower()))).scalar_one_or_none()
     if not user or not user.is_active or not verify_password(payload.password, user.hashed_password):
@@ -52,16 +77,20 @@ async def login(payload: LoginRequest, request: Request, db: AsyncSession = Depe
     db.add(token_row)
     add_audit_log(db, "user_login", "user", user.id, ip_address=client_ip(request))
     await db.commit()
-    return TokenResponse(access_token=access, refresh_token=refresh, user=UserRead.model_validate(user))
+    set_refresh_cookie(response, refresh)
+    return TokenResponse(access_token=access, user=UserRead.model_validate(user))
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh(payload: RefreshRequest, db: AsyncSession = Depends(get_db)):
+async def refresh(request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    refresh_token = request.cookies.get(settings.refresh_cookie_name)
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
     try:
-        claims = decode_token(payload.refresh_token)
+        claims = decode_token(refresh_token)
         if claims.get("type") != "refresh":
             raise ValueError
-        row = (await db.execute(select(RefreshToken).where(RefreshToken.token_hash == hash_secret(payload.refresh_token)))).scalar_one_or_none()
+        row = (await db.execute(select(RefreshToken).where(RefreshToken.token_hash == hash_secret(refresh_token)))).scalar_one_or_none()
         if not row or row.revoked_at or row.expires_at <= datetime.now(timezone.utc):
             raise ValueError
         user = await db.get(User, row.user_id)
@@ -73,13 +102,15 @@ async def refresh(payload: RefreshRequest, db: AsyncSession = Depends(get_db)):
     access, refresh_value, new_row = issue_tokens(user)
     db.add(new_row)
     await db.commit()
-    return TokenResponse(access_token=access, refresh_token=refresh_value, user=UserRead.model_validate(user))
+    set_refresh_cookie(response, refresh_value)
+    return TokenResponse(access_token=access, user=UserRead.model_validate(user))
 
 
 @router.post("/logout")
-async def logout(payload: LogoutRequest, request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    if payload.refresh_token:
-        row = (await db.execute(select(RefreshToken).where(RefreshToken.token_hash == hash_secret(payload.refresh_token), RefreshToken.user_id == user.id))).scalar_one_or_none()
+async def logout(request: Request, response: Response, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    refresh_token = request.cookies.get(settings.refresh_cookie_name)
+    if refresh_token:
+        row = (await db.execute(select(RefreshToken).where(RefreshToken.token_hash == hash_secret(refresh_token), RefreshToken.user_id == user.id))).scalar_one_or_none()
         if row and not row.revoked_at:
             row.revoked_at = datetime.now(timezone.utc)
     jti = getattr(request.state, "token_jti", None)
@@ -92,6 +123,7 @@ async def logout(payload: LogoutRequest, request: Request, user: User = Depends(
             pass
     add_audit_log(db, "user_logout", "user", user.id, ip_address=client_ip(request))
     await db.commit()
+    clear_refresh_cookie(response)
     return {"message": "Logged out successfully"}
 
 

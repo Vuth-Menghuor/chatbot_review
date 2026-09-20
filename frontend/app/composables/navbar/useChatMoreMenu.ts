@@ -61,7 +61,7 @@ export function useNavbarChatMoreMenu(options: UseNavbarChatMoreMenuOptions = {}
     if (isProjectPage.value) {
       deleteProject(id);
     } else {
-      deleteChat(id);
+      if (!(await deleteChat(id))) return;
     }
 
     deleteOpen.value = false;

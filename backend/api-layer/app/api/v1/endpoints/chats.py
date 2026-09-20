@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.dependencies.auth import get_current_user
-from app.models import ChatThread, User
+from app.models import ChatMessage, ChatThread, User
 from app.schemas.common import ChatShareCreate, ChatShareRead, ChatThreadCreate, ChatThreadRead, ChatThreadUpdate
 from app.services.audit_service import add_audit_log
 from app.services.chat_share_service import create_or_update_share, revoke_share, serialize_share
@@ -53,15 +53,8 @@ async def list_chats(project_id: str | None = None, include_archived: bool = Fal
 async def get_chat(chat_id: UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     item = await owned_chat(db, chat_id, user.id)
     metadata = ChatThreadRead.model_validate(item).model_dump(mode="json")
-    try:
-        messages = await main_chatbot_client.request("GET", f"/internal/chats/{chat_id}/messages", params={"user_id": str(user.id)})
-        metadata["messages"] = messages.get("messages", messages) if isinstance(messages, dict) else messages
-    except HTTPException as exc:
-        if exc.status_code == 503:
-            metadata["messages"] = []
-            metadata["warning"] = exc.detail
-        else:
-            raise
+    rows = (await db.execute(select(ChatMessage).where(ChatMessage.chat_id == chat_id).order_by(ChatMessage.created_at))).scalars().all()
+    metadata["messages"] = [{"id": str(row.id), "role": row.role, "content": row.content, "blocks": row.blocks or [], "sources": row.sources or [], "status": row.status, "created_at": row.created_at.isoformat()} for row in rows]
     return metadata
 
 

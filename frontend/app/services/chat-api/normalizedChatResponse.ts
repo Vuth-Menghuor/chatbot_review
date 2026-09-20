@@ -298,19 +298,21 @@ function markdownBlockToMessageBlock(
 
 
 function tableBlockToMessageBlock(block: NormalizedTableBlock, id: string): MessageBlock {
-  const columns = Array.isArray(block.columns) ? block.columns : [];
-
-  const rows = Array.isArray(block.rows) ? block.rows : [];
+  const rawColumns = Array.isArray(block.columns) ? block.columns : [];
+  const columns = filterVisibleTableColumns(rawColumns.map((column) => ({
+    key: column.key,
+    title: column.label,
+  })));
+  const rows = (Array.isArray(block.rows) ? block.rows : []).map((row) =>
+    stripHiddenTableValues(row, rawColumns.map((column) => ({ key: column.key, title: column.label }))),
+  );
 
   return {
     id,
     type: 'table',
     title: block.title,
     content: {
-      columns: columns.map((column) => ({
-        key: column.key,
-        title: column.label,
-      })),
+      columns,
       rows,
     },
     isComplete: true,

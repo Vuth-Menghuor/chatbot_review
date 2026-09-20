@@ -3,10 +3,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 
 from app.api.v1.endpoints import auth as auth_endpoint
-from app.schemas.common import LoginRequest, RefreshRequest, UserCreate
+from app.schemas.common import LoginRequest, UserCreate
 from tests.factories import make_user
 
 
@@ -73,8 +73,8 @@ class FakeAuthSession:
 
 
 # Build the small part of Request used by auth.client_ip().
-def fake_request(ip: str = "127.0.0.1"):
-    return SimpleNamespace(client=SimpleNamespace(host=ip), state=SimpleNamespace())
+def fake_request(ip: str = "127.0.0.1", cookies: dict[str, str] | None = None):
+    return SimpleNamespace(client=SimpleNamespace(host=ip), state=SimpleNamespace(), cookies=cookies or {})
 
 
 # Endpoint rate limiting is tested separately; disable it here.
@@ -121,21 +121,27 @@ async def test_register_duplicate_email_returns_409():
     assert db.added == []
 
 
-# Login should return access/refresh tokens for a valid active user.
+# Login returns only a short-lived access token; the refresh token is HttpOnly.
 @pytest.mark.asyncio
 async def test_login_success_returns_tokens():
     user = make_user(email="ada@example.com")
     db = FakeAuthSession(execute_value=user)
+    http_response = Response()
 
     response = await auth_endpoint.login(
         LoginRequest(email="ada@example.com", password="password123"),
         fake_request(),
+        http_response,
         db=db,
     )
 
     assert response.token_type == "bearer"
     assert response.access_token
-    assert response.refresh_token
+    assert "refresh_token" not in response.model_dump()
+    cookie = http_response.headers["set-cookie"]
+    assert "gdce_refresh=" in cookie
+    assert "HttpOnly" in cookie
+    assert "Path=/api/v1/auth" in cookie
     assert response.user.id == user.id
     assert db.committed is True
 
@@ -168,7 +174,11 @@ async def test_me_returns_current_user():
 @pytest.mark.asyncio
 async def test_refresh_rejects_invalid_token():
     with pytest.raises(HTTPException) as exc_info:
-        await auth_endpoint.refresh(RefreshRequest(refresh_token="not-a-jwt"), db=FakeAuthSession())
+        await auth_endpoint.refresh(
+            fake_request(cookies={"gdce_refresh": "not-a-jwt"}),
+            Response(),
+            db=FakeAuthSession(),
+        )
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "Invalid or expired refresh token"

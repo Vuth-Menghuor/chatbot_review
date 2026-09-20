@@ -443,6 +443,14 @@
         "privacyPolicy": "Privacy Policy",
         "afterLinks": "for more details."
       },
+      "retention": {
+        "title": "Chat retention policy",
+        "description": "This browser keeps a temporary chat cache for up to 7 days. The organization retains server data according to the following policy:",
+        "activeChats": "Chats and messages: 90 days after last activity.",
+        "deletedChats": "Deleted chats, their messages, and chat-only files: permanently purged after 30 days.",
+        "projectFiles": "Project files: retained while the project is active; permanently purged 30 days after project deletion.",
+        "auditLogs": "Security and audit logs: 1 year."
+      },
       "links": {
         "privacyCenterUrl": "https://www.customs.gov.kh",
         "privacyPolicyUrl": "https://www.customs.gov.kh",

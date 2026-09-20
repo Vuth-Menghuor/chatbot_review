@@ -75,6 +75,19 @@ class ChatThread(Base, TimestampMixin):
     last_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    chat_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("chat_threads.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    role: Mapped[str] = mapped_column(String(20))
+    content: Mapped[str] = mapped_column(Text)
+    blocks: Mapped[list | None] = mapped_column(JSON)
+    sources: Mapped[list | None] = mapped_column(JSON)
+    status: Mapped[str | None] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class ChatShare(Base, TimestampMixin):
     __tablename__ = "chat_shares"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -162,4 +175,5 @@ class FileJob(Base):
 
 Index("ix_projects_user_status", Project.user_id, Project.status)
 Index("ix_chats_user_status", ChatThread.user_id, ChatThread.status)
+Index("ix_chat_messages_chat_created", ChatMessage.chat_id, ChatMessage.created_at)
 Index("ix_files_user_status", FileRecord.user_id, FileRecord.status)

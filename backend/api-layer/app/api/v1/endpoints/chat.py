@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.dependencies.auth import get_current_user
-from app.models import User
+from app.models import ChatMessage, User
 from app.schemas.common import ChatRequest, FeedbackRequest
 from app.services.audit_service import add_audit_log
 from app.services.chat_debug import can_include_chat_response_debug
@@ -23,6 +23,14 @@ from app.services.rate_limit_service import enforce_rate_limit
 
 router = APIRouter(prefix="/chat", tags=["chat proxy"])
 logger = logging.getLogger(__name__)
+
+
+async def save_message(db: AsyncSession, chat, user: User, role: str, content: str, normalized: dict | None = None) -> None:
+    message = normalized.get("message") if isinstance(normalized, dict) else None
+    blocks = message.get("content") if isinstance(message, dict) and isinstance(message.get("content"), list) else []
+    sources = normalized.get("sources") if isinstance(normalized, dict) and isinstance(normalized.get("sources"), list) else []
+    db.add(ChatMessage(chat_id=chat.id, user_id=user.id, role=role, content=content, blocks=blocks, sources=sources, status=(normalized or {}).get("status") if normalized else "completed"))
+    await db.commit()
 
 
 def upstream_payload(payload: ChatRequest, chat, user: User, request_id: str) -> dict:
@@ -423,6 +431,7 @@ async def send_chat(payload: ChatRequest, request: Request, user: User = Depends
         add_audit_log(db, "chat_created", "chat", user.id, {"chat_id": str(chat.id)})
     await touch_chat(db, chat, payload.message)
     await db.commit()
+    await save_message(db, chat, user, "user", payload.message)
     body = orchestrator_query_payload(payload, chat)
     result = await main_chatbot_client.request("POST", "/query", json=body)
     normalized = normalize_final_response(
@@ -433,6 +442,7 @@ async def send_chat(payload: ChatRequest, request: Request, user: User = Depends
     )
     if isinstance(result, dict):
         log_normalization_trace(result, normalized)
+    await save_message(db, chat, user, "assistant", normalized_primary_text(normalized), normalized)
     return normalized
 
 
@@ -445,6 +455,7 @@ async def stream_chat(payload: ChatRequest, request: Request, user: User = Depen
         add_audit_log(db, "chat_created", "chat", user.id, {"chat_id": str(chat.id)})
     await touch_chat(db, chat, payload.message)
     await db.commit()
+    await save_message(db, chat, user, "user", payload.message)
     request_id = str(uuid4())
     body = orchestrator_stream_payload(payload, chat, request_id)
 

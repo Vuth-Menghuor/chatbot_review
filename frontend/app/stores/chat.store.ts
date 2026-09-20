@@ -11,6 +11,15 @@ import {
 import { tApp } from '~/utils/i18n/tApp';
 import type { Chat, Message } from '~/types/message';
 
+// Browser storage is a convenience cache, not permanent chat storage.
+const CHAT_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_CACHED_CHATS = 20;
+
+function isExpiredCacheEntry(cachedAt?: string) {
+  const timestamp = cachedAt ? Date.parse(cachedAt) : Number.NaN;
+  return !Number.isFinite(timestamp) || Date.now() - timestamp > CHAT_CACHE_TTL_MS;
+}
+
 export const useChatStore = defineStore('chat', () => {
   const recentChats = ref<Chat[]>([]);
   const activeChatId = ref<string | null>(null);
@@ -29,7 +38,7 @@ export const useChatStore = defineStore('chat', () => {
     recentChats,
     (val) => {
       if (isLoaded.value) {
-        writeJson(storageKeys.chatHistory, val);
+        writeJson(storageKeys.chatHistory, val.slice(0, MAX_CACHED_CHATS));
       }
     },
     { deep: true, flush: 'sync' },
@@ -57,10 +66,17 @@ export const useChatStore = defineStore('chat', () => {
 
     try {
       const storedChats = readJson<Chat[]>(storageKeys.chatHistory, []);
+      const validChats = storedChats
+        .filter((chat) => !isExpiredCacheEntry(chat.cachedAt ?? chat.createdAt))
+        .slice(0, MAX_CACHED_CHATS);
+      const expiredIds = storedChats
+        .filter((chat) => !validChats.some((valid) => valid.id === chat.id))
+        .map((chat) => chat.id);
+      if (expiredIds.length) removeChatMessageKeys(expiredIds);
       const draftChats = recentChats.value.filter(
-        (chat) => !storedChats.some((stored) => stored.id === chat.id),
+        (chat) => !validChats.some((stored) => stored.id === chat.id),
       );
-      recentChats.value = [...draftChats, ...storedChats];
+      recentChats.value = [...draftChats, ...validChats].slice(0, MAX_CACHED_CHATS);
     } finally {
       isLoaded.value = true;
       isLoadingChats.value = false;
@@ -81,6 +97,7 @@ export const useChatStore = defineStore('chat', () => {
       title,
       projectId,
       createdAt: new Date().toISOString(),
+      cachedAt: new Date().toISOString(),
     };
     recentChats.value.unshift(newChat);
     // Persist immediately to avoid losing just-created chats on fast navigation/reload.
@@ -149,6 +166,7 @@ export const useChatStore = defineStore('chat', () => {
       id: chatId,
       title: deriveChatTitleFromMessages(storedMessages),
       createdAt: storedMessages[0]?.createdAt ?? new Date().toISOString(),
+      cachedAt: new Date().toISOString(),
       lastMessage: storedMessages[storedMessages.length - 1]?.content,
     };
 
@@ -214,6 +232,7 @@ export const useChatStore = defineStore('chat', () => {
 
     const latestMessage = [...messages].reverse().find((message) => message.content?.trim());
     chat.lastMessage = latestMessage?.content;
+    chat.cachedAt = new Date().toISOString();
   }
 
   function getChatMessages(chatId?: string | null) {

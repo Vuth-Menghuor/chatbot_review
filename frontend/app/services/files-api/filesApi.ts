@@ -45,6 +45,7 @@ export async function uploadImageFile(
   baseUrl: string,
   accessToken: string,
   file: File,
+  onAccessTokenRefreshed?: (accessToken: string) => void,
 ): Promise<FileUploadResult> {
   try {
     return await uploadOnce(baseUrl, accessToken, file);
@@ -53,6 +54,7 @@ export async function uploadImageFile(
 
     const refreshed = await tryRefreshSession(baseUrl);
     if (!refreshed?.access_token) throw err;
+    onAccessTokenRefreshed?.(refreshed.access_token);
     return uploadOnce(baseUrl, refreshed.access_token, file);
   }
 }

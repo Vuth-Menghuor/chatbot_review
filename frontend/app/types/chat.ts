@@ -217,6 +217,8 @@ export interface Chat {
   projectId?: string;
   backendProjectId?: string;
   createdAt: string;
+  /** Timestamp used only to expire the browser cache. */
+  cachedAt?: string;
   lastMessage?: string;
   pinned?: boolean;
 }
