@@ -479,11 +479,23 @@ async def stream_chat(payload: ChatRequest, request: Request, user: User = Depen
             "chat_id": str(chat.id), "project_id": str(chat.project_id) if chat.project_id else None,
             "request_id": request_id, "status": "processing",
         })
+
+        async def persisted_done(normalized: dict) -> bytes:
+            await save_message(
+                db,
+                chat,
+                user,
+                "assistant",
+                normalized_primary_text(normalized),
+                normalized,
+            )
+            return sse_event("done", normalized)
+
         if await request.is_disconnected():
             return
         try:
             if settings.use_standard_chat_stream:
-                yield sse_event("done", await query_fallback_response())
+                yield await persisted_done(await query_fallback_response())
                 return
 
             upstream_events = main_chatbot_client.stream_chat(body)
@@ -544,7 +556,7 @@ async def stream_chat(payload: ChatRequest, request: Request, user: User = Depen
                                     authoritative=normalized,
                                 )
                             log_normalization_trace(data, normalized)
-                            yield sse_event("done", normalized)
+                            yield await persisted_done(normalized)
                             return
                         elif upstream_event.type == "clarification" and isinstance(upstream_event.data, dict):
                             if clarification_questions(upstream_event.data):
@@ -572,11 +584,11 @@ async def stream_chat(payload: ChatRequest, request: Request, user: User = Depen
             # A stream that cannot provide a terminal response falls back to
             # /query, but never fabricates token or structured-block events.
             if not await request.is_disconnected():
-                yield sse_event("done", await query_fallback_response())
+                yield await persisted_done(await query_fallback_response())
         except httpx.HTTPStatusError as exc:
             if is_stream_endpoint_unavailable(exc):
                 try:
-                    yield sse_event("done", await query_fallback_response())
+                    yield await persisted_done(await query_fallback_response())
                 except Exception:
                     yield sse_event("error", {"detail": "Main Chatbot Service is temporarily unavailable"})
             else:

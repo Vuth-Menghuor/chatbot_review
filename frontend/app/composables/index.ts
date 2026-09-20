@@ -10,7 +10,8 @@ import { useChatTypingSimulation } from './chat/useChatTypingSimulation';
 import { useUiBlockInjection } from './chat/useUiBlockInjection';
 import { useChatStreaming } from './chat/useChatStreaming';
 import { canonicalizeBlockType } from '~/utils/message';
-import { ChatApiRequestError } from '~/services/chat-api';
+import { ChatApiRequestError, getChatHistoryRequest } from '~/services/chat-api';
+import { backendUuidOrNull } from '~/utils/id/backendIdentity';
 
 export { useChatList } from './chat/useChatList';
 
@@ -84,6 +85,33 @@ export function useChat(chatId?: string) {
     getAssistantMessage,
     getUiBlockDelay,
   });
+
+  async function loadServerHistory(): Promise<boolean> {
+    if (!chatId || !chatApiConfig?.baseUrl) return false;
+    const chat = chatStore.recentChats.find((item) => item.id === chatId);
+    const backendChatId = backendUuidOrNull(chat?.backendId);
+    if (!backendChatId) return false;
+
+    const token = await authStore.getValidAccessToken();
+    if (!token) return false;
+
+    try {
+      const result = await getChatHistoryRequest(chatApiConfig.baseUrl, token, backendChatId);
+      authStore.accessToken = result.accessToken;
+      messages.value = result.data.messages.map((message) => ({
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        status: message.status === 'failed' ? 'error' : 'completed',
+        responseStatus: message.status === 'failed' ? 'failed' : 'completed',
+        createdAt: message.created_at,
+      }));
+      return true;
+    } catch (error) {
+      if (import.meta.dev) console.error('[GDCE chat history failed]', error);
+      return false;
+    }
+  }
 
   function isAbortError(error: unknown) {
     return (
@@ -288,5 +316,5 @@ export function useChat(chatId?: string) {
     });
   }
 
-  return { messages, input, loading, currentRenderType, send, sendUserReply, stop, regenerate };
+  return { messages, input, loading, currentRenderType, send, sendUserReply, stop, regenerate, loadServerHistory };
 }

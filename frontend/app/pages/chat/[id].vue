@@ -23,7 +23,7 @@ const chatListRef = ref<{ scrollToBottom?: (behavior?: ScrollBehavior) => Promis
 );
 const chatInputRef = ref<{ setDraft?: (text: string) => Promise<void> | void } | null>(null);
 
-const { messages, loading, currentRenderType, send, sendUserReply, stop, regenerate } =
+const { messages, loading, currentRenderType, send, sendUserReply, stop, regenerate, loadServerHistory } =
   useChat(chatId);
 
 const scrollToBottom = (behavior: ScrollBehavior = 'smooth') =>
@@ -84,6 +84,8 @@ onMounted(async () => {
     await navigateTo('/');
     return;
   }
+
+  await loadServerHistory();
 
   const pendingText = route.query.q as string | undefined;
   if (pendingText?.trim()) {
